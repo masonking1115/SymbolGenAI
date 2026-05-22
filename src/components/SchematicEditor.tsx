@@ -1,20 +1,24 @@
 import React from "react";
 
 import { Canvas } from "./Canvas";
-import { PropertiesPanel } from "./PropertiesPanel";
+import { ChatPanel } from "./ChatPanel";
+import { LibraryPanel } from "./LibraryPanel";
+import { PlaceToolbar } from "./PlaceToolbar";
 import { StatusBar } from "./StatusBar";
-import { SymbolPalette } from "./SymbolPalette";
 import { Toolbar } from "./Toolbar";
 
 export const SchematicEditor: React.FC = () => (
   <div className="editor">
     <Toolbar />
     <div className="editor__body">
-      <SymbolPalette />
+      <LibraryPanel />
       <main className="editor__main">
-        <Canvas />
+        <PlaceToolbar />
+        <div className="editor__canvas">
+          <Canvas />
+        </div>
       </main>
-      <PropertiesPanel />
+      <ChatPanel />
     </div>
     <StatusBar />
   </div>
