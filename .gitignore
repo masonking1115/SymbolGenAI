@@ -13,3 +13,15 @@ out
 .claude/settings.local.json
 .vscode/
 .idea/
+
+# KiCad source tree (symlinked from ~/Downloads/kicad/)
+/kicad
+
+# KiCad transient/per-user files (lock files, local prefs, regenerated exports)
+~*.lck
+*.kicad_prl
+*/render/
+fp-info-cache
+
+# KiCad per-project auto-versioning
+*/.history/
