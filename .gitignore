@@ -1,0 +1,15 @@
+node_modules
+dist
+dist-electron
+out
+.vite
+.cache
+.DS_Store
+*.log
+.env
+.env.local
+
+# Editor/agent local state
+.claude/settings.local.json
+.vscode/
+.idea/
