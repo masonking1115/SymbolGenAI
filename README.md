@@ -47,6 +47,13 @@ open -a KiCad <project>/<project>.kicad_pro
 
 Schematics generated through the skills embed their `lib_symbols` self-contained, so they render without registering the `.kicad_sym` files in the user-level `sym-lib-table`.
 
+## Editing in eeschema
+
+Two workflow rules to make edits durable and avoid the "false save" trap. Full rationale in [PROJECT_MEMORY.md](PROJECT_MEMORY.md).
+
+1. **Symbol-shape edits only go through the Symbol Editor on the canonical `<project>/datasheets/<MPN>/<MPN>.kicad_sym`.** Never use right-click → Edit Symbol on a placed instance — that writes only to the schematic's embedded copy and is overwritten by the next `generate.py` run. After editing the canonical file, run **Tools → Update Symbols from Library** in eeschema to refresh.
+2. **End every editing session with `git add && git commit && git push`.** Cmd+S writes to disk; only a commit reaches GitHub. Schematic placement, wires, refdes, and values can be edited freely in eeschema — just commit when done.
+
 ## Skills
 
 - [`kicad-symbol-from-datasheet`](.claude/skills/kicad-symbol-from-datasheet.md) — generate a `.kicad_sym` from a PDF datasheet.

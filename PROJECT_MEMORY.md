@@ -107,6 +107,20 @@ Do NOT run `kicad-cli sch erc` — requires `_cvpcb.kiface` which isn't built. U
 
 Symbol library registration is not in the repo — `~/Library/Preferences/kicad/10.99/sym-lib-table` is per-user. Any `.kicad_sym` files added later under `<project>/datasheets/<MPN>/` won't appear in eeschema's symbol browser until added there manually. Schematics generated from those symbols should embed `lib_symbols` self-contained so they open without library registration.
 
+## Editing workflow in eeschema — persist edits without "false saves"
+
+eeschema saves to disk on Cmd+S reliably; the two real risks are (a) symbol-shape edits diverging between the embedded `lib_symbols` block and the canonical `.kicad_sym`, and (b) disk-saved files not reaching git.
+
+**Rule 1 — Symbol-shape edits go through the Symbol Editor on the canonical `.kicad_sym` only.**
+- Never use **right-click → Edit Symbol** on a placed instance. That writes only to the embedded `lib_symbols` block inside `<project>.kicad_sch` and the change vanishes the next time `generate.py` regenerates the schematic.
+- Instead: open `<project>/datasheets/<MPN>/<MPN>.kicad_sym` in the standalone Symbol Editor, make the change, save. Then in eeschema run **Tools → Update Symbols from Library** to refresh the embedded copy.
+- Schematic-level edits (placement, wires, refdes, value, label text) are fine to do directly in eeschema — those legitimately belong in the `.kicad_sch`.
+
+**Rule 2 — End every editing session with a git commit.**
+- Cmd+S writes to disk; nothing reaches GitHub until `git add && git commit && git push`.
+- At the end of any eeschema session, prompt the user (or just do it if asked) to commit the dirty `.kicad_sch` / `.kicad_pro` / `.kicad_sym` files so the work is durable across machines.
+- Quick check before exiting: `git status` should be clean (apart from gitignored `.history/`, `.kicad_prl`, `~*.lck`).
+
 ## Skills
 
 Living in `.claude/skills/`. Each one is a contract for a specific stage of work.
