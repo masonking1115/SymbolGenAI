@@ -39,8 +39,8 @@ def read_ic_symbol(path: Path, name: str) -> str:
     block = block.replace(f'(symbol "{name}"', f'(symbol "{name}:{name}"', 1)
     return block
 
-LNA_LIB = read_ic_symbol(ROOT.parent / "SKY67150-396LF.kicad_sym", "SKY67150-396LF")
-LDO_LIB = read_ic_symbol(ROOT.parent / "TPS7E72.kicad_sym", "TPS7E72")
+LNA_LIB = read_ic_symbol(ROOT.parent / "datasheets/SKY67150-396LF/SKY67150-396LF.kicad_sym", "SKY67150-396LF")
+LDO_LIB = read_ic_symbol(ROOT.parent / "datasheets/TPS7E72/TPS7E72.kicad_sym", "TPS7E72")
 
 DEVICE_R = '''(symbol "Device:R"
 		(pin_numbers (hide yes))

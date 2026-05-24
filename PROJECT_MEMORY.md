@@ -14,11 +14,17 @@ Repo: `git@github.com:masonking1115/SymbolGenAI.git` (main).
 SymbolLibraryAI/
 ├── PROJECT_MEMORY.md                ← this file
 ├── SymbolGenAI.md                   ← original project spec
-├── .claude/
-│   ├── skills/                      ← per-stage skill docs (see "Skills" below)
-│   └── datasheets/                  ← source PDFs (TPS7E72, SKY67150-396LF)
+├── .claude/skills/                  ← per-stage skill docs (see "Skills" below)
+├── datasheets/                      ← part libraries — one subfolder per MPN
+│   ├── TPS7E72/
+│   │   ├── TPS7E72.kicad_sym
+│   │   └── TPS7E72.pdf
+│   ├── SKY67150-396LF/
+│   │   ├── SKY67150-396LF.kicad_sym
+│   │   └── SKY67150-396LF.pdf
+│   └── BFC237076104/
+│       └── BFC237076104.kicad_sym   ← no PDF; was converted from .SchLib
 ├── kicad/                           ← symlink to ~/Downloads/kicad/ (gitignored)
-├── *.kicad_sym                      ← BFC237076104, TPS7E72, SKY67150-396LF
 ├── TPS7E72_demo/                    ← LDO-only demo schematic
 ├── LNA_LDO_chain/                   ← first LNA+LDO chain (pre-layout-rules)
 └── LDO_LNA_Demo/                    ← regenerated chain, applies layout rules
@@ -119,7 +125,8 @@ Full 9-stage flow (for larger projects):
 - **Last commit on `main`**: `556d14e` — adds `LDO_LNA_Demo/` and `kicad-launch-dev-build` skill.
 - **Symbols generated**: BFC237076104 (Vishay 100nF cap, imported from Altium .SchLib), TPS7E72 (TI LDO, 5-pin SOT-23), SKY67150-396LF (Skyworks LNA, 8-pin DFN + EP).
 - **Demo schematics**: `TPS7E72_demo/` (LDO at 3.3V out, no layout-rule pass), `LNA_LDO_chain/` (first LNA+LDO chain, pre-layout-rules, has known overlap issues), `LDO_LNA_Demo/` (regenerated chain with layout rules applied).
-- **Datasheets in repo**: `.claude/datasheets/TPS7E72.pdf`, `.claude/datasheets/SKY67150-396LF.pdf`.
+- **Part libraries** (each part gets its own subfolder under `datasheets/` containing both the `.kicad_sym` and the source PDF, when available): `datasheets/TPS7E72/`, `datasheets/SKY67150-396LF/`, `datasheets/BFC237076104/` (no PDF for this one — converted from Altium .SchLib).
+- **New parts going forward**: always create `datasheets/<MPN>/` and place both the `.kicad_sym` and `.pdf` inside it.
 - **Phase 1 Electron MVP**: deleted from the working tree on 2026-05-24. Recover from git history (`d070e42`–`234cd37`) only if needed.
 
 ## Things explicitly not in the repo

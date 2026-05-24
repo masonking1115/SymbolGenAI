@@ -9,14 +9,15 @@ See [PROJECT_MEMORY.md](PROJECT_MEMORY.md) for the full handoff doc (architectur
 ## Repo layout
 
 ```
-.claude/
-  skills/           per-stage skill docs (symbol gen, circuit gen, KiCad launch)
-  datasheets/       source PDFs
-*.kicad_sym         generated symbol libraries
-<project>/         each demo project — *.kicad_pro + *.kicad_sch + generate.py
-PROJECT_MEMORY.md   project memory + handoff
-SymbolGenAI.md      original spec
+.claude/skills/        per-stage skill docs (symbol gen, circuit gen, KiCad launch)
+datasheets/<MPN>/      part libraries — each MPN gets its own folder containing
+                       both the .kicad_sym and the source datasheet PDF
+<project>/             each demo project — *.kicad_pro + *.kicad_sch + generate.py
+PROJECT_MEMORY.md      project memory + handoff
+SymbolGenAI.md         original spec
 ```
+
+**Per-part folder convention**: every part lives under `datasheets/<MPN>/` with at minimum a `<MPN>.kicad_sym`; if the source datasheet PDF is available, drop it in the same folder. When adding new parts, follow this layout — don't scatter `.kicad_sym` files at the repo root.
 
 ## Running a generated schematic in eeschema
 
