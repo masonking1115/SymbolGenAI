@@ -150,12 +150,10 @@ If labels look cluttered in the Symbol Editor, these three flags in `~/Library/P
 | `show_hidden_lib_pins` | true | Invisible pins |
 | `show_hidden_lib_fields` | true | Grey property labels (Footprint, Datasheet, etc.) inside the body |
 
-## Worked example reference
+## Layout reference for a small IC
 
-`TPS7E72.kicad_sym` in this project shows a 5-pin SOT-23 LDO:
-- Body 15.24 mm wide × 8.89 mm tall, centered roughly at origin
-- IN/EN on the left at `angle 0`, OUT/NC/ADJ on the right at `angle 180`, GND on the bottom at `angle 90`
-- IN and OUT use `power_in` / `power_out`; EN and NC/ADJ use `input`; GND is `power_in`
-- Body widened from initial 10.16 mm because "NC/ADJ" (6 chars) didn't fit
-
-Use that file as a layout reference for any other small IC.
+Concrete dimensions that worked well for a 5-pin SOT-23-class LDO:
+- Body **15.24 mm wide × 8.89 mm tall**, centered roughly at the origin.
+- Left-side pins at `angle 0`; right-side pins at `angle 180`; bottom (e.g. GND) at `angle 90`.
+- Supply pins → `power_in` / `power_out`; logic-level inputs → `input`; ground → `power_in`.
+- Width the body so the **longest pin name** (including any "/"-separated alt names like `NC/ADJ`) has at least ~1 character of clearance from the body edge. A body too narrow forces overlap; better to widen by another 2.54 mm than to truncate.

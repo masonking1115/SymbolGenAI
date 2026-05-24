@@ -10,37 +10,29 @@ See [PROJECT_MEMORY.md](PROJECT_MEMORY.md) for the full handoff doc (architectur
 
 ```
 .claude/skills/        per-stage skill docs (symbol gen, circuit gen, KiCad launch)
-datasheets/<MPN>/      part libraries — each MPN gets its own folder containing
-                       both the .kicad_sym and the source datasheet PDF
-<project>/             each demo project — *.kicad_pro + *.kicad_sch + generate.py
 PROJECT_MEMORY.md      project memory + handoff
 SymbolGenAI.md         original spec
 ```
 
-**Per-part folder convention**: every part lives under `datasheets/<MPN>/` with at minimum a `<MPN>.kicad_sym`; if the source datasheet PDF is available, drop it in the same folder. When adding new parts, follow this layout — don't scatter `.kicad_sym` files at the repo root.
+**Convention for new work** (no parts or projects exist yet — the repo was reset to a clean slate on 2026-05-24):
+
+- `datasheets/<MPN>/` — one folder per part, containing the `.kicad_sym` and (if available) the source `.pdf`.
+- `<project>/` — one folder per design, containing `<project>.kicad_pro` + `<project>.kicad_sch` (+ optional `generate.py`).
 
 ## Running a generated schematic in eeschema
 
 This machine uses a partial KiCad dev build at `~/Downloads/kicad/`. See [`.claude/skills/kicad-launch-dev-build.md`](.claude/skills/kicad-launch-dev-build.md) for the working binary paths and the kiface/resource symlinks.
 
-On a fresh machine, `brew install kicad` and then:
+On a fresh machine, `brew install kicad` and open the schematic directly:
 
 ```sh
-open -a KiCad LDO_LNA_Demo/LDO_LNA_Demo.kicad_pro
+open -a KiCad <project>/<project>.kicad_pro
 ```
 
-The demo schematics embed their `lib_symbols` self-contained, so they render without registering the `.kicad_sym` files in the user-level `sym-lib-table`.
+Schematics generated through the skills embed their `lib_symbols` self-contained, so they render without registering the `.kicad_sym` files in the user-level `sym-lib-table`.
 
 ## Skills
 
 - [`kicad-symbol-from-datasheet`](.claude/skills/kicad-symbol-from-datasheet.md) — generate a `.kicad_sym` from a PDF datasheet.
 - [`kicad-circuit-from-topology`](.claude/skills/kicad-circuit-from-topology.md) — build a full schematic from a parts list + net topology, with layout rules to avoid text overlap and floating nets.
 - [`kicad-launch-dev-build`](.claude/skills/kicad-launch-dev-build.md) — open schematics in eeschema and run `kicad-cli` on this machine's specific dev build.
-
-## Current demo projects
-
-| Project | What it is |
-|---|---|
-| `TPS7E72_demo/` | TI TPS7E72 LDO at 3.3V out, datasheet design example p. 27. |
-| `LNA_LDO_chain/` | First LNA+LDO chain (pre-layout-rules — has known overlap issues). |
-| `LDO_LNA_Demo/` | Regenerated LNA+LDO chain with the layout rules applied. |

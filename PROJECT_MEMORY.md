@@ -10,30 +10,32 @@ Repo: `git@github.com:masonking1115/SymbolGenAI.git` (main).
 
 ## Repo layout
 
+The repo was reset to a clean slate on 2026-05-24 to start a fresh project. Current top-level contents:
+
 ```
 SymbolLibraryAI/
 ├── PROJECT_MEMORY.md                ← this file
+├── README.md
 ├── SymbolGenAI.md                   ← original project spec
 ├── .claude/skills/                  ← per-stage skill docs (see "Skills" below)
-├── datasheets/                      ← part libraries — one subfolder per MPN
-│   ├── TPS7E72/
-│   │   ├── TPS7E72.kicad_sym
-│   │   └── TPS7E72.pdf
-│   ├── SKY67150-396LF/
-│   │   ├── SKY67150-396LF.kicad_sym
-│   │   └── SKY67150-396LF.pdf
-│   └── BFC237076104/
-│       └── BFC237076104.kicad_sym   ← no PDF; was converted from .SchLib
-├── kicad/                           ← symlink to ~/Downloads/kicad/ (gitignored)
-├── TPS7E72_demo/                    ← LDO-only demo schematic
-├── LNA_LDO_chain/                   ← first LNA+LDO chain (pre-layout-rules)
-└── LDO_LNA_Demo/                    ← regenerated chain, applies layout rules
-    ├── generate.py                  ← Python generator
-    ├── *.kicad_pro, *.kicad_sch
-    └── (.history/, render/, *.lck, *.kicad_prl all gitignored)
+└── kicad/                           ← symlink to ~/Downloads/kicad/ (gitignored)
 ```
 
-An earlier Electron+React MVP existed under `src/` and `electron/` but was deleted on 2026-05-24 once the project committed to KiCad-as-platform. If you need to resurrect it, recover from git history (commits `d070e42` through `234cd37`).
+**Convention for new work** (no parts or projects exist yet — populate per below):
+
+```
+datasheets/<MPN>/                    ← one folder per part
+   <MPN>.kicad_sym                   ← the symbol (canonical source)
+   <MPN>.pdf                         ← source datasheet (optional if not available)
+
+<project>/                           ← one folder per design
+   <project>.kicad_pro               ← project config JSON
+   <project>.kicad_sch               ← schematic — embeds lib_symbols self-contained
+   generate.py                       ← Python generator (optional)
+   (.history/, render/, *.lck, *.kicad_prl all gitignored)
+```
+
+An earlier Electron+React MVP existed under `src/` and `electron/` but was deleted on 2026-05-24 once the project committed to KiCad-as-platform. If you need to resurrect it, recover from git history (commits `d070e42` through `234cd37`). Three prior demo schematics (`TPS7E72_demo`, `LNA_LDO_chain`, `LDO_LNA_Demo`) and their part libraries were also deleted on the same date; recover via git history if ever needed.
 
 ## Running eeschema on this machine
 
@@ -70,7 +72,7 @@ Do NOT run `kicad-cli sch erc` — requires `_cvpcb.kiface` which isn't built. U
 
 **On a fresh machine** the dev build won't exist. Either rebuild KiCad at `~/Downloads/kicad/` (Ninja/CMake — see `kicad-launch-dev-build.md` for the cmake flags that worked on macOS) or `brew install kicad` and the schematics will open in the official install.
 
-Symbol library registration is not in the repo — `~/Library/Preferences/kicad/10.99/sym-lib-table` is per-user. The .kicad_sym files won't appear in eeschema's symbol browser until added there manually. (The demo schematics still open fine because they embed `lib_symbols` self-contained.)
+Symbol library registration is not in the repo — `~/Library/Preferences/kicad/10.99/sym-lib-table` is per-user. Any `.kicad_sym` files added later under `datasheets/<MPN>/` won't appear in eeschema's symbol browser until added there manually. Schematics generated from those symbols should embed `lib_symbols` self-contained so they open without library registration.
 
 ## Skills
 
@@ -122,12 +124,11 @@ Full 9-stage flow (for larger projects):
 
 ## Current state at handoff
 
-- **Last commit on `main`**: `556d14e` — adds `LDO_LNA_Demo/` and `kicad-launch-dev-build` skill.
-- **Symbols generated**: BFC237076104 (Vishay 100nF cap, imported from Altium .SchLib), TPS7E72 (TI LDO, 5-pin SOT-23), SKY67150-396LF (Skyworks LNA, 8-pin DFN + EP).
-- **Demo schematics**: `TPS7E72_demo/` (LDO at 3.3V out, no layout-rule pass), `LNA_LDO_chain/` (first LNA+LDO chain, pre-layout-rules, has known overlap issues), `LDO_LNA_Demo/` (regenerated chain with layout rules applied).
-- **Part libraries** (each part gets its own subfolder under `datasheets/` containing both the `.kicad_sym` and the source PDF, when available): `datasheets/TPS7E72/`, `datasheets/SKY67150-396LF/`, `datasheets/BFC237076104/` (no PDF for this one — converted from Altium .SchLib).
+- Clean slate as of 2026-05-24 — no parts, no demo schematics. Only the skills, the project docs, and the KiCad dev-build symlink remain.
 - **New parts going forward**: always create `datasheets/<MPN>/` and place both the `.kicad_sym` and `.pdf` inside it.
-- **Phase 1 Electron MVP**: deleted from the working tree on 2026-05-24. Recover from git history (`d070e42`–`234cd37`) only if needed.
+- **Recovery references** (if previous artifacts are ever needed):
+  - Phase 1 Electron MVP: commits `d070e42`–`234cd37`.
+  - Earlier demo projects (TPS7E72_demo, LNA_LDO_chain, LDO_LNA_Demo) + their part libraries (TPS7E72, SKY67150-396LF, BFC237076104): up to commit `add3cd6`.
 
 ## Things explicitly not in the repo
 
@@ -141,5 +142,4 @@ Full 9-stage flow (for larger projects):
 
 - Add a setup README so a fresh clone is one-shot runnable (covers `brew install kicad` or rebuild path, sym-lib-table registration).
 - Scaffold the artifact-template files (`spec.yaml`, `parts/<MPN>.json`, `nets.yaml`, `bom.yaml`) and a per-stage skill file so each pipeline chunk has a clear contract.
-- Regenerate `LNA_LDO_chain/` (the first version) under the new layout rules so all demo projects are consistent — `LDO_LNA_Demo/` is already the clean version.
 - Integrate the symbol/schematic generation pipeline into the user's internal platform with its own chat front end (waiting on the user to share that platform).
