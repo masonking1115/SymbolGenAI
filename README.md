@@ -11,13 +11,26 @@ See [PROJECT_MEMORY.md](PROJECT_MEMORY.md) for the full handoff doc (architectur
 ```
 .claude/skills/        per-stage skill docs (symbol gen, circuit gen, KiCad launch)
 PROJECT_MEMORY.md      project memory + handoff
-SymbolGenAI.md         original spec
+README.md
 ```
 
-**Convention for new work** (no parts or projects exist yet — the repo was reset to a clean slate on 2026-05-24):
+This is a clean-slate workspace as of 2026-05-24. No parts or designs exist yet.
 
-- `datasheets/<MPN>/` — one folder per part, containing the `.kicad_sym` and (if available) the source `.pdf`.
-- `<project>/` — one folder per design, containing `<project>.kicad_pro` + `<project>.kicad_sch` (+ optional `generate.py`).
+## Per-project convention — strict isolation
+
+Every design is its own self-contained folder. Two projects that use the same MPN each carry their own copy of the symbol and datasheet — no cross-contamination of data between projects.
+
+```
+<project>/
+   <project>.kicad_pro
+   <project>.kicad_sch                  schematic — embeds lib_symbols self-contained
+   datasheets/<MPN>/
+      <MPN>.kicad_sym                   parts used in this project only
+      <MPN>.pdf                         source datasheet (optional)
+   generate.py                          Python generator (optional)
+```
+
+Do not create a shared `datasheets/` at the repo root. The duplication is intentional: each project folder is a complete, transportable unit, and editing one project's symbols cannot silently affect another.
 
 ## Running a generated schematic in eeschema
 

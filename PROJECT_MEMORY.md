@@ -16,24 +16,24 @@ The repo was reset to a clean slate on 2026-05-24 to start a fresh project. Curr
 SymbolLibraryAI/
 ├── PROJECT_MEMORY.md                ← this file
 ├── README.md
-├── SymbolGenAI.md                   ← original project spec
 ├── .claude/skills/                  ← per-stage skill docs (see "Skills" below)
 └── kicad/                           ← symlink to ~/Downloads/kicad/ (gitignored)
 ```
 
-**Convention for new work** (no parts or projects exist yet — populate per below):
+**Convention for new work — strict per-project isolation, no cross-contamination of data between projects.** Every project is fully self-contained in its own top-level folder, including the parts it uses:
 
 ```
-datasheets/<MPN>/                    ← one folder per part
-   <MPN>.kicad_sym                   ← the symbol (canonical source)
-   <MPN>.pdf                         ← source datasheet (optional if not available)
-
-<project>/                           ← one folder per design
+<project>/                           ← one folder per design — self-contained
    <project>.kicad_pro               ← project config JSON
-   <project>.kicad_sch               ← schematic — embeds lib_symbols self-contained
+   <project>.kicad_sch               ← schematic — also embeds lib_symbols self-contained
+   datasheets/<MPN>/                 ← parts used in THIS project only
+      <MPN>.kicad_sym                ← the symbol (canonical source for this project)
+      <MPN>.pdf                      ← source datasheet (optional if not available)
    generate.py                       ← Python generator (optional)
    (.history/, render/, *.lck, *.kicad_prl all gitignored)
 ```
+
+Two projects that happen to use the same MPN each get their own copy of the symbol + datasheet under `<project>/datasheets/<MPN>/`. The duplication is intentional — it means a project folder is a complete, transportable unit, and an edit to one project's `.kicad_sym` cannot silently affect another project.
 
 An earlier Electron+React MVP existed under `src/` and `electron/` but was deleted on 2026-05-24 once the project committed to KiCad-as-platform. If you need to resurrect it, recover from git history (commits `d070e42` through `234cd37`). Three prior demo schematics (`TPS7E72_demo`, `LNA_LDO_chain`, `LDO_LNA_Demo`) and their part libraries were also deleted on the same date; recover via git history if ever needed.
 
@@ -72,7 +72,7 @@ Do NOT run `kicad-cli sch erc` — requires `_cvpcb.kiface` which isn't built. U
 
 **On a fresh machine** the dev build won't exist. Either rebuild KiCad at `~/Downloads/kicad/` (Ninja/CMake — see `kicad-launch-dev-build.md` for the cmake flags that worked on macOS) or `brew install kicad` and the schematics will open in the official install.
 
-Symbol library registration is not in the repo — `~/Library/Preferences/kicad/10.99/sym-lib-table` is per-user. Any `.kicad_sym` files added later under `datasheets/<MPN>/` won't appear in eeschema's symbol browser until added there manually. Schematics generated from those symbols should embed `lib_symbols` self-contained so they open without library registration.
+Symbol library registration is not in the repo — `~/Library/Preferences/kicad/10.99/sym-lib-table` is per-user. Any `.kicad_sym` files added later under `<project>/datasheets/<MPN>/` won't appear in eeschema's symbol browser until added there manually. Schematics generated from those symbols should embed `lib_symbols` self-contained so they open without library registration.
 
 ## Skills
 
@@ -125,7 +125,7 @@ Full 9-stage flow (for larger projects):
 ## Current state at handoff
 
 - Clean slate as of 2026-05-24 — no parts, no demo schematics. Only the skills, the project docs, and the KiCad dev-build symlink remain.
-- **New parts going forward**: always create `datasheets/<MPN>/` and place both the `.kicad_sym` and `.pdf` inside it.
+- **New parts going forward**: always create `<project>/datasheets/<MPN>/` inside the consuming project and place both the `.kicad_sym` and `.pdf` there. Never put a shared `datasheets/` at the repo root — each project owns its own copies.
 - **Recovery references** (if previous artifacts are ever needed):
   - Phase 1 Electron MVP: commits `d070e42`–`234cd37`.
   - Earlier demo projects (TPS7E72_demo, LNA_LDO_chain, LDO_LNA_Demo) + their part libraries (TPS7E72, SKY67150-396LF, BFC237076104): up to commit `add3cd6`.
