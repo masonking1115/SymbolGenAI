@@ -24,6 +24,7 @@ SymbolLibraryAI/
 
 ```
 <project>/                           ← one folder per design — self-contained
+   design_requirements.md            ← REQUIRED — see "design_requirements.md" below
    <project>.kicad_pro               ← project config JSON
    <project>.kicad_sch               ← schematic — also embeds lib_symbols self-contained
    datasheets/<MPN>/                 ← parts used in THIS project only
@@ -34,6 +35,38 @@ SymbolLibraryAI/
 ```
 
 Two projects that happen to use the same MPN each get their own copy of the symbol + datasheet under `<project>/datasheets/<MPN>/`. The duplication is intentional — it means a project folder is a complete, transportable unit, and an edit to one project's `.kicad_sym` cannot silently affect another project.
+
+The user may add more conventional files (e.g. `nets.yaml`, `bom.yaml`, `sim/`) as projects evolve — always inside the per-project folder. When in doubt, add new artifacts under the project, not the repo root.
+
+### `design_requirements.md`
+
+Every project's source of truth for **what is being designed and why**. Read this first when entering a project; everything downstream (symbol selection, BOM, layout decisions) is derived from it.
+
+Suggested sections (extend as needed):
+
+```markdown
+# <project> — Design Requirements
+
+## Application
+What this circuit is for, one paragraph.
+
+## Specs
+- Input range, output range, supply rails
+- Signal types and frequency/bandwidth
+- Environmental / form factor constraints
+- Any other top-level numerical targets
+
+## Parts to implement
+- <MPN-1> — role in the design
+- <MPN-2> — role in the design
+- (passives left abstract: "R1 — feedback divider top")
+
+## Topology / block diagram (optional)
+High-level signal flow if not obvious from "Parts".
+
+## Notes / open questions
+Anything unresolved that future work should flag back to the user.
+```
 
 An earlier Electron+React MVP existed under `src/` and `electron/` but was deleted on 2026-05-24 once the project committed to KiCad-as-platform. If you need to resurrect it, recover from git history (commits `d070e42` through `234cd37`). Three prior demo schematics (`TPS7E72_demo`, `LNA_LDO_chain`, `LDO_LNA_Demo`) and their part libraries were also deleted on the same date; recover via git history if ever needed.
 

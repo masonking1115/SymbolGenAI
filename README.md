@@ -22,6 +22,7 @@ Every design is its own self-contained folder. Two projects that use the same MP
 
 ```
 <project>/
+   design_requirements.md               REQUIRED — application, specs, parts list, notes
    <project>.kicad_pro
    <project>.kicad_sch                  schematic — embeds lib_symbols self-contained
    datasheets/<MPN>/
@@ -29,6 +30,8 @@ Every design is its own self-contained folder. Two projects that use the same MP
       <MPN>.pdf                         source datasheet (optional)
    generate.py                          Python generator (optional)
 ```
+
+`design_requirements.md` is the source of truth for what is being designed and why; read it first when entering a project. See PROJECT_MEMORY.md for the suggested section structure. Add more files (e.g. `nets.yaml`, `bom.yaml`, `sim/`) as a project evolves — always inside the per-project folder.
 
 Do not create a shared `datasheets/` at the repo root. The duplication is intentional: each project folder is a complete, transportable unit, and editing one project's symbols cannot silently affect another.
 
