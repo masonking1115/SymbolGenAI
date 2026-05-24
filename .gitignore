@@ -1,9 +1,3 @@
-node_modules
-dist
-dist-electron
-out
-.vite
-.cache
 .DS_Store
 *.log
 .env
