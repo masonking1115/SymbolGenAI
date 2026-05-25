@@ -21,6 +21,7 @@ from .shared import (
     no_connect,
     place_from_netlist,
     power_at,
+    text,
     wire,
 )
 from .validator import validate
@@ -31,6 +32,35 @@ def build_bias() -> Sheet:
     s = Sheet(name="bias", uuid=SHEET_UUIDS["bias"],
               page=PAGE_NUMBERS["bias"],
               title=f"{PROJECT_NAME} — Bias Generators")
+
+    # Sheet-level design-intent banner — visible in eeschema's editor view.
+    # Documents the bias-block POR safety story so a future reader doesn't
+    # have to reconstruct it from the topology + DNP flags.
+    s.add(text("BIAS BLOCK — POR FAIL-SAFE", 80, 60, size=1.5))
+    s.add(text(
+        "Q42/Q43 isolation NMOSes are POPULATED by default and DEFAULT-OFF",
+        80, 63, size=0.9,
+    ))
+    s.add(text(
+        "(gate pull-downs R44/R45). FPGA must assert BIAS_ISO0/1 HIGH to",
+        80, 64.5, size=0.9,
+    ))
+    s.add(text(
+        "deliver bias to Bobcat — a virgin MCP4728 (default VREF=2.048V,",
+        80, 66, size=0.9,
+    ))
+    s.add(text(
+        "code=0x000) cannot push uncontrolled current at POR.",
+        80, 67.5, size=0.9,
+    ))
+    s.add(text(
+        "R42/R43 (parallel 0Ω) are DNP — populate ONLY to disable the FPGA",
+        80, 69.5, size=0.9,
+    ))
+    s.add(text(
+        "isolation path (benchtop standalone use without FPGA control).",
+        80, 71, size=0.9,
+    ))
 
     # ===== Cluster A: MCP4728 DAC =====
     # Body: x ∈ [80, 151.12], y ∈ [80, 90.16].
@@ -181,6 +211,24 @@ def build_bias() -> Sheet:
         s.add(wire(iso_pd_x, nm_g[1], iso_pd_x, nm_g[1] + 1.27))
         s.add(wire(iso_pd_x, nm_g[1] + 8.89, iso_pd_x, nm_g[1] + 12.7))
         power_at(s, "GND", iso_pd_x, nm_g[1] + 12.7)
+
+        # Per-channel design-intent note below the BIAS_ISO pull-down cluster.
+        # Documents the fail-safe default so a future reader doesn't repopulate
+        # the parallel-jumper without realizing they're disabling the safeguard.
+        note_x = iso_pd_x - 6.35
+        note_y = nm_g[1] + 17.78
+        s.add(text(
+            f"FAIL-SAFE: BIAS_ISO{ch_idx} default-LOW (R{int(iso_pulldown_ref[1:])} pull-down)",
+            note_x, note_y, size=0.8,
+        ))
+        s.add(text(
+            f"→ {nmos_ref} OFF at POR → no bias to Bobcat until FPGA asserts HIGH.",
+            note_x, note_y + 1.5, size=0.8,
+        ))
+        s.add(text(
+            f"{par_jumper_ref} is DNP — populate ONLY to bypass FPGA control.",
+            note_x, note_y + 3.0, size=0.8,
+        ))
 
         # Op-amp V+ / V- power pins (unit 1 only — they're shared across units)
         if opa_unit == 1:

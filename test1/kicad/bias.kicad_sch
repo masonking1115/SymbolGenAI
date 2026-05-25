@@ -1660,6 +1660,13 @@
 		(embedded_fonts no)
 	)
   )
+  (text "BIAS BLOCK — POR FAIL-SAFE" (at 80.0 60.0 0) (effects (font (size 1.5 1.5)) (justify left)) (uuid "abe17d8b-8c64-5920-abe9-5911c8585763"))
+  (text "Q42/Q43 isolation NMOSes are POPULATED by default and DEFAULT-OFF" (at 80.0 63.0 0) (effects (font (size 0.9 0.9)) (justify left)) (uuid "17ba3a6d-941b-5239-b9c2-ab896b0eab22"))
+  (text "(gate pull-downs R44/R45). FPGA must assert BIAS_ISO0/1 HIGH to" (at 80.0 64.5 0) (effects (font (size 0.9 0.9)) (justify left)) (uuid "36bdad1f-794a-5009-b50d-24ab753e3ce2"))
+  (text "deliver bias to Bobcat — a virgin MCP4728 (default VREF=2.048V," (at 80.0 66.0 0) (effects (font (size 0.9 0.9)) (justify left)) (uuid "02d314c9-0699-5d9d-8ede-cbdb61b70673"))
+  (text "code=0x000) cannot push uncontrolled current at POR." (at 80.0 67.5 0) (effects (font (size 0.9 0.9)) (justify left)) (uuid "9dba1256-fcd3-5579-a7ce-747d2cc120f3"))
+  (text "R42/R43 (parallel 0Ω) are DNP — populate ONLY to disable the FPGA" (at 80.0 69.5 0) (effects (font (size 0.9 0.9)) (justify left)) (uuid "2b291260-a590-575c-98e2-7eb5537de3da"))
+  (text "isolation path (benchtop standalone use without FPGA control)." (at 80.0 71.0 0) (effects (font (size 0.9 0.9)) (justify left)) (uuid "8eedbc4f-6289-5b27-81b2-438b358063fd"))
   (symbol
     (lib_id "Lib:MCP4728")
     (at 80.0 80.0 0)
@@ -1839,7 +1846,7 @@
   (symbol
     (lib_id "Lib:2N7002")
     (at 250.0 115.08 0)
-    (unit 1) (in_bom yes) (on_board yes) (dnp yes)
+    (unit 1) (in_bom yes) (on_board yes) (dnp no)
     (uuid "f6c6423e-a26e-591a-881e-a7c38c63d7f5")
     (property "Reference" "Q42" (at 250.0 110.0 0) (effects (font (size 1.27 1.27))))
     (property "Value" "2N7002" (at 250.0 120.16 0) (effects (font (size 1.27 1.27))))
@@ -1857,7 +1864,7 @@
   (symbol
     (lib_id "Device:R")
     (at 265.24 115.08 0)
-    (unit 1) (in_bom yes) (on_board yes) (dnp no)
+    (unit 1) (in_bom yes) (on_board yes) (dnp yes)
     (uuid "056d62f6-074d-58af-b267-e708d18de4a3")
     (property "Reference" "R42" (at 267.78 113.81 0) (effects (font (size 1.27 1.27))))
     (property "Value" "0" (at 267.78 116.35 0) (effects (font (size 1.27 1.27))))
@@ -1909,6 +1916,9 @@
     (instances
       (project "test1"
         (path "/4ed7a046-ef33-57d9-8730-321c05965af3/ddf1c49f-55ac-530a-9ee4-38ad9d14caf8" (reference "#PWRe0ee7a24") (unit 1)))))
+  (text "FAIL-SAFE: BIAS_ISO0 default-LOW (R44 pull-down)" (at 239.84 132.86 0) (effects (font (size 0.8 0.8)) (justify left)) (uuid "8dd131be-e645-585d-999b-cee05b35f18f"))
+  (text "→ Q42 OFF at POR → no bias to Bobcat until FPGA asserts HIGH." (at 239.84 134.36 0) (effects (font (size 0.8 0.8)) (justify left)) (uuid "ce98ba91-86a3-5842-8de9-2cdedc726d9e"))
+  (text "R42 is DNP — populate ONLY to bypass FPGA control." (at 239.84 135.86 0) (effects (font (size 0.8 0.8)) (justify left)) (uuid "9af569e0-3e29-5431-8b1a-40d6cbd15c5c"))
   (wire (pts (xy 215.16 104.92) (xy 215.16 99.84)) (stroke (width 0) (type default)) (uuid "d631cd94-a866-5291-92b8-9493e2151660"))
   (symbol
     (lib_id "power:+3V3")
@@ -2052,7 +2062,7 @@
   (symbol
     (lib_id "Lib:2N7002")
     (at 365.0 115.08 0)
-    (unit 1) (in_bom yes) (on_board yes) (dnp yes)
+    (unit 1) (in_bom yes) (on_board yes) (dnp no)
     (uuid "926d9425-71e7-5c1e-a47b-8c27fc403f8e")
     (property "Reference" "Q43" (at 365.0 110.0 0) (effects (font (size 1.27 1.27))))
     (property "Value" "2N7002" (at 365.0 120.16 0) (effects (font (size 1.27 1.27))))
@@ -2070,7 +2080,7 @@
   (symbol
     (lib_id "Device:R")
     (at 380.24 115.08 0)
-    (unit 1) (in_bom yes) (on_board yes) (dnp no)
+    (unit 1) (in_bom yes) (on_board yes) (dnp yes)
     (uuid "d4e57d8b-f9a2-5451-a2a0-3a803adddceb")
     (property "Reference" "R43" (at 382.78 113.81 0) (effects (font (size 1.27 1.27))))
     (property "Value" "0" (at 382.78 116.35 0) (effects (font (size 1.27 1.27))))
@@ -2122,6 +2132,9 @@
     (instances
       (project "test1"
         (path "/4ed7a046-ef33-57d9-8730-321c05965af3/ddf1c49f-55ac-530a-9ee4-38ad9d14caf8" (reference "#PWRad49c2e3") (unit 1)))))
+  (text "FAIL-SAFE: BIAS_ISO1 default-LOW (R45 pull-down)" (at 354.84 132.86 0) (effects (font (size 0.8 0.8)) (justify left)) (uuid "965231a9-fb8b-5504-a236-5aa1f7989d7a"))
+  (text "→ Q43 OFF at POR → no bias to Bobcat until FPGA asserts HIGH." (at 354.84 134.36 0) (effects (font (size 0.8 0.8)) (justify left)) (uuid "51e3beda-4e66-50d4-b4f4-b8d5b25f3956"))
+  (text "R43 is DNP — populate ONLY to bypass FPGA control." (at 354.84 135.86 0) (effects (font (size 0.8 0.8)) (justify left)) (uuid "e385f6d5-0131-5fe8-a96c-ddaf351ec25d"))
   (symbol
     (lib_id "Device:C")
     (at 310.0 95.0 0)

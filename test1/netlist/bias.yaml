@@ -47,13 +47,13 @@ parts:
     lib_id: Lib:2N7002
     value: "2N7002"
     footprint: Package_TO_SOT_SMD:SOT-23
-    dnp: true
-    notes: Optional series isolator (E7) — depop R42 + populate to activate
+    notes: "Series isolator — POPULATED by default. Default-off (R44 gate pull-down) so a virgin MCP4728 cannot push bias into Bobcat until FPGA asserts BIAS_ISO0 HIGH (W2 fail-safe)."
   R42:
     lib_id: Device:R
     value: "0"
     footprint: Resistor_SMD:R_0402_1005Metric
-    notes: Channel-0 parallel 0Ω jumper across Q42 D-S (populated default)
+    dnp: true
+    notes: "Parallel 0Ω override across Q42 D-S — DNP by default. Populate ONLY to disable FPGA isolation and force the bias path closed (e.g. for benchtop standalone use without FPGA control)."
   R44:
     lib_id: Device:R
     value: 10k
@@ -78,12 +78,13 @@ parts:
     lib_id: Lib:2N7002
     value: "2N7002"
     footprint: Package_TO_SOT_SMD:SOT-23
-    dnp: true
+    notes: "Series isolator — POPULATED by default. Default-off (R45 gate pull-down) so a virgin MCP4728 cannot push bias into Bobcat until FPGA asserts BIAS_ISO1 HIGH (W2 fail-safe)."
   R43:
     lib_id: Device:R
     value: "0"
     footprint: Resistor_SMD:R_0402_1005Metric
-    notes: Channel-1 parallel 0Ω jumper across Q43 D-S (populated default)
+    dnp: true
+    notes: "Parallel 0Ω override across Q43 D-S — DNP by default. Populate ONLY to disable FPGA isolation."
   R45:
     lib_id: Device:R
     value: 10k

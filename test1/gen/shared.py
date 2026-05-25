@@ -233,6 +233,24 @@ def no_connect(x, y) -> str:
     return f'  (no_connect (at {x} {y}) (uuid "{uid(f"nc_{x}_{y}")}"))'
 
 
+def text(body: str, x, y, *, size: float = 1.0, angle: int = 0,
+         justify: str = "left") -> str:
+    """Free-form text annotation. Use for design-intent comments visible
+    in eeschema that should NOT participate in electrical connectivity
+    (unlike labels, which form nets). Tag is `(text …)` in KiCad sch v9+.
+
+    body: text shown — escape internal double-quotes via \\".
+    size: font size in mm; 1.0 mm keeps notes legible without
+          competing with 1.27 mm net-name labels."""
+    x, y = _r(x), _r(y)
+    # Tag the uuid with the first 40 chars of body so two notes at the
+    # same coord produce different deterministic UUIDs.
+    tag = body[:40].replace(" ", "_")
+    return (f'  (text "{body}" (at {x} {y} {angle}) '
+            f'(effects (font (size {size} {size})) (justify {justify})) '
+            f'(uuid "{uid(f"text_{tag}_{x}_{y}")}"))')
+
+
 # ---------------------------------------------------------------------------
 # Symbol placement
 # ---------------------------------------------------------------------------
