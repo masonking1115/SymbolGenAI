@@ -16,6 +16,14 @@ Run flow:
   2. (Claude in chat) runs Agent per IC                 → semantic_findings.json
   3. `python3 run_review.py --semantic-merge`           → merges into error_log.md
 
+Tolerant JSON extraction
+------------------------
+Agents sometimes wrap their JSON in markdown fences or prose preamble.
+`parse_agent_response(text)` finds the last JSON array in the response
+(agents tend to put the final answer at the end), strips code fences,
+and returns a list of dicts. Use `merge_responses(list_of_text)` to
+fold multiple agent outputs into one findings JSON file.
+
 The manifest entries are deliberately compact — each Agent gets the
 exact file paths to read, the exact question to answer, and a
 schema for its response.
@@ -24,6 +32,7 @@ schema for its response.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -125,14 +134,121 @@ Severity rules
 --------------
   ERROR   — board won't function or risks the DUT
   WARNING — design violates a datasheet recommendation or req-doc statement
-  INFO    — observation only; no fix needed
+  INFO    — non-obvious observation worth recording (e.g. a subtle
+            assembly/provisioning step, an intentional unusual choice).
+            DO NOT emit INFO findings whose only content is "this is
+            correct" — silence means correct. Reserve INFO for noteworthy
+            facts a future reviewer wouldn't derive at a glance.
+
+Verify-before-flag
+------------------
+Before emitting a finding, re-read the cited datasheet section in full
+context. If the datasheet permits the observed behavior (e.g. "may be
+left floating if unused"), DO NOT flag it. Hallucinated datasheet
+quotes are the most common failure mode here — quote literally.
 
 Use stable IDs so re-runs produce the same finding identifier when the
 underlying issue is the same. Bad: "SEM_BAD_WIRING_1". Good:
 "SEM_PG_NO_PULLUP" or "SEM_VREF_WRONG_SOURCE".
 
-Reply with ONLY the JSON list, no prose.
+Reply with ONLY the JSON list (literal `[]` if no findings), no prose,
+no markdown fences, no preamble, no trailing commentary.
 """
+
+
+# ---------------------------------------------------------------------------
+# Tolerant JSON extraction — agents sometimes wrap in fences or prose.
+# ---------------------------------------------------------------------------
+
+_FENCE_RE = re.compile(r"```(?:json)?\s*([\s\S]*?)```")
+
+
+def parse_agent_response(text: str) -> list[dict]:
+    """Pull a JSON list out of an agent's free-form response.
+
+    Rule: prefer the RIGHTMOST parseable JSON array (fenced or bare).
+    Agents that self-correct ("Idea A → reconsider → final answer")
+    put the real answer at the end. Picking the first match would
+    snap up an abandoned proposal.
+
+    Returns [] if nothing parses. Never raises.
+    """
+    text = text.strip()
+    if not text:
+        return []
+    try:
+        v = json.loads(text)
+        if isinstance(v, list):
+            return v
+    except json.JSONDecodeError:
+        pass
+
+    # Collect every candidate JSON-array span (fenced bodies + bare
+    # `[…]` substrings), tagged with their start position.
+    candidates: list[tuple[int, str]] = []
+    for m in _FENCE_RE.finditer(text):
+        candidates.append((m.start(), m.group(1).strip()))
+    rb = text.rfind("]")
+    while rb != -1:
+        depth = 0
+        for i in range(rb, -1, -1):
+            c = text[i]
+            if c == "]":
+                depth += 1
+            elif c == "[":
+                depth -= 1
+                if depth == 0:
+                    candidates.append((i, text[i:rb + 1]))
+                    break
+        rb = text.rfind("]", 0, rb)
+
+    # Try rightmost-first, but only accept candidates whose parsed value
+    # is the FINDINGS list — i.e. empty list, or list-of-dicts. Otherwise
+    # an inner `["U20"]` (component_refs) gets snapped up before the
+    # outer findings array.
+    candidates.sort(key=lambda c: -c[0])
+    for _, body in candidates:
+        try:
+            v = json.loads(body)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(v, list):
+            continue
+        if v and not all(isinstance(item, dict) for item in v):
+            continue
+        return v
+    return []
+
+
+def merge_responses(responses: list[str], *,
+                    drop_confirmatory_info: bool = True) -> list[dict]:
+    """Parse a batch of agent responses into a deduped finding list.
+
+    Dedupes by (rule_id, subject). Optionally drops INFO findings whose
+    title or fix indicates a "this is correct" confirmation — a backstop
+    in case an agent ignores the prompt rule.
+    """
+    seen: dict[tuple[str, str], dict] = {}
+    for text in responses:
+        for f in parse_agent_response(text):
+            if not isinstance(f, dict):
+                continue
+            key = (f.get("rule_id", ""), f.get("subject", ""))
+            if drop_confirmatory_info and f.get("severity") == "INFO":
+                blob = (f.get("title", "") + " " + f.get("fix", "")).lower()
+                if any(p in blob for p in (
+                    "is correct", "no action required", "no action needed",
+                    "design is correct", "correctly", "as expected",
+                )):
+                    continue
+            seen[key] = f
+    return list(seen.values())
+
+
+def write_findings(findings: list[dict]) -> Path:
+    """Write the merged findings list to disk for run_review.py to consume."""
+    FINDINGS_PATH.write_text(json.dumps(findings, indent=2))
+    return FINDINGS_PATH
 
 
 def build_manifest(idx: RequirementsIndex) -> list[ReviewTask]:
