@@ -1,0 +1,19 @@
+(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (generator_version "10.99")
+  (uuid "059bce26-e22e-55b8-805e-999a0610e155")
+  (paper "A3")
+  (title_block
+    (title "test1 — Connectors / Breakouts")
+    (date "")
+    (rev "1")
+  )
+  (lib_symbols
+
+  )
+
+  (sheet_instances
+    (path "/" (page "7"))
+  )
+)

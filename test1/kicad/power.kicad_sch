@@ -1,0 +1,19 @@
+(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (generator_version "10.99")
+  (uuid "45af8917-b3aa-56de-8c9b-8d649d910e5f")
+  (paper "A3")
+  (title_block
+    (title "test1 — Power")
+    (date "")
+    (rev "1")
+  )
+  (lib_symbols
+
+  )
+
+  (sheet_instances
+    (path "/" (page "3"))
+  )
+)

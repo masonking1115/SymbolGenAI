@@ -1,0 +1,19 @@
+(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (generator_version "10.99")
+  (uuid "e2abb566-d978-5c75-82ca-1f71ca6b792e")
+  (paper "A3")
+  (title_block
+    (title "test1 — FMC Connector")
+    (date "")
+    (rev "1")
+  )
+  (lib_symbols
+
+  )
+
+  (sheet_instances
+    (path "/" (page "2"))
+  )
+)

@@ -1,0 +1,19 @@
+(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (generator_version "10.99")
+  (uuid "e6b90fa2-2dfc-5319-a99a-2ebf8a1933a0")
+  (paper "A3")
+  (title_block
+    (title "test1 — Bobcat DUT")
+    (date "")
+    (rev "1")
+  )
+  (lib_symbols
+
+  )
+
+  (sheet_instances
+    (path "/" (page "4"))
+  )
+)

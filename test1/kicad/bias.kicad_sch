@@ -1,0 +1,19 @@
+(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (generator_version "10.99")
+  (uuid "ddf1c49f-55ac-530a-9ee4-38ad9d14caf8")
+  (paper "A3")
+  (title_block
+    (title "test1 — Bias Generators")
+    (date "")
+    (rev "1")
+  )
+  (lib_symbols
+
+  )
+
+  (sheet_instances
+    (path "/" (page "6"))
+  )
+)
