@@ -1,0 +1,167 @@
+# Bias sheet — MCP4728 quad I²C DAC + 2× channel V-to-I bias loop.
+#
+# Each bias channel is:
+#   V_DAC (MCP4728 VOUTx) → OPA2388 +IN → opamp drives PMOS gate → PMOS source
+#   ties to +3V3 through a 5.11 kΩ sense R, opamp -IN feedback samples the
+#   source node. PMOS drain → optional 2N7002 NMOS isolator (DNP) → BIASx out.
+#   A parallel 0Ω jumper across NMOS D-S keeps the bias path closed when the
+#   NMOS is DNP'd (default). 10 kΩ pull-down on each BIAS_ISO gate ensures
+#   FET-OFF at POR when the NMOS is populated (E7).
+#
+# Note: U41 is a dual op-amp (OPA2388) — unit 1 drives channel 0, unit 2
+# drives channel 1. YAML members use `U41:u2.<pin>` for unit 2.
+
+parts:
+  # ===== Quad I²C DAC =====
+  U40:
+    lib_id: Lib:MCP4728
+    value: MCP4728
+    footprint: Package_DFN_QFN:VQFN-10-1EP_3x3mm_P0.5mm_EP1.6x1.6mm
+    notes: External VREF=VDD; EEPROM default code 0xFFF → bias OFF at POR
+  C40:
+    lib_id: Device:C
+    value: 0.1uF
+    footprint: Capacitor_SMD:C_0402_1005Metric
+    notes: VDD decoupling per 22187E Figure 2-1
+
+  # ===== Dual RRIO op-amp (one part, two units) =====
+  U41:
+    lib_id: Lib:OPA2388
+    value: OPA2388
+    footprint: Package_SO:SOIC-8_3.9x4.9mm_P1.27mm
+    units: [1, 2]
+    notes: Unit 1 = channel 0 op-amp, unit 2 = channel 1 op-amp; V+/V- pins live in unit 1 only.
+
+  # ===== Channel 0 (BIAS0) =====
+  Q40:
+    lib_id: Lib:PMZ1200UPEYL
+    value: PMZ1200UPEYL
+    footprint: Package_DFN_QFN:DFN-3-1EP_1.0x1.0mm_P0.65mm_EP0.5x0.5mm
+    notes: PMOS pass element for channel 0
+  R40:
+    lib_id: Device:R
+    value: 5.11k 0.1%
+    footprint: Resistor_SMD:R_0402_1005Metric
+    notes: Channel-0 sense R (sets 0–646 µA full-scale)
+  Q42:
+    lib_id: Lib:2N7002
+    value: "2N7002"
+    footprint: Package_TO_SOT_SMD:SOT-23
+    dnp: true
+    notes: Optional series isolator (E7) — depop R42 + populate to activate
+  R42:
+    lib_id: Device:R
+    value: "0"
+    footprint: Resistor_SMD:R_0402_1005Metric
+    notes: Channel-0 parallel 0Ω jumper across Q42 D-S (populated default)
+  R44:
+    lib_id: Device:R
+    value: 10k
+    footprint: Resistor_SMD:R_0402_1005Metric
+    notes: BIAS_ISO0 gate pull-down (FET OFF at POR when Q42 populated)
+  C42:
+    lib_id: Device:C
+    value: 0.1uF
+    footprint: Capacitor_SMD:C_0402_1005Metric
+    notes: Channel-0 +3V3 decoupling near opamp
+
+  # ===== Channel 1 (BIAS1) =====
+  Q41:
+    lib_id: Lib:PMZ1200UPEYL
+    value: PMZ1200UPEYL
+    footprint: Package_DFN_QFN:DFN-3-1EP_1.0x1.0mm_P0.65mm_EP0.5x0.5mm
+  R41:
+    lib_id: Device:R
+    value: 5.11k 0.1%
+    footprint: Resistor_SMD:R_0402_1005Metric
+  Q43:
+    lib_id: Lib:2N7002
+    value: "2N7002"
+    footprint: Package_TO_SOT_SMD:SOT-23
+    dnp: true
+  R43:
+    lib_id: Device:R
+    value: "0"
+    footprint: Resistor_SMD:R_0402_1005Metric
+    notes: Channel-1 parallel 0Ω jumper across Q43 D-S (populated default)
+  R45:
+    lib_id: Device:R
+    value: 10k
+    footprint: Resistor_SMD:R_0402_1005Metric
+    notes: BIAS_ISO1 gate pull-down
+  C43:
+    lib_id: Device:C
+    value: 0.1uF
+    footprint: Capacitor_SMD:C_0402_1005Metric
+
+nets:
+  # ===== Power-symbol nets =====
+  +3V3:
+    type: power
+    members:
+      - U40.1        # MCP4728 VDD
+      - C40.1        # MCP4728 VDD decoupling top
+      - U41:u1.8     # OPA2388 V+ (shared, lives in unit-1 drawing only)
+      - C42.1        # channel-0 +3V3 decoupling top
+      - C43.1        # channel-1 +3V3 decoupling top
+      - R40.1        # ch-0 sense R top → +3V3
+      - R41.1        # ch-1 sense R top → +3V3
+  GND:
+    type: power
+    members:
+      - U40.4        # MCP4728 *LDAC tied to GND
+      - U40.10       # MCP4728 VSS
+      - C40.2        # MCP4728 VDD decoupling bot
+      - U41:u1.4     # OPA2388 V- (shared, unit-1 drawing only)
+      - C42.2        # channel-0 +3V3 decoupling bot
+      - C43.2        # channel-1 +3V3 decoupling bot
+      - R44.2        # ch-0 BIAS_ISO pull-down bot
+      - R45.2        # ch-1 BIAS_ISO pull-down bot
+
+  # ===== Hier-label nets (Bias → Bobcat) =====
+  BIAS0: { type: hier, direction: output, members: [Q42.2, R42.2] }   # NMOS source + 0Ω jumper rail side
+  BIAS1: { type: hier, direction: output, members: [Q43.2, R43.2] }
+
+  # ===== Global-label nets =====
+  SCL: { type: global, direction: bidirectional, members: [U40.2] }
+  SDA: { type: global, direction: bidirectional, members: [U40.3] }
+  BIAS_ISO0: { type: global, direction: input, members: [Q42.1, R44.1] }
+  BIAS_ISO1: { type: global, direction: input, members: [Q43.1, R45.1] }
+
+  # ===== Internal nets (unlabeled local connectivity) =====
+  internal_VOUTA_to_OPA_pos:
+    type: internal
+    # MCP4728 VOUTA → OPA2388 unit-1 +IN (pin 3)
+    members: [U40.6, U41:u1.3]
+  internal_VOUTB_to_OPA_pos:
+    type: internal
+    # MCP4728 VOUTB → OPA2388 unit-2 +IN (pin 5)
+    members: [U40.7, U41:u2.5]
+  internal_OPA0_out_to_PMOS_gate:
+    type: internal
+    # OPA2388 unit-1 OUT (pin 1) → PMOS Q40 gate (pin 1)
+    members: [U41:u1.1, Q40.1]
+  internal_OPA1_out_to_PMOS_gate:
+    type: internal
+    # OPA2388 unit-2 OUT (pin 7) → PMOS Q41 gate (pin 1)
+    members: [U41:u2.7, Q41.1]
+  internal_PMOS0_source_feedback:
+    type: internal
+    # PMOS Q40 source ↔ R40 bot (sense R) ↔ OPA2388 unit-1 -IN (pin 2)
+    members: [Q40.2, R40.2, U41:u1.2]
+  internal_PMOS1_source_feedback:
+    type: internal
+    members: [Q41.2, R41.2, U41:u2.6]
+  internal_BIAS0_drain_stub:
+    type: internal
+    # PMOS Q40 drain → Q42 NMOS drain, also bridged by R42 (0Ω parallel jumper).
+    members: [Q40.3, Q42.3, R42.1]
+  internal_BIAS1_drain_stub:
+    type: internal
+    members: [Q41.3, Q43.3, R43.1]
+
+  # MCP4728 pins NC'd in the schematic (validator skips no_connect markers,
+  # so leave these unenumerated):
+  #   U40.5  RDY/*BSY  — NC
+  #   U40.8  VOUTC     — unused, NC
+  #   U40.9  VOUTD     — unused, NC

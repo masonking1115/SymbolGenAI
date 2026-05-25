@@ -1,0 +1,154 @@
+# Bobcat sheet — DUT (40-QFN) plus per-pin decoupling, series-R rail
+# isolators, and the SPI/control pull network.
+#
+# Functional groups:
+#   A. U20 (Bobcat) — exposed pad to GND, top/bot/left/right pins exit to
+#      labels per direction (see Bobcat PDF page 4).
+#   B. VDDD decoupling — per-pin caps C20/C21, no horizontal rail in the
+#      SPI signal-exit lane (lessons memory §VDDD).
+#   C. VDDIO decoupling — 5×0.1µF + 1×1µF on a single cap row (W2).
+#   D. VDDA1 path — series 0Ω R20 + decoupling C22 (E5/datasheet).
+#   E. VDDA2 path — series 0Ω R21 + decoupling C23 (joins pins 26+27).
+#   F. SPI pull-down/up bank — MOSI/SCLK/SPI_DMODE pull-down (E3);
+#      CS_L/RESET_N pull-up to +VDDIO (E4); MISO has no pull.
+#      OSC_EN/WEIGHT_EN/SAMPLE_TRIG pull-down (E3) in OWT bank.
+#      GPIO0–3 pull-down (E3) in GPIO bank.
+#   G. Label exits: SAMPLE_OUT*, CLK_OUT*, BIAS0/1, etc.
+
+parts:
+  U20:
+    lib_id: Lib:Bobcat
+    value: Bobcat
+    footprint: Bobcat:QFN-40_5x5mm_P0.4mm_EP3.5mm
+    notes: 40-QFN DUT, 5×5 mm, 0.4 mm pitch, EP=GND
+
+  # VDDD decoupling (pins 12 and 20)
+  C20: { lib_id: Device:C, value: 0.1uF, footprint: Capacitor_SMD:C_0402_1005Metric, notes: VDDD pin 12 per-pin cap }
+  C21: { lib_id: Device:C, value: 1uF,   footprint: Capacitor_SMD:C_0402_1005Metric, notes: VDDD pin 20 per-pin cap }
+
+  # VDDA1 path (pin 1)
+  R20: { lib_id: Device:R, value: "0",   footprint: Resistor_SMD:R_0402_1005Metric, notes: Series 0Ω on VDDA1 }
+  C22: { lib_id: Device:C, value: 0.1uF, footprint: Capacitor_SMD:C_0402_1005Metric, notes: VDDA1 decoupling }
+
+  # VDDA2 path (pins 26+27 tied)
+  R21: { lib_id: Device:R, value: "0",   footprint: Resistor_SMD:R_0402_1005Metric, notes: Series 0Ω on VDDA2 }
+  C23: { lib_id: Device:C, value: 0.1uF, footprint: Capacitor_SMD:C_0402_1005Metric, notes: VDDA2 decoupling }
+
+  # VDDIO bulk + per-pin decoupling row (W2 — 5×0.1µF + 1×1µF on +VDDIO)
+  C24: { lib_id: Device:C, value: 0.1uF, footprint: Capacitor_SMD:C_0402_1005Metric }
+  C25: { lib_id: Device:C, value: 1uF,   footprint: Capacitor_SMD:C_0402_1005Metric, notes: VDDIO bulk cap }
+  C26: { lib_id: Device:C, value: 0.1uF, footprint: Capacitor_SMD:C_0402_1005Metric }
+  C27: { lib_id: Device:C, value: 0.1uF, footprint: Capacitor_SMD:C_0402_1005Metric }
+  C28: { lib_id: Device:C, value: 0.1uF, footprint: Capacitor_SMD:C_0402_1005Metric }
+
+  # SPI / control pulls (E3, E4)
+  R22: { lib_id: Device:R, value: 10k, footprint: Resistor_SMD:R_0402_1005Metric, notes: MOSI pull-down }
+  R23: { lib_id: Device:R, value: 10k, footprint: Resistor_SMD:R_0402_1005Metric, notes: SCLK pull-down }
+  R24: { lib_id: Device:R, value: 10k, footprint: Resistor_SMD:R_0402_1005Metric, notes: CS_L pull-up to +VDDIO }
+  R25: { lib_id: Device:R, value: 10k, footprint: Resistor_SMD:R_0402_1005Metric, notes: SPI_DMODE pull-down }
+  R26: { lib_id: Device:R, value: 10k, footprint: Resistor_SMD:R_0402_1005Metric, notes: RESET_N pull-up to +VDDIO }
+  R27: { lib_id: Device:R, value: 10k, footprint: Resistor_SMD:R_0402_1005Metric, notes: OSC_EN pull-down }
+  R28: { lib_id: Device:R, value: 10k, footprint: Resistor_SMD:R_0402_1005Metric, notes: WEIGHT_EN pull-down }
+  R29: { lib_id: Device:R, value: 10k, footprint: Resistor_SMD:R_0402_1005Metric, notes: SAMPLE_TRIG pull-down }
+  R30: { lib_id: Device:R, value: 10k, footprint: Resistor_SMD:R_0402_1005Metric, notes: GPIO3 pull-down }
+  R31: { lib_id: Device:R, value: 10k, footprint: Resistor_SMD:R_0402_1005Metric, notes: GPIO2 pull-down }
+  R32: { lib_id: Device:R, value: 10k, footprint: Resistor_SMD:R_0402_1005Metric, notes: GPIO1 pull-down }
+  R33: { lib_id: Device:R, value: 10k, footprint: Resistor_SMD:R_0402_1005Metric, notes: GPIO0 pull-down }
+
+nets:
+  # ===== Power-symbol nets =====
+  GND:
+    type: power
+    members:
+      - U20.41   # exposed pad
+      - C20.2    # VDDD pin-12 cap return
+      - C21.2    # VDDD pin-20 cap return
+      - C22.2    # VDDA1 cap return
+      - C23.2    # VDDA2 cap return
+      - C24.2    # VDDIO bulk row returns
+      - C25.2
+      - C26.2
+      - C27.2
+      - C28.2
+      - R22.2    # MOSI pull-down
+      - R23.2    # SCLK pull-down
+      - R25.2    # SPI_DMODE pull-down
+      - R27.2    # OSC_EN pull-down
+      - R28.2    # WEIGHT_EN pull-down
+      - R29.2    # SAMPLE_TRIG pull-down
+      - R30.2    # GPIO3 pull-down
+      - R31.2    # GPIO2 pull-down
+      - R32.2    # GPIO1 pull-down
+      - R33.2    # GPIO0 pull-down
+  +VDDD:
+    type: power
+    # Two VDDD pins on Bobcat, each with its own local +VDDD power symbol +
+    # cap top. No horizontal rail in the SPI exit lane — see lessons memory.
+    members: [U20.12, U20.20, C20.1, C21.1]
+  +VDDA1:
+    type: power
+    # Rail-side of R20 (R20 sits LEFT of chip → pin 2 is rail-side).
+    members: [R20.2]
+  +VDDA2:
+    type: power
+    # Rail-side of R21 (R21 sits RIGHT of chip → pin 1 is rail-side, opposite of R20).
+    members: [R21.1]
+  +VDDIO:
+    type: power
+    members:
+      - U20.7    # left edge VDDIO
+      - U20.13   # bottom edge VDDIO
+      - U20.22   # right edge VDDIO
+      - U20.33   # top edge VDDIO
+      - U20.34   # top edge VDDIO
+      - C24.1    # bulk row tops
+      - C25.1
+      - C26.1
+      - C27.1
+      - C28.1
+      - R24.1    # CS_L pull-up top
+      - R26.1    # RESET_N pull-up top
+
+  # ===== Hier-label nets =====
+  CLK_OUT0: { type: hier, direction: output, members: [U20.36] }
+  CLK_OUT1: { type: hier, direction: output, members: [U20.35] }
+  CLK_OUT2: { type: hier, direction: output, members: [U20.32] }
+  CLK_OUT3: { type: hier, direction: output, members: [U20.31] }
+  GPIO0:    { type: hier, direction: output, members: [U20.40, R33.1] }
+  GPIO1:    { type: hier, direction: output, members: [U20.39, R32.1] }
+  GPIO2:    { type: hier, direction: output, members: [U20.38, R31.1] }
+  GPIO3:    { type: hier, direction: output, members: [U20.37, R30.1] }
+  BIAS0:    { type: hier, direction: input,  members: [U20.28] }
+  BIAS1:    { type: hier, direction: input,  members: [U20.29] }
+
+  # ===== Global-label nets (Bobcat ↔ FMC LA bank via 0Ω) =====
+  MOSI:        { type: global, direction: input,  members: [U20.14, R22.1] }
+  MISO:        { type: global, direction: output, members: [U20.15] }
+  SCLK:        { type: global, direction: input,  members: [U20.16, R23.1] }
+  CS_L:        { type: global, direction: input,  members: [U20.17, R24.2] }
+  SPI_DMODE:   { type: global, direction: input,  members: [U20.18, R25.1] }
+  RESET_N:     { type: global, direction: input,  members: [U20.19, R26.2] }
+  OSC_EN:      { type: global, direction: output, members: [U20.23, R27.1] }
+  WEIGHT_EN:   { type: global, direction: output, members: [U20.24, R28.1] }
+  SAMPLE_TRIG: { type: global, direction: output, members: [U20.25, R29.1] }
+  SAMPLE_OUTV: { type: global, direction: output, members: [U20.2]  }
+  SAMPLE_OUT0: { type: global, direction: output, members: [U20.3]  }
+  SAMPLE_OUT1: { type: global, direction: output, members: [U20.4]  }
+  SAMPLE_OUT2: { type: global, direction: output, members: [U20.5]  }
+  SAMPLE_OUT3: { type: global, direction: output, members: [U20.6]  }
+  SAMPLE_OUT4: { type: global, direction: output, members: [U20.8]  }
+  SAMPLE_OUT5: { type: global, direction: output, members: [U20.9]  }
+  SAMPLE_OUT6: { type: global, direction: output, members: [U20.10] }
+  SAMPLE_OUT7: { type: global, direction: output, members: [U20.11] }
+
+  # ===== Internal nets (unlabeled local connectivity) =====
+  internal_VDDA1_path:
+    type: internal
+    # Pin 1 → R20 in series → +VDDA1 power symbol. The chip-side of R20 is
+    # also where C22 decoupling taps in.
+    members: [U20.1, R20.1, C22.1]
+  internal_VDDA2_path:
+    type: internal
+    # Pins 26+27 tied at chip side → R21 pin 2 (chip-side) → R21 pin 1 (rail) → +VDDA2.
+    # C23 (VDDA2 decoupling) taps on the chip side of R21.
+    members: [U20.26, U20.27, R21.2, C23.1]

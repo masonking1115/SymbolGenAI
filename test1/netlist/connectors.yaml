@@ -1,0 +1,71 @@
+# Connectors sheet — SMAs (CLK_OUT* + OSC/WEIGHT/TRIG), GPIO 1×4 header,
+# GND test clips. Most nets exit via hier_label or global_label; the
+# component naming + label combo is what the strict validator checks.
+#
+# OSC_EN / WEIGHT_EN / SAMPLE_TRIG each pass through an SMA-side 0Ω
+# (R50/R51/R52). The 0Ω splits each net into two schematic components:
+# the LABELED side (R5x.2 + global_label) is the OSC_EN/etc net; the
+# SMA-side stub (J5x.1 + R5x.1) is internal and not enumerated in YAML
+# (it'd be uncaught if disconnected — that's a known limitation of the
+# strict-name validator without an explicit `internal` net type).
+
+parts:
+  # CLK_OUT0..3 SMAs (J50–J53)
+  J50: { lib_id: Lib:HRM-G-300-467B-1, value: SMA, footprint: Connector_Coaxial:SMA_Amphenol_HRM-G_Vertical }
+  J51: { lib_id: Lib:HRM-G-300-467B-1, value: SMA, footprint: Connector_Coaxial:SMA_Amphenol_HRM-G_Vertical }
+  J52: { lib_id: Lib:HRM-G-300-467B-1, value: SMA, footprint: Connector_Coaxial:SMA_Amphenol_HRM-G_Vertical }
+  J53: { lib_id: Lib:HRM-G-300-467B-1, value: SMA, footprint: Connector_Coaxial:SMA_Amphenol_HRM-G_Vertical }
+  # OSC_EN / WEIGHT_EN / SAMPLE_TRIG SMAs (J54–J56) — paired with R50/51/52 0Ω
+  J54: { lib_id: Lib:HRM-G-300-467B-1, value: SMA, footprint: Connector_Coaxial:SMA_Amphenol_HRM-G_Vertical }
+  J55: { lib_id: Lib:HRM-G-300-467B-1, value: SMA, footprint: Connector_Coaxial:SMA_Amphenol_HRM-G_Vertical }
+  J56: { lib_id: Lib:HRM-G-300-467B-1, value: SMA, footprint: Connector_Coaxial:SMA_Amphenol_HRM-G_Vertical }
+  R50:
+    lib_id: Device:R
+    value: "0"
+    footprint: Resistor_SMD:R_0402_1005Metric
+    notes: SMA-side 0Ω for OSC_EN — depop to switch routing to FMC LA side
+  R51:
+    lib_id: Device:R
+    value: "0"
+    footprint: Resistor_SMD:R_0402_1005Metric
+    notes: SMA-side 0Ω for WEIGHT_EN
+  R52:
+    lib_id: Device:R
+    value: "0"
+    footprint: Resistor_SMD:R_0402_1005Metric
+    notes: SMA-side 0Ω for SAMPLE_TRIG
+  # GPIO 1×4 breakout header
+  J57:
+    lib_id: Lib:TSW-104-05-G-S
+    value: 1x4 100mil
+    footprint: Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical
+    notes: Pin 1=GPIO0, 2=GPIO1, 3=GPIO2, 4=GPIO3
+  # GND test clips (Keystone-5011) — TP50–TP52
+  TP50: { lib_id: Lib:Keystone-5011, value: GND-CLIP, footprint: TestPoint:TestPoint_THTPad_D5.0mm_Drill3.0mm }
+  TP51: { lib_id: Lib:Keystone-5011, value: GND-CLIP, footprint: TestPoint:TestPoint_THTPad_D5.0mm_Drill3.0mm }
+  TP52: { lib_id: Lib:Keystone-5011, value: GND-CLIP, footprint: TestPoint:TestPoint_THTPad_D5.0mm_Drill3.0mm }
+
+nets:
+  # Test clips — pin 1 of each Keystone tied to GND via co-placed power symbol.
+  GND:
+    type: power
+    members: [TP50.1, TP51.1, TP52.1]
+
+  # CLK_OUT0–3: hier_label from bobcat → SMA pin 1.
+  CLK_OUT0: { type: hier, direction: input, members: [J50.1] }
+  CLK_OUT1: { type: hier, direction: input, members: [J51.1] }
+  CLK_OUT2: { type: hier, direction: input, members: [J52.1] }
+  CLK_OUT3: { type: hier, direction: input, members: [J53.1] }
+
+  # OSC_EN / WEIGHT_EN / SAMPLE_TRIG: only the LABELED side (R5x.2) is on the
+  # global net. R5x.1 + J5x.1 form an unnamed SMA-side stub — NOT enumerated
+  # here on purpose (see comment at top).
+  OSC_EN:      { type: global, direction: input, members: [R50.2] }
+  WEIGHT_EN:   { type: global, direction: input, members: [R51.2] }
+  SAMPLE_TRIG: { type: global, direction: input, members: [R52.2] }
+
+  # GPIO breakout — each header pin to a hier_label.
+  GPIO0: { type: hier, direction: input, members: [J57.1] }
+  GPIO1: { type: hier, direction: input, members: [J57.2] }
+  GPIO2: { type: hier, direction: input, members: [J57.3] }
+  GPIO3: { type: hier, direction: input, members: [J57.4] }

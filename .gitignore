@@ -19,3 +19,10 @@ fp-info-cache
 
 # KiCad per-project auto-versioning
 */.history/
+
+# Python bytecode cache
+__pycache__/
+*.pyc
+
+# Locally-exported KiCad PDFs (regenerated on demand)
+test1/kicad/*.pdf

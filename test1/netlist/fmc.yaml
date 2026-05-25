@@ -1,0 +1,133 @@
+# FMC sheet — VITA 57.1 LPC connector (ASP-134606-01, 160 pins across 4 rows).
+#
+# The ASP-134606-01 symbol is multi-unit: unit 1 = row C, unit 2 = row D,
+# unit 3 = row G, unit 4 = row H. To keep the schematic readable, each row
+# is given its own refdes (J1=u1=C, J2=u2=D, J3=u3=G, J4=u4=H), so each
+# refdes carries only ONE unit. YAML members use `Jx:uN.PIN` syntax.
+#
+# LA-bank routing: each named signal (SAMPLE_OUT*, SPI, OSC/WEIGHT/TRIG,
+# LDO_EN/LSW_EN, BIAS_ISO*, LDO_SET_*) is wired FMC-pin → 0Ω (R100-R127) →
+# global_label or hier_label. The 0Ω splits each into two schematic nets:
+#   • LABELED side (R<n>.1 + label) = the named cross-sheet net
+#   • FMC-pin side stub (FMC pin + R<n>.2) = internal (enumerated below)
+#
+# GND on the FMC sheet is bussed per-row from all unrouted/non-named pins
+# onto a single GND symbol. Mass-enumerating ~60 GND pins would be tedious;
+# only the explicit STRAPPING pins (PRSNT_M2C_L, GA0, GA1) are listed in
+# the GND net here. Unlabeled GND-bussed pins are uncovered by validation.
+
+parts:
+  J1: { lib_id: Lib:ASP-134606-01, value: FMC LPC (C), footprint: Connector:FMC_LPC_ASP-134606-01, units: [1] }
+  J2: { lib_id: Lib:ASP-134606-01, value: FMC LPC (D), footprint: Connector:FMC_LPC_ASP-134606-01, units: [2] }
+  J3: { lib_id: Lib:ASP-134606-01, value: FMC LPC (G), footprint: Connector:FMC_LPC_ASP-134606-01, units: [3] }
+  J4: { lib_id: Lib:ASP-134606-01, value: FMC LPC (H), footprint: Connector:FMC_LPC_ASP-134606-01, units: [4] }
+
+  # LA-bank routing resistors (R100–R127, 0Ω, one per named LA signal)
+  R100: { lib_id: Device:R, value: "0", footprint: Resistor_SMD:R_0402_1005Metric, notes: "LA00 SAMPLE_OUTV (H6)" }
+  R101: { lib_id: Device:R, value: "0", footprint: Resistor_SMD:R_0402_1005Metric, notes: "LA01 SAMPLE_OUT0 (C8)" }
+  R102: { lib_id: Device:R, value: "0", footprint: Resistor_SMD:R_0402_1005Metric, notes: "LA02 SAMPLE_OUT1 (G7)" }
+  R103: { lib_id: Device:R, value: "0", footprint: Resistor_SMD:R_0402_1005Metric, notes: "LA03 SAMPLE_OUT2 (H9)" }
+  R104: { lib_id: Device:R, value: "0", footprint: Resistor_SMD:R_0402_1005Metric, notes: "LA04 SAMPLE_OUT3 (G10)" }
+  R105: { lib_id: Device:R, value: "0", footprint: Resistor_SMD:R_0402_1005Metric, notes: "LA05 SAMPLE_OUT4 (C11)" }
+  R106: { lib_id: Device:R, value: "0", footprint: Resistor_SMD:R_0402_1005Metric, notes: "LA06 SAMPLE_OUT5 (D10)" }
+  R107: { lib_id: Device:R, value: "0", footprint: Resistor_SMD:R_0402_1005Metric, notes: "LA07 SAMPLE_OUT6 (G13)" }
+  R108: { lib_id: Device:R, value: "0", footprint: Resistor_SMD:R_0402_1005Metric, notes: "LA08 SAMPLE_OUT7 (H12)" }
+  R109: { lib_id: Device:R, value: "0", footprint: Resistor_SMD:R_0402_1005Metric, notes: "LA09 CS_L (C14)" }
+  R110: { lib_id: Device:R, value: "0", footprint: Resistor_SMD:R_0402_1005Metric, notes: "LA10 SCLK (D14)" }
+  R111: { lib_id: Device:R, value: "0", footprint: Resistor_SMD:R_0402_1005Metric, notes: "LA11 MOSI (G16)" }
+  R112: { lib_id: Device:R, value: "0", footprint: Resistor_SMD:R_0402_1005Metric, notes: "LA12 MISO (H15)" }
+  R113: { lib_id: Device:R, value: "0", footprint: Resistor_SMD:R_0402_1005Metric, notes: "LA13 SPI_DMODE (C17)" }
+  R114: { lib_id: Device:R, value: "0", footprint: Resistor_SMD:R_0402_1005Metric, notes: "LA14 RESET_N (D18)" }
+  R115: { lib_id: Device:R, value: "0", footprint: Resistor_SMD:R_0402_1005Metric, notes: "LA15 OSC_EN (G19)" }
+  R116: { lib_id: Device:R, value: "0", footprint: Resistor_SMD:R_0402_1005Metric, notes: "LA16 WEIGHT_EN (H18)" }
+  R117: { lib_id: Device:R, value: "0", footprint: Resistor_SMD:R_0402_1005Metric, notes: "LA17 SAMPLE_TRIG (C20)" }
+  R118: { lib_id: Device:R, value: "0", footprint: Resistor_SMD:R_0402_1005Metric, notes: "LA18 LDO_EN (D22)" }
+  R119: { lib_id: Device:R, value: "0", footprint: Resistor_SMD:R_0402_1005Metric, notes: "LA19 LSW_EN (G22)" }
+  R120: { lib_id: Device:R, value: "0", footprint: Resistor_SMD:R_0402_1005Metric, notes: "LA20 BIAS_ISO0 (H21)" }
+  R121: { lib_id: Device:R, value: "0", footprint: Resistor_SMD:R_0402_1005Metric, notes: "LA21 BIAS_ISO1 (G25)" }
+  R122: { lib_id: Device:R, value: "0", footprint: Resistor_SMD:R_0402_1005Metric, notes: "LA22 LDO_SET_50mV (H24)" }
+  R123: { lib_id: Device:R, value: "0", footprint: Resistor_SMD:R_0402_1005Metric, notes: "LA23 LDO_SET_100mV (C23)" }
+  R124: { lib_id: Device:R, value: "0", footprint: Resistor_SMD:R_0402_1005Metric, notes: "LA24 LDO_SET_200mV (G28)" }
+  R125: { lib_id: Device:R, value: "0", footprint: Resistor_SMD:R_0402_1005Metric, notes: "LA25 LDO_SET_400mV (H27)" }
+  R126: { lib_id: Device:R, value: "0", footprint: Resistor_SMD:R_0402_1005Metric, notes: "LA26 LDO_SET_800mV (C26)" }
+  R127: { lib_id: Device:R, value: "0", footprint: Resistor_SMD:R_0402_1005Metric, notes: "LA27 LDO_SET_1V6 (D26)" }
+
+nets:
+  # ===== Power & strapping =====
+  +3V3:
+    type: power
+    members: [J1:u1.C36, J1:u1.C38, J1:u1.C40, J2:u2.D39]
+  GND:
+    type: power
+    # Strapping pins only — H2=PRSNT_M2C_L, C34=GA0, C35=GA1. The mass GND
+    # bussing of unrouted FMC pins is uncovered by validation (see top
+    # comment). Per-row rails are emitted by the layout.
+    members: [J4:u4.H2, J1:u1.C34, J1:u1.C35]
+
+  # ===== Hier-label nets (FMC ↔ this sheet's parent → Power) =====
+  VADJ:   { type: hier, direction: output, members: [J3:u3.G40, J4:u4.H39] }
+  LDO_PG: { type: hier, direction: input,  members: [J1:u1.C1] }
+  # LDO_EN / LSW_EN go through 0Ω first (R118/R119) — only the labeled side
+  # is the named net.
+  LDO_EN: { type: hier, direction: output, members: [R118.1] }
+  LSW_EN: { type: hier, direction: output, members: [R119.1] }
+
+  # ===== Global-label nets (Bobcat ↔ FMC via 0Ω) — labeled-side members only =====
+  SCL: { type: global, direction: bidirectional, members: [J2:u2.D30] }
+  SDA: { type: global, direction: bidirectional, members: [J2:u2.D31] }
+  SAMPLE_OUTV: { type: global, direction: input, members: [R100.1] }
+  SAMPLE_OUT0: { type: global, direction: input, members: [R101.1] }
+  SAMPLE_OUT1: { type: global, direction: input, members: [R102.1] }
+  SAMPLE_OUT2: { type: global, direction: input, members: [R103.1] }
+  SAMPLE_OUT3: { type: global, direction: input, members: [R104.1] }
+  SAMPLE_OUT4: { type: global, direction: input, members: [R105.1] }
+  SAMPLE_OUT5: { type: global, direction: input, members: [R106.1] }
+  SAMPLE_OUT6: { type: global, direction: input, members: [R107.1] }
+  SAMPLE_OUT7: { type: global, direction: input, members: [R108.1] }
+  MISO:        { type: global, direction: input, members: [R112.1] }
+  CS_L:        { type: global, direction: output, members: [R109.1] }
+  SCLK:        { type: global, direction: output, members: [R110.1] }
+  MOSI:        { type: global, direction: output, members: [R111.1] }
+  SPI_DMODE:   { type: global, direction: output, members: [R113.1] }
+  RESET_N:     { type: global, direction: output, members: [R114.1] }
+  OSC_EN:      { type: global, direction: output, members: [R115.1] }
+  WEIGHT_EN:   { type: global, direction: output, members: [R116.1] }
+  SAMPLE_TRIG: { type: global, direction: output, members: [R117.1] }
+  BIAS_ISO0:   { type: global, direction: output, members: [R120.1] }
+  BIAS_ISO1:   { type: global, direction: output, members: [R121.1] }
+  LDO_SET_50mV:  { type: global, direction: output, members: [R122.1] }
+  LDO_SET_100mV: { type: global, direction: output, members: [R123.1] }
+  LDO_SET_200mV: { type: global, direction: output, members: [R124.1] }
+  LDO_SET_400mV: { type: global, direction: output, members: [R125.1] }
+  LDO_SET_800mV: { type: global, direction: output, members: [R126.1] }
+  LDO_SET_1V6:   { type: global, direction: output, members: [R127.1] }
+
+  # ===== Internal stubs (FMC pin → R<n>.2) — one per LA-routed signal =====
+  internal_LA00_stub: { type: internal, members: [J4:u4.H6,  R100.2] }
+  internal_LA01_stub: { type: internal, members: [J1:u1.C8,  R101.2] }
+  internal_LA02_stub: { type: internal, members: [J3:u3.G7,  R102.2] }
+  internal_LA03_stub: { type: internal, members: [J4:u4.H9,  R103.2] }
+  internal_LA04_stub: { type: internal, members: [J3:u3.G10, R104.2] }
+  internal_LA05_stub: { type: internal, members: [J1:u1.C11, R105.2] }
+  internal_LA06_stub: { type: internal, members: [J2:u2.D10, R106.2] }
+  internal_LA07_stub: { type: internal, members: [J3:u3.G13, R107.2] }
+  internal_LA08_stub: { type: internal, members: [J4:u4.H12, R108.2] }
+  internal_LA09_stub: { type: internal, members: [J1:u1.C14, R109.2] }
+  internal_LA10_stub: { type: internal, members: [J2:u2.D14, R110.2] }
+  internal_LA11_stub: { type: internal, members: [J3:u3.G16, R111.2] }
+  internal_LA12_stub: { type: internal, members: [J4:u4.H15, R112.2] }
+  internal_LA13_stub: { type: internal, members: [J1:u1.C17, R113.2] }
+  internal_LA14_stub: { type: internal, members: [J2:u2.D18, R114.2] }
+  internal_LA15_stub: { type: internal, members: [J3:u3.G19, R115.2] }
+  internal_LA16_stub: { type: internal, members: [J4:u4.H18, R116.2] }
+  internal_LA17_stub: { type: internal, members: [J1:u1.C20, R117.2] }
+  internal_LA18_stub: { type: internal, members: [J2:u2.D22, R118.2] }
+  internal_LA19_stub: { type: internal, members: [J3:u3.G22, R119.2] }
+  internal_LA20_stub: { type: internal, members: [J4:u4.H21, R120.2] }
+  internal_LA21_stub: { type: internal, members: [J3:u3.G25, R121.2] }
+  internal_LA22_stub: { type: internal, members: [J4:u4.H24, R122.2] }
+  internal_LA23_stub: { type: internal, members: [J1:u1.C23, R123.2] }
+  internal_LA24_stub: { type: internal, members: [J3:u3.G28, R124.2] }
+  internal_LA25_stub: { type: internal, members: [J4:u4.H27, R125.2] }
+  internal_LA26_stub: { type: internal, members: [J1:u1.C26, R126.2] }
+  internal_LA27_stub: { type: internal, members: [J2:u2.D26, R127.2] }

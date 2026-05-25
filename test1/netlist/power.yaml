@@ -1,0 +1,113 @@
+# Power sheet — TPS7A8401A LDO (3P3V → 0.6–1.0V ANY-OUT) plus
+# TPS22916 load switch (VADJ → +VDDIO).
+#
+# Functional groups:
+#   A. LDO body (U10) with IN decoupling (C10/C11/C17), BIAS bypass, EN
+#      pull-down (R10), NR_SS cap (C12), ANY-OUT setpoint exits (E5),
+#      open-drain PG with 10kΩ pull-up (R12, E6) + 1kΩ series (R13, W10).
+#   B. OUT bus (kelvin SNS, FB strapped at package, bulk caps C13/C14) —
+#      a multi-pin internal node feeding the per-rail jumpers.
+#   C. Output jumpers (J10/J11/J12 → +VDDD/+VDDA1/+VDDA2).
+#   D. Load switch (U11) with VADJ bulk C15, VDDIO bulk C16, LSW_EN
+#      pull-down (R11).
+
+parts:
+  # ===== LDO + decoupling =====
+  U10:
+    lib_id: Lib:TPS7A8401A
+    value: TPS7A8401A
+    footprint: Package_DFN_QFN:VQFN-20-1EP_3.5x3.5mm_P0.5mm_EP1.6x1.6mm
+  C10: { lib_id: Device:C, value: 10uF,   footprint: Capacitor_SMD:C_0805_2012Metric }
+  C11: { lib_id: Device:C, value: 0.1uF,  footprint: Capacitor_SMD:C_0402_1005Metric }
+  C12: { lib_id: Device:C, value: 10nF,   footprint: Capacitor_SMD:C_0402_1005Metric, notes: "NR_SS to GND per TPS7A8401A datasheet" }
+  C13: { lib_id: Device:C, value: 22uF,   footprint: Capacitor_SMD:C_0805_2012Metric, notes: "OUT-side bulk" }
+  C14: { lib_id: Device:C, value: 0.1uF,  footprint: Capacitor_SMD:C_0402_1005Metric, notes: "OUT-side HF decoupling" }
+  C17: { lib_id: Device:C, value: 1uF,    footprint: Capacitor_SMD:C_0402_1005Metric, notes: "W3 — BIAS pin bypass per SBVS210 §8.2.2.1" }
+  R10: { lib_id: Device:R, value: 10k,    footprint: Resistor_SMD:R_0402_1005Metric, notes: "EN pull-down (FPGA drives high to enable)" }
+  R12: { lib_id: Device:R, value: 10k,    footprint: Resistor_SMD:R_0402_1005Metric, notes: "E6 — LDO_PG open-drain pull-up to +3V3" }
+  R13: { lib_id: Device:R, value: 1k,     footprint: Resistor_SMD:R_0402_1005Metric, notes: "W10 — LDO_PG series protection toward FMC C1" }
+  # ===== Output jumpers =====
+  J10: { lib_id: Lib:TSW-102-05-G-S, value: 1x2 100mil, footprint: Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical, notes: "Select +VDDD" }
+  J11: { lib_id: Lib:TSW-102-05-G-S, value: 1x2 100mil, footprint: Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical, notes: "Select +VDDA1" }
+  J12: { lib_id: Lib:TSW-102-05-G-S, value: 1x2 100mil, footprint: Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical, notes: "Select +VDDA2" }
+  # ===== Load switch =====
+  U11:
+    lib_id: Lib:TPS22916CNYFPR
+    value: TPS22916
+    footprint: Package_DirectFETandLGA:Texas_DSBGA-4_0.6x1.0mm_Layout2x2_P0.4mm
+  C15: { lib_id: Device:C, value: 1uF,   footprint: Capacitor_SMD:C_0402_1005Metric, notes: "W6 — VADJ bulk at U11 VIN" }
+  C16: { lib_id: Device:C, value: 1uF,   footprint: Capacitor_SMD:C_0402_1005Metric, notes: "W7 — +VDDIO bulk at U11 VOUT" }
+  R11: { lib_id: Device:R, value: 10k,   footprint: Resistor_SMD:R_0402_1005Metric, notes: "LSW_EN pull-down" }
+
+nets:
+  # ===== Power-symbol nets (multi-component, name-based merging) =====
+  +3V3:
+    type: power
+    # IN pins (15/16/17) + BIAS pin (12), input-side caps top pins, R12 top
+    # (PG pull-up rail), and the local +3V3 above R12 — all named "+3V3".
+    members: [U10.15, U10.16, U10.17, U10.12, C10.1, C11.1, C17.1, R12.1]
+  GND:
+    type: power
+    members:
+      - U10.8    # GND
+      - U10.18   # GND
+      - U10.21   # exposed pad
+      - C10.2
+      - C11.2
+      - C17.2
+      - C12.2    # NR_SS cap return
+      - R10.2    # EN pull-down to GND
+      - C13.2    # OUT bulk return
+      - C14.2    # OUT HF return
+      - U11.B1   # load-switch GND
+      - C15.2    # VADJ cap return
+      - C16.2    # VDDIO cap return
+      - R11.2    # LSW_EN pull-down to GND
+  +VDDD:  { type: power, members: [J10.2] }
+  +VDDA1: { type: power, members: [J11.2] }
+  +VDDA2: { type: power, members: [J12.2] }
+  +VDDIO: { type: power, members: [U11.A1] }   # load-switch output
+
+  # ===== Hier-label nets (parent ↔ this sheet) =====
+  LDO_EN: { type: hier, direction: input, members: [U10.14, R10.1] }
+  LSW_EN: { type: hier, direction: input, members: [U11.B2, R11.1] }
+  # LDO_PG: only the LABELED side (R13.1 + hier_label anchor) is the named net.
+  # The PG-side stub (U10.4 PG + R12.2 pull-up bot + R13.2 series-R left) is
+  # a separate component with no label — listed as `internal_LDO_PG_stub` below.
+  LDO_PG: { type: hier, direction: output, members: [R13.1] }
+  VADJ:   { type: hier, direction: input,  members: [U11.A2, C15.1] }
+
+  # ===== Global-label nets (ANY-OUT setpoints → FMC LA bank) =====
+  LDO_SET_50mV:  { type: global, direction: input, members: [U10.5]  }
+  LDO_SET_100mV: { type: global, direction: input, members: [U10.6]  }
+  LDO_SET_200mV: { type: global, direction: input, members: [U10.7]  }
+  LDO_SET_400mV: { type: global, direction: input, members: [U10.9]  }
+  LDO_SET_800mV: { type: global, direction: input, members: [U10.10] }
+  LDO_SET_1V6:   { type: global, direction: input, members: [U10.11] }
+
+  # ===== Internal nets — unlabeled local connectivity =====
+  internal_LDO_OUT_bus:
+    type: internal
+    # LDO OUT pins → bus → bulk caps + SNS (kelvin) + FB + 3 jumper pin-1s.
+    # SNS is post-bulk-cap kelvin (E9); FB is locally strapped to OUT per
+    # ANY-OUT mode (SBVS210 Figure 23).
+    members:
+      - U10.1   # OUT
+      - U10.19  # OUT
+      - U10.20  # OUT
+      - U10.2   # SNS (kelvin to post-cap point on the OUT trace)
+      - U10.3   # FB (strapped to OUT)
+      - C13.1   # 22µF bulk top
+      - C14.1   # 0.1µF HF top
+      - J10.1   # jumper to VDDD
+      - J11.1   # jumper to VDDA1
+      - J12.1   # jumper to VDDA2
+  internal_LDO_PG_stub:
+    type: internal
+    # PG-side of the 1kΩ series R13. R12 pull-up keeps this side high when
+    # PG is hi-Z; the FPGA sees R13.1 (the LDO_PG hier-label net) through R13.
+    members: [U10.4, R12.2, R13.2]
+  internal_LDO_NR_SS:
+    type: internal
+    # NR_SS cap stub — pin 13 to C12 top. Sets noise reduction / soft-start.
+    members: [U10.13, C12.1]

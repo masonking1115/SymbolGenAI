@@ -317,6 +317,30 @@
 		)
 		(embedded_fonts no)
 	)
+(symbol "Device:R"
+    (pin_numbers (hide yes))
+    (pin_names (offset 0))
+    (exclude_from_sim no)
+    (in_bom yes)
+    (on_board yes)
+    (property "Reference" "R" (at 2.032 0 90) (effects (font (size 1.27 1.27))))
+    (property "Value" "R" (at 0 0 90) (effects (font (size 1.27 1.27))))
+    (property "Footprint" "" (at -1.778 0 90) (effects (font (size 1.27 1.27)) (hide yes)))
+    (property "Datasheet" "~" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+    (property "Description" "Resistor" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+    (symbol "R_0_1"
+      (rectangle (start -1.016 -2.54) (end 1.016 2.54)
+        (stroke (width 0.254) (type default)) (fill (type none)))
+    )
+    (symbol "R_1_1"
+      (pin passive line (at 0 3.81 270) (length 1.27)
+        (name "~" (effects (font (size 1.27 1.27))))
+        (number "1" (effects (font (size 1.27 1.27)))))
+      (pin passive line (at 0 -3.81 90) (length 1.27)
+        (name "~" (effects (font (size 1.27 1.27))))
+        (number "2" (effects (font (size 1.27 1.27)))))
+    )
+  )
 (symbol "Lib:TSW-104-05-G-S"
 		(body_styles demorgan)
 		(pin_names
@@ -1350,8 +1374,23 @@
     (instances
       (project "test1"
         (path "/4ed7a046-ef33-57d9-8730-321c05965af3/059bce26-e22e-55b8-805e-999a0610e155" (reference "J54") (unit 1)))))
-  (wire (pts (xy 165 100.0) (xy 157.71 100.0)) (stroke (width 0) (type default)) (uuid "1e13811a-996b-5335-b619-3e55faccf53a"))
-  (global_label "OSC_EN" (shape input) (at 157.71 100.0 180) (effects (font (size 1.27 1.27)) (justify right)) (uuid "74eb6e09-7483-5fb7-9fe4-4df8b5d12291"))
+  (symbol
+    (lib_id "Device:R")
+    (at 160 100.0 90)
+    (unit 1) (in_bom yes) (on_board yes) (dnp no)
+    (uuid "e0048601-0ad1-502e-8b0e-60c4e65f97d6")
+    (property "Reference" "R50" (at 160 96.19 0) (effects (font (size 1.27 1.27))))
+    (property "Value" "0" (at 160 103.81 0) (effects (font (size 1.27 1.27))))
+    (property "Footprint" "Resistor_SMD:R_0402_1005Metric" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+    (property "Datasheet" "" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+    (pin "1" (uuid "83be93ac-2d67-589f-a286-b5b745d322b1"))
+    (pin "2" (uuid "524217e6-bff2-56e4-8434-4b34dfbba9bb"))
+    (instances
+      (project "test1"
+        (path "/4ed7a046-ef33-57d9-8730-321c05965af3/059bce26-e22e-55b8-805e-999a0610e155" (reference "R50") (unit 1)))))
+  (wire (pts (xy 165 100.0) (xy 163.81 100.0)) (stroke (width 0) (type default)) (uuid "dc3db4b5-6036-5bdc-927b-52116080af33"))
+  (wire (pts (xy 156.19 100.0) (xy 150 100.0)) (stroke (width 0) (type default)) (uuid "55814024-0c29-5e3e-bcf7-d4aa33d8c95b"))
+  (global_label "OSC_EN" (shape input) (at 150 100.0 180) (effects (font (size 1.27 1.27)) (justify right)) (uuid "a4f57cc9-7598-5e60-b937-6411673a9980"))
   (symbol
     (lib_id "Lib:HRM-G-300-467B-1")
     (at 165 115.24 0)
@@ -1365,8 +1404,23 @@
     (instances
       (project "test1"
         (path "/4ed7a046-ef33-57d9-8730-321c05965af3/059bce26-e22e-55b8-805e-999a0610e155" (reference "J55") (unit 1)))))
-  (wire (pts (xy 165 115.24) (xy 157.71 115.24)) (stroke (width 0) (type default)) (uuid "4cf1edb3-0281-5009-8e0a-a47447ff1799"))
-  (global_label "WEIGHT_EN" (shape input) (at 157.71 115.24 180) (effects (font (size 1.27 1.27)) (justify right)) (uuid "643b2b34-5d1f-50a0-8736-3e96e2d33afa"))
+  (symbol
+    (lib_id "Device:R")
+    (at 160 115.24 90)
+    (unit 1) (in_bom yes) (on_board yes) (dnp no)
+    (uuid "ee69870e-2b0c-5b32-be9a-120693966100")
+    (property "Reference" "R51" (at 160 111.42999999999999 0) (effects (font (size 1.27 1.27))))
+    (property "Value" "0" (at 160 119.05 0) (effects (font (size 1.27 1.27))))
+    (property "Footprint" "Resistor_SMD:R_0402_1005Metric" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+    (property "Datasheet" "" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+    (pin "1" (uuid "aab16554-5ae3-54dd-afd8-8523c10fed8c"))
+    (pin "2" (uuid "f1f662af-d10d-54e2-8344-120fb0f26dbf"))
+    (instances
+      (project "test1"
+        (path "/4ed7a046-ef33-57d9-8730-321c05965af3/059bce26-e22e-55b8-805e-999a0610e155" (reference "R51") (unit 1)))))
+  (wire (pts (xy 165 115.24) (xy 163.81 115.24)) (stroke (width 0) (type default)) (uuid "26fe1fd5-709e-5b83-a346-05919d759c04"))
+  (wire (pts (xy 156.19 115.24) (xy 150 115.24)) (stroke (width 0) (type default)) (uuid "fa36d1a0-8bfe-59bf-8cf5-3ee7c124024c"))
+  (global_label "WEIGHT_EN" (shape input) (at 150 115.24 180) (effects (font (size 1.27 1.27)) (justify right)) (uuid "ea33f178-6373-5313-8c14-89252bd38c5e"))
   (symbol
     (lib_id "Lib:HRM-G-300-467B-1")
     (at 165 130.48 0)
@@ -1380,8 +1434,23 @@
     (instances
       (project "test1"
         (path "/4ed7a046-ef33-57d9-8730-321c05965af3/059bce26-e22e-55b8-805e-999a0610e155" (reference "J56") (unit 1)))))
-  (wire (pts (xy 165 130.48) (xy 157.71 130.48)) (stroke (width 0) (type default)) (uuid "37a4e60b-1ba7-5a14-ab99-50194e639e8c"))
-  (global_label "SAMPLE_TRIG" (shape input) (at 157.71 130.48 180) (effects (font (size 1.27 1.27)) (justify right)) (uuid "c9092cc4-2887-510c-a4f9-d99f53d444b8"))
+  (symbol
+    (lib_id "Device:R")
+    (at 160 130.48 90)
+    (unit 1) (in_bom yes) (on_board yes) (dnp no)
+    (uuid "b8b0fb00-3cfa-5e1f-8e07-db57e9e413f0")
+    (property "Reference" "R52" (at 160 126.66999999999999 0) (effects (font (size 1.27 1.27))))
+    (property "Value" "0" (at 160 134.29 0) (effects (font (size 1.27 1.27))))
+    (property "Footprint" "Resistor_SMD:R_0402_1005Metric" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+    (property "Datasheet" "" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+    (pin "1" (uuid "3a51039b-9b0f-5fd0-b862-440e79dc399a"))
+    (pin "2" (uuid "266b1670-7c52-54da-9d8a-864a5ed7cfbe"))
+    (instances
+      (project "test1"
+        (path "/4ed7a046-ef33-57d9-8730-321c05965af3/059bce26-e22e-55b8-805e-999a0610e155" (reference "R52") (unit 1)))))
+  (wire (pts (xy 165 130.48) (xy 163.81 130.48)) (stroke (width 0) (type default)) (uuid "f7234d75-20a2-5767-9b9b-416a9cf0c069"))
+  (wire (pts (xy 156.19 130.48) (xy 150 130.48)) (stroke (width 0) (type default)) (uuid "d16bc3c2-5faf-5950-9cd3-fdb61853c91b"))
+  (global_label "SAMPLE_TRIG" (shape input) (at 150 130.48 180) (effects (font (size 1.27 1.27)) (justify right)) (uuid "3ede45f5-212c-5e37-a3a6-672229070661"))
   (symbol
     (lib_id "Lib:TSW-104-05-G-S")
     (at 230 100 0)

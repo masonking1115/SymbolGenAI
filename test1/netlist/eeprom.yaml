@@ -1,0 +1,48 @@
+# EEPROM sheet — 24AA08-I-SN I²C EEPROM (8 Kbit) on the +3V3 rail.
+#
+# This file is the DECLARATIVE source of truth for what parts exist and
+# what pins connect to what nets. Positions and wire routing live in
+# gen/build_eeprom.py. The strict validator (gen/validator.py) cross-
+# checks that every net member listed here is wired up in the layout AND
+# that the connected component carries this net's name.
+
+parts:
+  U30:
+    lib_id: Lib:24AA08-I-SN
+    value: 24AA08
+    footprint: Package_SO:SOIC-8_3.9x4.9mm_P1.27mm
+  C30:
+    lib_id: Device:C
+    value: 0.1uF
+    footprint: Capacitor_SMD:C_0402_1005Metric
+    notes: VCC decoupling per 24AA08 datasheet
+  R60:
+    lib_id: Device:R
+    value: 2.2k
+    footprint: Resistor_SMD:R_0402_1005Metric
+    notes: >
+      SCL pull-up. May need DNP if Genesys 2 carrier provides its own
+      pull-ups on FMC D30 (W4 — TBD at bring-up; see design_requirements.md).
+  R61:
+    lib_id: Device:R
+    value: 2.2k
+    footprint: Resistor_SMD:R_0402_1005Metric
+    notes: SDA pull-up (same DNP caveat as R60).
+
+nets:
+  +3V3:
+    type: power
+    members: [U30.8, C30.1, R60.1, R61.1]
+  GND:
+    type: power
+    # U30.1=A_0, U30.2=A_1, U30.3=A_2 (address slot 000),
+    # U30.4=VSS, U30.7=WP, C30.2=decoupling return.
+    members: [U30.1, U30.2, U30.3, U30.4, U30.7, C30.2]
+  SCL:
+    type: global
+    direction: bidirectional
+    members: [U30.6, R60.2]
+  SDA:
+    type: global
+    direction: bidirectional
+    members: [U30.5, R61.2]
