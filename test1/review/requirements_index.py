@@ -59,10 +59,20 @@ class RequirementsIndex:
     raw_markdown: str = ""
 
     def part(self, name: str) -> PartRequirement | None:
-        """Lookup by partial name match (case-insensitive)."""
+        """Lookup by partial name match, falling back to raw_text contains.
+
+        Matches the part-list bullet whose name OR body mentions the MPN.
+        E.g. `idx.part('MCP4728')` returns the 'Bias circuit' entry whose
+        body discusses the DAC, not None.
+        """
         n = name.lower()
+        # First: bullet name match.
         for k, v in self.parts.items():
             if n in k.lower() or n in v.name.lower():
+                return v
+        # Fallback: bullet body mentions the MPN.
+        for v in self.parts.values():
+            if n in v.raw_text.lower():
                 return v
         return None
 

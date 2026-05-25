@@ -31,11 +31,18 @@ PROJECT_DIR = Path(__file__).resolve().parent
 def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--no-semantic", action="store_true",
-                   help="skip the LLM per-IC review pass")
+                   help="skip the LLM per-IC review pass (still writes manifest)")
+    p.add_argument("--only-manifest", action="store_true",
+                   help="emit the semantic manifest but do not render error_log.md")
     p.add_argument("--json", type=Path, default=None,
                    help="also write findings JSON to this path")
     p.add_argument("--autofix", action="store_true",
-                   help="run trivial-bucket autofixer after rendering")
+                   help="walk findings, propose fixes, prompt for approval")
+    p.add_argument("--apply-trivial", action="store_true",
+                   help="when used with --autofix, auto-apply trivial "
+                        "(pullup_pulldown + decoupling) without prompting")
+    p.add_argument("--non-interactive", action="store_true",
+                   help="never prompt; print proposals only")
     args = p.parse_args()
 
     print("===== Design Review =====")
@@ -68,6 +75,10 @@ def main() -> int:
         except ImportError:
             print("  (semantic_review.py not yet implemented — skipping)")
 
+    if args.only_manifest:
+        print("\n--only-manifest: skipping render.")
+        return 0
+
     print()
     print("Phase 3: rendering …")
     reviewed_against = [
@@ -85,12 +96,13 @@ def main() -> int:
 
     if args.autofix:
         print()
-        print("Phase 4: autofix dispatch …")
-        try:
-            from review import autofix
-            autofix.run(findings)
-        except ImportError:
-            print("  (autofix.py not yet implemented — skipping)")
+        print("===== Phase 4: autofix dispatch =====")
+        from review import autofix
+        autofix.run(
+            findings,
+            non_interactive=args.non_interactive,
+            apply_trivial=args.apply_trivial,
+        )
 
     return 0
 
