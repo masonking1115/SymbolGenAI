@@ -10,9 +10,1480 @@
     (rev "1")
   )
   (lib_symbols
-
+(symbol "Lib:HRM-G-300-467B-1"
+		(body_styles demorgan)
+		(pin_names
+			(offset 0.254)
+		)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(duplicate_pin_numbers_are_jumpers no)
+		(property "Reference" "J"
+			(at 8.89 6.35 0)
+			
+			
+			(effects
+				(font
+					(size 1.524 1.524)
+				)
+			)
+		)
+		(property "Value" "HRMG-300-467B-1"
+			(at 0 0 0)
+			
+			
+			(effects
+				(font
+					(size 1.524 1.524)
+				)
+			)
+		)
+		(property "Footprint" "CONN_HRMG-300-467B-1_HIR"
+			(at 0 0 0)
+			
+			
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+					(italic yes)
+				)
+			)
+		)
+		(property "Datasheet" "HRMG-300-467B-1"
+			(at 0 0 0)
+			
+			
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+					(italic yes)
+				)
+			)
+		)
+		(property "Description" ""
+			(at 0 0 0)
+			
+			
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "ki_locked" ""
+			(at 0 0 0)
+			
+			
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "ki_keywords" "HRM(G)-300-467B-1"
+			(at 0 0 0)
+			
+			
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "ki_fp_filters" "CONN_HRMG-300-467B-1_HIR"
+			(at 0 0 0)
+			
+			
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(symbol "HRM-G-300-467B-1_1_1"
+			(polyline
+				(pts
+					(xy 5.08 2.54) (xy 5.08 -2.54)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 5.08 -2.54) (xy 12.7 -2.54)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 10.16 0) (xy 5.08 0)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 10.16 0) (xy 8.89 0.8467)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 10.16 0) (xy 8.89 -0.8467)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 12.7 2.54) (xy 5.08 2.54)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 12.7 -2.54) (xy 12.7 2.54)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(pin unspecified line
+				(at 0 0 0)
+				(length 5.08)
+				(name "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+		)
+		(symbol "HRM-G-300-467B-1_1_2"
+			(polyline
+				(pts
+					(xy 5.08 2.54) (xy 5.08 -2.54)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 5.08 -2.54) (xy 12.7 -2.54)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 7.62 0) (xy 5.08 0)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 7.62 0) (xy 8.89 0.8467)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 7.62 0) (xy 8.89 -0.8467)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 12.7 2.54) (xy 5.08 2.54)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 12.7 -2.54) (xy 12.7 2.54)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(pin unspecified line
+				(at 0 0 0)
+				(length 5.08)
+				(name "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+		)
+		(embedded_fonts no)
+	)
+(symbol "Lib:TSW-104-05-G-S"
+		(body_styles demorgan)
+		(pin_names
+			(offset 0.254)
+		)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(duplicate_pin_numbers_are_jumpers no)
+		(property "Reference" "J"
+			(at 8.89 6.35 0)
+			
+			
+			(effects
+				(font
+					(size 1.524 1.524)
+				)
+			)
+		)
+		(property "Value" "TSW-104-05-G-S"
+			(at 0 0 0)
+			
+			
+			(effects
+				(font
+					(size 1.524 1.524)
+				)
+			)
+		)
+		(property "Footprint" "CON4_1X4_TU_TSW"
+			(at 0 0 0)
+			
+			
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+					(italic yes)
+				)
+			)
+		)
+		(property "Datasheet" "TSW-104-05-G-S"
+			(at 0 0 0)
+			
+			
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+					(italic yes)
+				)
+			)
+		)
+		(property "Description" ""
+			(at 0 0 0)
+			
+			
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "ki_locked" ""
+			(at 0 0 0)
+			
+			
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "ki_keywords" "TSW-104-05-G-S"
+			(at 0 0 0)
+			
+			
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "ki_fp_filters" "CON4_1X4_TU_TSW"
+			(at 0 0 0)
+			
+			
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(symbol "TSW-104-05-G-S_1_1"
+			(polyline
+				(pts
+					(xy 5.08 2.54) (xy 5.08 -10.16)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 5.08 -10.16) (xy 12.7 -10.16)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 10.16 0) (xy 5.08 0)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 10.16 0) (xy 8.89 0.8467)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 10.16 0) (xy 8.89 -0.8467)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 10.16 -2.54) (xy 5.08 -2.54)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 10.16 -2.54) (xy 8.89 -1.6933)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 10.16 -2.54) (xy 8.89 -3.3867)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 10.16 -5.08) (xy 5.08 -5.08)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 10.16 -5.08) (xy 8.89 -4.2333)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 10.16 -5.08) (xy 8.89 -5.9267)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 10.16 -7.62) (xy 5.08 -7.62)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 10.16 -7.62) (xy 8.89 -6.7733)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 10.16 -7.62) (xy 8.89 -8.4667)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 12.7 2.54) (xy 5.08 2.54)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 12.7 -10.16) (xy 12.7 2.54)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(pin unspecified line
+				(at 0 0 0)
+				(length 5.08)
+				(name "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin unspecified line
+				(at 0 -2.54 0)
+				(length 5.08)
+				(name "2"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "2"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin unspecified line
+				(at 0 -5.08 0)
+				(length 5.08)
+				(name "3"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "3"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin unspecified line
+				(at 0 -7.62 0)
+				(length 5.08)
+				(name "4"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "4"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+		)
+		(symbol "TSW-104-05-G-S_1_2"
+			(polyline
+				(pts
+					(xy 5.08 2.54) (xy 5.08 -10.16)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 5.08 -10.16) (xy 12.7 -10.16)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 7.62 0) (xy 5.08 0)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 7.62 0) (xy 8.89 0.8467)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 7.62 0) (xy 8.89 -0.8467)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 7.62 -2.54) (xy 5.08 -2.54)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 7.62 -2.54) (xy 8.89 -1.6933)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 7.62 -2.54) (xy 8.89 -3.3867)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 7.62 -5.08) (xy 5.08 -5.08)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 7.62 -5.08) (xy 8.89 -4.2333)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 7.62 -5.08) (xy 8.89 -5.9267)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 7.62 -7.62) (xy 5.08 -7.62)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 7.62 -7.62) (xy 8.89 -6.7733)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 7.62 -7.62) (xy 8.89 -8.4667)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 12.7 2.54) (xy 5.08 2.54)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 12.7 -10.16) (xy 12.7 2.54)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(pin unspecified line
+				(at 0 0 0)
+				(length 5.08)
+				(name "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin unspecified line
+				(at 0 -2.54 0)
+				(length 5.08)
+				(name "2"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "2"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin unspecified line
+				(at 0 -5.08 0)
+				(length 5.08)
+				(name "3"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "3"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin unspecified line
+				(at 0 -7.62 0)
+				(length 5.08)
+				(name "4"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "4"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+		)
+		(embedded_fonts no)
+	)
+(symbol "Lib:Keystone-5011"
+		(body_styles demorgan)
+		(pin_names
+			(offset 0.254)
+		)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(duplicate_pin_numbers_are_jumpers no)
+		(property "Reference" "J"
+			(at 8.89 6.35 0)
+			
+			
+			(effects
+				(font
+					(size 1.524 1.524)
+				)
+			)
+		)
+		(property "Value" "5011"
+			(at 0 0 0)
+			
+			
+			(effects
+				(font
+					(size 1.524 1.524)
+				)
+			)
+		)
+		(property "Footprint" "CONN1_5011_KEY"
+			(at 0 0 0)
+			
+			
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+					(italic yes)
+				)
+			)
+		)
+		(property "Datasheet" "5011"
+			(at 0 0 0)
+			
+			
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+					(italic yes)
+				)
+			)
+		)
+		(property "Description" ""
+			(at 0 0 0)
+			
+			
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "ki_locked" ""
+			(at 0 0 0)
+			
+			
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "ki_keywords" "5011"
+			(at 0 0 0)
+			
+			
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "ki_fp_filters" "CONN1_5011_KEY"
+			(at 0 0 0)
+			
+			
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(symbol "Keystone-5011_1_1"
+			(polyline
+				(pts
+					(xy 5.08 2.54) (xy 5.08 -2.54)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 5.08 -2.54) (xy 12.7 -2.54)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 10.16 0) (xy 5.08 0)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 10.16 0) (xy 8.89 0.8467)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 10.16 0) (xy 8.89 -0.8467)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 12.7 2.54) (xy 5.08 2.54)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 12.7 -2.54) (xy 12.7 2.54)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(pin unspecified line
+				(at 0 0 0)
+				(length 5.08)
+				(name "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+		)
+		(symbol "Keystone-5011_1_2"
+			(polyline
+				(pts
+					(xy 5.08 2.54) (xy 5.08 -2.54)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 5.08 -2.54) (xy 12.7 -2.54)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 7.62 0) (xy 5.08 0)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 7.62 0) (xy 8.89 0.8467)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 7.62 0) (xy 8.89 -0.8467)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 12.7 2.54) (xy 5.08 2.54)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 12.7 -2.54) (xy 12.7 2.54)
+				)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(pin unspecified line
+				(at 0 0 0)
+				(length 5.08)
+				(name "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+		)
+		(embedded_fonts no)
+	)
+(symbol "power:GND"
+    (power)
+    (pin_names (offset 0) (hide yes))
+    (exclude_from_sim no)
+    (in_bom yes)
+    (on_board yes)
+    (property "Reference" "#PWR" (at 0 -6.35 0) (effects (font (size 1.27 1.27)) (hide yes)))
+    (property "Value" "GND" (at 0 -3.81 0) (effects (font (size 1.27 1.27))))
+    (property "Footprint" "" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+    (property "Datasheet" "" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+    (property "Description" "Power symbol — GND" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+    (symbol "GND_0_1"
+      (polyline (pts (xy 0 0) (xy 0 -1.27) (xy 1.27 -1.27) (xy 0 -2.54) (xy -1.27 -1.27) (xy 0 -1.27))
+        (stroke (width 0) (type default)) (fill (type none)))
+    )
+    (symbol "GND_1_1"
+      (pin power_in line (at 0 0 270) (length 0) (hide yes)
+        (name "GND" (effects (font (size 1.27 1.27))))
+        (number "1" (effects (font (size 1.27 1.27)))))
+    )
   )
-
+  )
+  (symbol
+    (lib_id "Lib:HRM-G-300-467B-1")
+    (at 100 100.0 0)
+    (unit 1) (in_bom yes) (on_board yes) (dnp no)
+    (uuid "8dff6683-91ac-541c-bb75-38f5da4d59c4")
+    (property "Reference" "J1" (at 100 94.92 0) (effects (font (size 1.27 1.27))))
+    (property "Value" "SMA" (at 100 105.08 0) (effects (font (size 1.27 1.27))))
+    (property "Footprint" "Connector_Coaxial:SMA_Amphenol_HRM-G_Vertical" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+    (property "Datasheet" "" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+    (pin "1" (uuid "c6f0375c-f781-5928-a188-509abb521dfe"))
+    (instances
+      (project "test1"
+        (path "/4ed7a046-ef33-57d9-8730-321c05965af3/059bce26-e22e-55b8-805e-999a0610e155" (reference "J1") (unit 1)))))
+  (wire (pts (xy 100 100.0) (xy 92.71 100.0)) (stroke (width 0) (type default)) (uuid "880a7e2c-b4d8-52ef-a5e2-3324d1d0bd6d"))
+  (hierarchical_label "CLK_OUT0" (shape input) (at 92.71 100.0 180) (effects (font (size 1.27 1.27)) (justify right)) (uuid "850f0aae-6b2d-54b5-8d4f-b12deb44612b"))
+  (symbol
+    (lib_id "Lib:HRM-G-300-467B-1")
+    (at 100 115.24 0)
+    (unit 1) (in_bom yes) (on_board yes) (dnp no)
+    (uuid "dfbd3170-5ecb-52e0-813d-939dc34dac5e")
+    (property "Reference" "J2" (at 100 110.16 0) (effects (font (size 1.27 1.27))))
+    (property "Value" "SMA" (at 100 120.32 0) (effects (font (size 1.27 1.27))))
+    (property "Footprint" "Connector_Coaxial:SMA_Amphenol_HRM-G_Vertical" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+    (property "Datasheet" "" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+    (pin "1" (uuid "27028c81-245b-586b-b54f-53bc5c4bae95"))
+    (instances
+      (project "test1"
+        (path "/4ed7a046-ef33-57d9-8730-321c05965af3/059bce26-e22e-55b8-805e-999a0610e155" (reference "J2") (unit 1)))))
+  (wire (pts (xy 100 115.24) (xy 92.71 115.24)) (stroke (width 0) (type default)) (uuid "532f0aca-2b02-5e55-85cd-d67069a9a056"))
+  (hierarchical_label "CLK_OUT1" (shape input) (at 92.71 115.24 180) (effects (font (size 1.27 1.27)) (justify right)) (uuid "85d6ebca-b29f-5b5f-9699-0739e980c383"))
+  (symbol
+    (lib_id "Lib:HRM-G-300-467B-1")
+    (at 100 130.48 0)
+    (unit 1) (in_bom yes) (on_board yes) (dnp no)
+    (uuid "0136ca3e-8699-5793-b18b-f0c7f680b699")
+    (property "Reference" "J3" (at 100 125.39999999999999 0) (effects (font (size 1.27 1.27))))
+    (property "Value" "SMA" (at 100 135.56 0) (effects (font (size 1.27 1.27))))
+    (property "Footprint" "Connector_Coaxial:SMA_Amphenol_HRM-G_Vertical" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+    (property "Datasheet" "" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+    (pin "1" (uuid "c0e679a0-e770-53f4-a474-60503d3777f4"))
+    (instances
+      (project "test1"
+        (path "/4ed7a046-ef33-57d9-8730-321c05965af3/059bce26-e22e-55b8-805e-999a0610e155" (reference "J3") (unit 1)))))
+  (wire (pts (xy 100 130.48) (xy 92.71 130.48)) (stroke (width 0) (type default)) (uuid "99a1ce15-6dc7-5408-8dd2-716f179bf536"))
+  (hierarchical_label "CLK_OUT2" (shape input) (at 92.71 130.48 180) (effects (font (size 1.27 1.27)) (justify right)) (uuid "13d595a5-7778-502b-aa3e-600028a92d47"))
+  (symbol
+    (lib_id "Lib:HRM-G-300-467B-1")
+    (at 100 145.72 0)
+    (unit 1) (in_bom yes) (on_board yes) (dnp no)
+    (uuid "b8fd376d-2c86-5094-9660-e1f645610196")
+    (property "Reference" "J4" (at 100 140.64 0) (effects (font (size 1.27 1.27))))
+    (property "Value" "SMA" (at 100 150.8 0) (effects (font (size 1.27 1.27))))
+    (property "Footprint" "Connector_Coaxial:SMA_Amphenol_HRM-G_Vertical" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+    (property "Datasheet" "" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+    (pin "1" (uuid "c0c3d590-5976-510d-af66-4c9bfb47f9db"))
+    (instances
+      (project "test1"
+        (path "/4ed7a046-ef33-57d9-8730-321c05965af3/059bce26-e22e-55b8-805e-999a0610e155" (reference "J4") (unit 1)))))
+  (wire (pts (xy 100 145.72) (xy 92.71 145.72)) (stroke (width 0) (type default)) (uuid "c5c237cb-053d-59ea-b330-8d84ed7c13f0"))
+  (hierarchical_label "CLK_OUT3" (shape input) (at 92.71 145.72 180) (effects (font (size 1.27 1.27)) (justify right)) (uuid "b30a2e12-b043-5351-b04c-2ca5a21eb09a"))
+  (symbol
+    (lib_id "Lib:HRM-G-300-467B-1")
+    (at 165 100.0 0)
+    (unit 1) (in_bom yes) (on_board yes) (dnp no)
+    (uuid "17309c4c-7577-51e3-98de-f9b6b185b981")
+    (property "Reference" "J5" (at 165 94.92 0) (effects (font (size 1.27 1.27))))
+    (property "Value" "SMA" (at 165 105.08 0) (effects (font (size 1.27 1.27))))
+    (property "Footprint" "Connector_Coaxial:SMA_Amphenol_HRM-G_Vertical" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+    (property "Datasheet" "" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+    (pin "1" (uuid "9eacdf6c-49a8-5902-ab29-c336cc0aa3cb"))
+    (instances
+      (project "test1"
+        (path "/4ed7a046-ef33-57d9-8730-321c05965af3/059bce26-e22e-55b8-805e-999a0610e155" (reference "J5") (unit 1)))))
+  (wire (pts (xy 165 100.0) (xy 157.71 100.0)) (stroke (width 0) (type default)) (uuid "1e13811a-996b-5335-b619-3e55faccf53a"))
+  (hierarchical_label "OSC_EN" (shape input) (at 157.71 100.0 180) (effects (font (size 1.27 1.27)) (justify right)) (uuid "d6d79a50-636a-5d90-a390-28d2e1b1c005"))
+  (symbol
+    (lib_id "Lib:HRM-G-300-467B-1")
+    (at 165 115.24 0)
+    (unit 1) (in_bom yes) (on_board yes) (dnp no)
+    (uuid "843cb25d-7e03-5697-9941-4de47c4e93d9")
+    (property "Reference" "J6" (at 165 110.16 0) (effects (font (size 1.27 1.27))))
+    (property "Value" "SMA" (at 165 120.32 0) (effects (font (size 1.27 1.27))))
+    (property "Footprint" "Connector_Coaxial:SMA_Amphenol_HRM-G_Vertical" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+    (property "Datasheet" "" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+    (pin "1" (uuid "3c383641-0929-5cf9-9197-4fb7bc68bbe0"))
+    (instances
+      (project "test1"
+        (path "/4ed7a046-ef33-57d9-8730-321c05965af3/059bce26-e22e-55b8-805e-999a0610e155" (reference "J6") (unit 1)))))
+  (wire (pts (xy 165 115.24) (xy 157.71 115.24)) (stroke (width 0) (type default)) (uuid "4cf1edb3-0281-5009-8e0a-a47447ff1799"))
+  (hierarchical_label "WEIGHT_EN" (shape input) (at 157.71 115.24 180) (effects (font (size 1.27 1.27)) (justify right)) (uuid "67f4aae9-98bb-5338-a3d2-f8bf02e482a2"))
+  (symbol
+    (lib_id "Lib:HRM-G-300-467B-1")
+    (at 165 130.48 0)
+    (unit 1) (in_bom yes) (on_board yes) (dnp no)
+    (uuid "f94c4a22-0397-5846-a0d8-230e759cab7d")
+    (property "Reference" "J7" (at 165 125.39999999999999 0) (effects (font (size 1.27 1.27))))
+    (property "Value" "SMA" (at 165 135.56 0) (effects (font (size 1.27 1.27))))
+    (property "Footprint" "Connector_Coaxial:SMA_Amphenol_HRM-G_Vertical" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+    (property "Datasheet" "" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+    (pin "1" (uuid "8245f70e-5def-5a23-a352-be87d7c18470"))
+    (instances
+      (project "test1"
+        (path "/4ed7a046-ef33-57d9-8730-321c05965af3/059bce26-e22e-55b8-805e-999a0610e155" (reference "J7") (unit 1)))))
+  (wire (pts (xy 165 130.48) (xy 157.71 130.48)) (stroke (width 0) (type default)) (uuid "37a4e60b-1ba7-5a14-ab99-50194e639e8c"))
+  (hierarchical_label "SAMPLE_TRIG" (shape input) (at 157.71 130.48 180) (effects (font (size 1.27 1.27)) (justify right)) (uuid "aa7ae54e-4348-5605-aa6b-52450c5ca704"))
+  (symbol
+    (lib_id "Lib:TSW-104-05-G-S")
+    (at 230 100 0)
+    (unit 1) (in_bom yes) (on_board yes) (dnp no)
+    (uuid "1e9438a0-c2d8-5cbc-8b7c-aeb6b15820cd")
+    (property "Reference" "J8" (at 230 94.92 0) (effects (font (size 1.27 1.27))))
+    (property "Value" "1x4 100mil" (at 230 105.08 0) (effects (font (size 1.27 1.27))))
+    (property "Footprint" "Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+    (property "Datasheet" "" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+    (pin "1" (uuid "4c45c52b-30b1-5259-af1c-2e1e120d4563"))
+    (pin "2" (uuid "09a87aa8-effd-58e5-8d65-fd17e273a0b8"))
+    (pin "3" (uuid "01c6c057-fea2-5032-9cec-3333d0de885b"))
+    (pin "4" (uuid "86b78f8c-296a-5b74-b7ba-d6830c6da225"))
+    (instances
+      (project "test1"
+        (path "/4ed7a046-ef33-57d9-8730-321c05965af3/059bce26-e22e-55b8-805e-999a0610e155" (reference "J8") (unit 1)))))
+  (wire (pts (xy 230 100.0) (xy 222.71 100.0)) (stroke (width 0) (type default)) (uuid "8bcb6870-94cf-55c3-9e4e-71a16e40130c"))
+  (hierarchical_label "GPIO0" (shape input) (at 222.71 100.0 180) (effects (font (size 1.27 1.27)) (justify right)) (uuid "b581ac3c-90da-597e-a534-ea8d4eb88180"))
+  (wire (pts (xy 230 102.54) (xy 222.71 102.54)) (stroke (width 0) (type default)) (uuid "56d75f46-69ea-5374-ae3e-d972941558a4"))
+  (hierarchical_label "GPIO1" (shape input) (at 222.71 102.54 180) (effects (font (size 1.27 1.27)) (justify right)) (uuid "e93d7a0d-6551-514a-99c6-f16cfddbd26d"))
+  (wire (pts (xy 230 105.08) (xy 222.71 105.08)) (stroke (width 0) (type default)) (uuid "a67193b2-0b3c-57d1-b4c4-3f523c89f834"))
+  (hierarchical_label "GPIO2" (shape input) (at 222.71 105.08 180) (effects (font (size 1.27 1.27)) (justify right)) (uuid "009d2ae2-8a8e-5abc-8dea-dca382733ded"))
+  (wire (pts (xy 230 107.62) (xy 222.71 107.62)) (stroke (width 0) (type default)) (uuid "3c9c5a38-4551-5f3a-86f0-d9b077526528"))
+  (hierarchical_label "GPIO3" (shape input) (at 222.71 107.62 180) (effects (font (size 1.27 1.27)) (justify right)) (uuid "f03d1a52-587f-58e0-bcca-3746c0c20273"))
+  (symbol
+    (lib_id "Lib:Keystone-5011")
+    (at 100 175 0)
+    (unit 1) (in_bom yes) (on_board yes) (dnp no)
+    (uuid "8e191c5c-2f7a-52d3-a63c-6da40fb010ff")
+    (property "Reference" "TP1" (at 100 169.92 0) (effects (font (size 1.27 1.27))))
+    (property "Value" "GND-CLIP" (at 100 180.08 0) (effects (font (size 1.27 1.27))))
+    (property "Footprint" "TestPoint:TestPoint_THTPad_D5.0mm_Drill3.0mm" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+    (property "Datasheet" "" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+    (pin "1" (uuid "d2fc6156-1658-52af-bd3f-b2781cd5c781"))
+    (instances
+      (project "test1"
+        (path "/4ed7a046-ef33-57d9-8730-321c05965af3/059bce26-e22e-55b8-805e-999a0610e155" (reference "TP1") (unit 1)))))
+  (symbol
+    (lib_id "power:GND")
+    (at 100 175 0)
+    (unit 1) (in_bom yes) (on_board yes) (dnp no)
+    (uuid "164972a5-0385-5e4e-a965-002f96b0557c")
+    (property "Reference" "#PWRa8bc5041" (at 100 168.65 0) (effects (font (size 1.27 1.27)) (hide yes)))
+    (property "Value" "GND" (at 100 171.19 0) (effects (font (size 1.27 1.27))))
+    (property "Footprint" "" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+    (property "Datasheet" "" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+    (pin "1" (uuid "1c057829-dd18-5d85-b1ed-2a7d7ad6e2fd"))
+    (instances
+      (project "test1"
+        (path "/4ed7a046-ef33-57d9-8730-321c05965af3/059bce26-e22e-55b8-805e-999a0610e155" (reference "#PWRa8bc5041") (unit 1)))))
+  (symbol
+    (lib_id "Lib:Keystone-5011")
+    (at 130 175 0)
+    (unit 1) (in_bom yes) (on_board yes) (dnp no)
+    (uuid "64ab7986-2de8-5894-9181-e6971dbbc740")
+    (property "Reference" "TP2" (at 130 169.92 0) (effects (font (size 1.27 1.27))))
+    (property "Value" "GND-CLIP" (at 130 180.08 0) (effects (font (size 1.27 1.27))))
+    (property "Footprint" "TestPoint:TestPoint_THTPad_D5.0mm_Drill3.0mm" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+    (property "Datasheet" "" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+    (pin "1" (uuid "a5bb0146-a3d7-5650-b047-9bcec01bcca6"))
+    (instances
+      (project "test1"
+        (path "/4ed7a046-ef33-57d9-8730-321c05965af3/059bce26-e22e-55b8-805e-999a0610e155" (reference "TP2") (unit 1)))))
+  (symbol
+    (lib_id "power:GND")
+    (at 130 175 0)
+    (unit 1) (in_bom yes) (on_board yes) (dnp no)
+    (uuid "fd94b36f-2755-5e82-b90c-c416519d0df1")
+    (property "Reference" "#PWRc2f4a55b" (at 130 168.65 0) (effects (font (size 1.27 1.27)) (hide yes)))
+    (property "Value" "GND" (at 130 171.19 0) (effects (font (size 1.27 1.27))))
+    (property "Footprint" "" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+    (property "Datasheet" "" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+    (pin "1" (uuid "83955e46-be4f-5de6-9f7d-bc046f15e2a0"))
+    (instances
+      (project "test1"
+        (path "/4ed7a046-ef33-57d9-8730-321c05965af3/059bce26-e22e-55b8-805e-999a0610e155" (reference "#PWRc2f4a55b") (unit 1)))))
+  (symbol
+    (lib_id "Lib:Keystone-5011")
+    (at 160 175 0)
+    (unit 1) (in_bom yes) (on_board yes) (dnp no)
+    (uuid "652de253-f68a-5165-89d4-eb51d8f39080")
+    (property "Reference" "TP3" (at 160 169.92 0) (effects (font (size 1.27 1.27))))
+    (property "Value" "GND-CLIP" (at 160 180.08 0) (effects (font (size 1.27 1.27))))
+    (property "Footprint" "TestPoint:TestPoint_THTPad_D5.0mm_Drill3.0mm" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+    (property "Datasheet" "" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+    (pin "1" (uuid "03b98532-2f44-5583-862d-f6d457095452"))
+    (instances
+      (project "test1"
+        (path "/4ed7a046-ef33-57d9-8730-321c05965af3/059bce26-e22e-55b8-805e-999a0610e155" (reference "TP3") (unit 1)))))
+  (symbol
+    (lib_id "power:GND")
+    (at 160 175 0)
+    (unit 1) (in_bom yes) (on_board yes) (dnp no)
+    (uuid "85d0a8b7-7fb9-5f8d-922f-59b10b12bef4")
+    (property "Reference" "#PWR14da05bd" (at 160 168.65 0) (effects (font (size 1.27 1.27)) (hide yes)))
+    (property "Value" "GND" (at 160 171.19 0) (effects (font (size 1.27 1.27))))
+    (property "Footprint" "" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+    (property "Datasheet" "" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+    (pin "1" (uuid "f3bdb814-1bd3-5e25-8378-e6a6263330ff"))
+    (instances
+      (project "test1"
+        (path "/4ed7a046-ef33-57d9-8730-321c05965af3/059bce26-e22e-55b8-805e-999a0610e155" (reference "#PWR14da05bd") (unit 1)))))
   (sheet_instances
     (path "/" (page "7"))
   )

@@ -296,23 +296,26 @@ for _r in EXTRA_RAILS:
 # Pin coordinate extraction
 # ---------------------------------------------------------------------------
 
-# Cache: lib_id -> {pin_number: (name, local_x, local_y, angle_deg)}
-_PIN_CACHE: dict[str, dict[str, tuple[str, float, float, int]]] = {}
+# Cache: lib_id -> {pin_number: (name, local_x, local_y, angle_deg, unit)}
+_PIN_CACHE: dict[str, dict[str, tuple[str, float, float, int, int]]] = {}
 
-# Hand-coded pin tables for embedded STD_SYMBOLS (R/C/L/power).
-# Format: {pin_number: (name, local_x, local_y, angle_deg)}
-_STD_PINS: dict[str, dict[str, tuple[str, float, float, int]]] = {
-    "Device:R":   {"1": ("~", 0, 3.81, 270), "2": ("~", 0, -3.81, 90)},
-    "Device:C":   {"1": ("~", 0, 3.81, 270), "2": ("~", 0, -3.81, 90)},
-    "power:GND":  {"1": ("GND", 0, 0, 270)},
-    "power:+3V3": {"1": ("+3V3", 0, 0, 90)},
+# Hand-coded pin tables for embedded STD_SYMBOLS (R/C/L/power). Unit = 1.
+_STD_PINS: dict[str, dict[str, tuple[str, float, float, int, int]]] = {
+    "Device:R":   {"1": ("~", 0, 3.81, 270, 1), "2": ("~", 0, -3.81, 90, 1)},
+    "Device:C":   {"1": ("~", 0, 3.81, 270, 1), "2": ("~", 0, -3.81, 90, 1)},
+    "power:GND":  {"1": ("GND", 0, 0, 270, 1)},
+    "power:+3V3": {"1": ("+3V3", 0, 0, 90, 1)},
 }
 for _r in EXTRA_RAILS:
-    _STD_PINS[f"power:{_r}"] = {"1": (_r, 0, 0, 90)}
+    _STD_PINS[f"power:{_r}"] = {"1": (_r, 0, 0, 90, 1)}
 
 
-def parse_pins(lib_id: str) -> dict[str, tuple[str, float, float, int]]:
-    """Return {pin_number: (name, local_x, local_y, angle_deg)} for a symbol."""
+def parse_pins(lib_id: str) -> dict[str, tuple[str, float, float, int, int]]:
+    """Return {pin_number: (name, local_x, local_y, angle_deg, unit)}.
+
+    The unit number is parsed from sub-symbol names like "X_<unit>_<style>"
+    (e.g. "OPA2388IDR_2_1" → unit 2). Pins outside any sub-symbol are unit 1.
+    """
     if lib_id in _PIN_CACHE:
         return _PIN_CACHE[lib_id]
     if lib_id in _STD_PINS:
@@ -324,13 +327,26 @@ def parse_pins(lib_id: str) -> dict[str, tuple[str, float, float, int]]:
     _, mpn = lib_id.split(":", 1)
     text = (PARTS_LIB / mpn / f"{mpn}.kicad_sym").read_text()
 
-    pins: dict[str, tuple[str, float, float, int]] = {}
-    # Each pin: (pin TYPE shape (at X Y A) (length L) (name "N" ...) ... (number "N" ...))
+    # Find each sub-symbol block "<innerStem>_<unit>_<style>" and remember its
+    # span so we can attribute pins inside it to the right unit.
+    subunit_spans: list[tuple[int, int, int]] = []  # (start, end, unit)
+    for m in re.finditer(r'\(symbol\s+"[^"]+_(\d+)_\d+"', text):
+        u = int(m.group(1))
+        start = m.start()
+        end = _find_matching_paren(text, start)
+        subunit_spans.append((start, end, u))
+
+    def unit_at(pos: int) -> int:
+        for st, en, u in subunit_spans:
+            if st <= pos <= en:
+                return u
+        return 1
+
+    pins: dict[str, tuple[str, float, float, int, int]] = {}
     pin_pat = re.compile(r'\(pin\s+\w+\s+\w+\s*\(at\s+([-\d.]+)\s+([-\d.]+)\s+(\d+)\)')
     name_pat = re.compile(r'\(name\s+"([^"]+)"')
     number_pat = re.compile(r'\(number\s+"([^"]+)"')
 
-    # Walk the file, finding each (pin ...) block by paren matching.
     for m in pin_pat.finditer(text):
         start = text.rfind("(pin", 0, m.end())
         end = _find_matching_paren(text, start)
@@ -339,7 +355,7 @@ def parse_pins(lib_id: str) -> dict[str, tuple[str, float, float, int]]:
         nm = name_pat.search(block)
         nu = number_pat.search(block)
         if nm and nu:
-            pins[nu.group(1)] = (nm.group(1), x, y, a)
+            pins[nu.group(1)] = (nm.group(1), x, y, a, unit_at(start))
     _PIN_CACHE[lib_id] = pins
     return pins
 
@@ -469,56 +485,68 @@ def _ref_value_positions(lib_id: str, x: float, y: float, angle: int
 
 def place(sheet: Sheet, lib_id: str, ref: str, value: str,
           x: float, y: float, angle: int = 0,
-          footprint: str = "") -> dict[str, tuple[float, float]]:
+          footprint: str = "", unit: int = 1) -> dict[str, tuple[float, float]]:
     """
     Embed a symbol if needed, emit an instance, and return {pin_number: (wx, wy)}.
 
-    Caller wires by pin number. For passives, both pin numbers are valid;
-    for ICs use the pin number from parse_pins().
+    For multi-unit symbols (e.g. OPA2388 dual op-amp), pass unit=2, 3, … to
+    instantiate other units. Only the named unit's pins (plus shared-power
+    pins assigned to unit 1) are wired by the returned coord map.
     """
     sheet.embed_symbol(lib_id)
-    pins = parse_pins(lib_id)
+    all_pins = parse_pins(lib_id)
+    # Filter pins for this unit. KiCad treats unit 0 as "common to all units"
+    # (single-unit symbols often use _0_1 sub-symbols), so include both unit 0
+    # and the requested unit.
+    pins = {n: p for n, p in all_pins.items() if p[4] in (0, unit)}
 
-    # Hide reference for power symbols (they use "#PWR..." per KiCad convention).
     is_power = lib_id.startswith("power:")
     if is_power:
-        # Use a unique #PWR ref per instance — KiCad expects them to be unique
         ref_actual = f"#PWR{uid(f'{sheet.name}_{x}_{y}_{value}')[:8].replace('-', '')}"
     else:
         ref_actual = ref
-        if ref in sheet._refdes_seen:
-            raise ValueError(f"duplicate refdes {ref} on sheet {sheet.name}")
-        sheet._refdes_seen.add(ref)
+        # For multi-unit instances, the same refdes appears multiple times
+        # (e.g. U1 with unit 1 and unit 2). Don't error on those.
+        key = f"{ref}/unit{unit}"
+        if key in sheet._refdes_seen:
+            raise ValueError(f"duplicate refdes {ref} unit {unit} on sheet {sheet.name}")
+        sheet._refdes_seen.add(key)
 
     (xr, yr), (xv, yv) = _ref_value_positions(lib_id, x, y, angle)
 
+    def _esc(t: str) -> str:
+        """Escape any chars that would break an s-expr string token."""
+        return t.replace("\\", "\\\\").replace('"', '\\"')
+    ref_actual_e = _esc(ref_actual)
+    value_e      = _esc(value)
+    footprint_e  = _esc(footprint)
+
     pin_uuids = "\n".join(
-        f'    (pin "{num}" (uuid "{uid(f"pin_{sheet.name}_{ref_actual}_{num}")}"))'
+        f'    (pin "{num}" (uuid "{uid(f"pin_{sheet.name}_{ref_actual}_u{unit}_{num}")}"))'
         for num in pins
     )
 
     ref_effects = " (effects (font (size 1.27 1.27)) (hide yes))" if is_power else " (effects (font (size 1.27 1.27)))"
     value_effects = " (effects (font (size 1.27 1.27)))"
 
-    instance_uuid = uid(f"inst_{sheet.name}_{ref_actual}")
+    instance_uuid = uid(f"inst_{sheet.name}_{ref_actual}_u{unit}")
     block = f'''  (symbol
     (lib_id "{lib_id}")
     (at {x} {y} {angle})
-    (unit 1) (in_bom yes) (on_board yes) (dnp no)
+    (unit {unit}) (in_bom yes) (on_board yes) (dnp no)
     (uuid "{instance_uuid}")
-    (property "Reference" "{ref_actual}" (at {xr} {yr} 0){ref_effects})
-    (property "Value" "{value}" (at {xv} {yv} 0){value_effects})
-    (property "Footprint" "{footprint}" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+    (property "Reference" "{ref_actual_e}" (at {xr} {yr} 0){ref_effects})
+    (property "Value" "{value_e}" (at {xv} {yv} 0){value_effects})
+    (property "Footprint" "{footprint_e}" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
     (property "Datasheet" "" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
 {pin_uuids}
     (instances
       (project "{PROJECT_NAME}"
-        (path "/{ROOT_UUID}/{sheet.uuid}" (reference "{ref_actual}") (unit 1)))))'''
+        (path "/{ROOT_UUID}/{sheet.uuid}" (reference "{ref_actual_e}") (unit {unit})))))'''
     sheet.add(block)
 
-    # Compute world coords per pin.
     out: dict[str, tuple[float, float]] = {}
-    for num, (_nm, lx, ly, _la) in pins.items():
+    for num, (_nm, lx, ly, _la, _u) in pins.items():
         out[num] = pin_world(x, y, angle, lx, ly)
     return out
 
@@ -764,6 +792,861 @@ def build_eeprom() -> Sheet:
 
     return s
 
+
+# Common footprint constants
+FP_R0402 = "Resistor_SMD:R_0402_1005Metric"
+FP_C0402 = "Capacitor_SMD:C_0402_1005Metric"
+FP_C0603 = "Capacitor_SMD:C_0603_1608Metric"
+FP_C0805 = "Capacitor_SMD:C_0805_2012Metric"
+FP_SOIC8 = "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm"
+FP_VQFN20 = "Package_DFN_QFN:VQFN-20-1EP_3.5x3.5mm_P0.5mm_EP1.6x1.6mm"
+FP_QFN10 = "Package_DFN_QFN:VQFN-10-1EP_3x3mm_P0.5mm_EP1.6x1.6mm"
+FP_PMOS_DFN = "Package_DFN_QFN:DFN-3-1EP_1.0x1.0mm_P0.65mm_EP0.5x0.5mm"
+FP_SOT23 = "Package_TO_SOT_SMD:SOT-23"
+FP_WCSP4 = "Package_DirectFETandLGA:Texas_DSBGA-4_0.6x1.0mm_Layout2x2_P0.4mm"
+FP_QFN40 = "Bobcat:QFN-40_5x5mm_P0.4mm_EP3.5mm"
+FP_SMA = "Connector_Coaxial:SMA_Amphenol_HRM-G_Vertical"
+FP_HEADER_1x2 = "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical"
+FP_HEADER_1x4 = "Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical"
+FP_TESTPOINT = "TestPoint:TestPoint_THTPad_D5.0mm_Drill3.0mm"
+FP_FMC = "Connector:FMC_LPC_ASP-134606-01"
+
+
+# ---------------------------------------------------------------------------
+# Child sheet: Power
+# ---------------------------------------------------------------------------
+
+def build_power() -> Sheet:
+    """TPS7A8401A LDO (3P3V → 0.6–1.0V) + TPS22916 load switch (VADJ → VDDIO).
+
+    Functional clusters:
+      A. LDO input side  (IN×3, BIAS, decoupling, EN pulldown)
+      B. LDO output side (OUT×3, SNS, FB, NR_SS cap, ANY-OUT strap, decoupling)
+      C. Output jumpers  (3× 1×2 headers fanning OUT to VDDD/VDDA1/VDDA2)
+      D. Load switch     (TPS22916: VADJ → VDDIO, EN pulldown, decoupling)
+    """
+    s = Sheet(name="power", uuid=SHEET_UUIDS["power"],
+              page=PAGE_NUMBERS["power"],
+              title=f"{PROJECT_NAME} — Power (LDO + Load Switch)")
+
+    # ===== Cluster A: LDO body =====
+    # Place TPS7A8401A at (130, 130). Body spans local x ∈ [-20.32, 20.32] (40.64 wide),
+    # local y ∈ [-22.86, 20.32] (43.18 tall).
+    # World coords: chip body x ∈ [109.68, 150.32], y ∈ [109.68, 152.86].
+    U1 = place(s, "Lib:TPS7A8401A", "U1", "TPS7A8401A", 130, 130, footprint=FP_VQFN20)
+    # Pin world coords (recompute the important ones):
+    # IN (pins 15,16,17): local (-20.32, 20.32/17.78/15.24) → world (109.68, 109.68/112.22/114.76)
+    # EN (14): (-20.32, 10.16) → (109.68, 119.84)
+    # BIAS (12): (-20.32, 5.08) → (109.68, 124.92)
+    # NR_SS (13): (-20.32, -2.54) → (109.68, 132.54)
+    # 50_mV..1.6_V (5,6,7,9,10,11): left side, lower
+    # OUT (1,19,20): (20.32, 10.16/7.62/5.08) → (150.32, 119.84/122.38/124.92)
+    # SNS (2): (20.32, 0) → (150.32, 130)
+    # FB (3): (20.32, -7.62) → (150.32, 137.62)
+    # PG (4): (20.32, 20.32) → (150.32, 109.68)
+    # GND (8): (20.32, -17.78) → (150.32, 147.78)
+    # GND (18): (20.32, -20.32) → (150.32, 150.32)
+    # PAD (21): (20.32, -22.86) → (150.32, 152.86)
+
+    # +3V3 input rail at top (y = 95.25)
+    RAIL_3V3_Y = 95.25
+    GND_RAIL_Y = 175.26
+
+    # IN pins → +3V3 (junction the three IN stubs together)
+    for px, py in [U1["15"], U1["16"], U1["17"]]:
+        s.add(wire(px, py, px - 7.62, py))
+    s.add(wire(102.06, U1["15"][1], 102.06, RAIL_3V3_Y))   # vertical riser
+    s.add(wire(102.06, U1["16"][1], 109.68, U1["16"][1]))  # already covered
+    s.add(junction(102.06, U1["16"][1]))
+    s.add(junction(102.06, U1["17"][1]))
+    # Actually simpler: drop a vertical bus at x=102.06 covering all three Y values
+    # and add junctions at each.
+    s.add(wire(102.06, U1["17"][1], 102.06, U1["15"][1]))
+    # BIAS pin → +3V3 (separately stubbed)
+    s.add(wire(U1["12"][0], U1["12"][1], 102.06, U1["12"][1]))
+    s.add(junction(102.06, U1["12"][1]))
+    s.add(wire(102.06, U1["12"][1], 102.06, RAIL_3V3_Y))
+    power_at(s, "+3V3", 102.06, RAIL_3V3_Y)
+
+    # IN-side decoupling: 10µF (C1) and 0.1µF (C2) between +3V3 and GND, left of LDO
+    place(s, "Device:C", "C1", "10uF", 87.63, 130, footprint=FP_C0805)
+    # C1 pin 1 (top) world: (87.63, 126.19); pin 2 (bot): (87.63, 133.81)
+    s.add(wire(87.63, 126.19, 87.63, RAIL_3V3_Y))
+    s.add(junction(87.63, RAIL_3V3_Y))
+    # wire +3V3 rail from C1 over to U1 stub
+    s.add(wire(87.63, RAIL_3V3_Y, 102.06, RAIL_3V3_Y))
+    s.add(wire(87.63, 133.81, 87.63, GND_RAIL_Y))
+
+    place(s, "Device:C", "C2", "0.1uF", 95.25, 130, footprint=FP_C0402)
+    s.add(wire(95.25, 126.19, 95.25, RAIL_3V3_Y))
+    s.add(junction(95.25, RAIL_3V3_Y))
+    s.add(wire(95.25, 133.81, 95.25, GND_RAIL_Y))
+
+    # GND rail bottom
+    s.add(wire(87.63, GND_RAIL_Y, 95.25, GND_RAIL_Y))
+    s.add(junction(87.63, GND_RAIL_Y))
+    s.add(junction(95.25, GND_RAIL_Y))
+    power_at(s, "GND", 87.63, GND_RAIL_Y)
+
+    # EN pin (14) → 10k pulldown to GND, hier-label LDO_EN comes from FPGA via FMC.
+    s.add(wire(U1["14"][0], U1["14"][1], 99.06, U1["14"][1]))
+    place(s, "Device:R", "R1", "10k", 99.06, 124.92, footprint=FP_R0402)
+    # R1 pin 1 top (99.06, 121.11) → connects to EN stub via vertical riser
+    s.add(wire(99.06, 121.11, 99.06, U1["14"][1]))
+    s.add(wire(99.06, 128.73, 99.06, GND_RAIL_Y))
+    s.add(wire(95.25, GND_RAIL_Y, 99.06, GND_RAIL_Y))
+    s.add(junction(99.06, GND_RAIL_Y))
+    # Hier label LDO_EN at the EN stub
+    s.add(hier_label("LDO_EN", "input", 91.44, U1["14"][1], angle=180, justify="right"))
+    s.add(wire(91.44, U1["14"][1], 99.06, U1["14"][1]))
+    s.add(junction(99.06, U1["14"][1]))
+
+    # NR_SS (13): 10nF cap to GND
+    s.add(wire(U1["13"][0], U1["13"][1], 99.06, U1["13"][1]))
+    place(s, "Device:C", "C3", "10nF", 99.06, 137.16, footprint=FP_C0402)
+    # C3 pin 1 top (99.06, 133.35); pin 2 bot (99.06, 140.97)
+    s.add(wire(99.06, 133.35, 99.06, U1["13"][1]))
+    s.add(wire(99.06, 140.97, 99.06, GND_RAIL_Y))
+    s.add(junction(99.06, GND_RAIL_Y))
+
+    # ===== Cluster B: ANY-OUT strap (set output voltage) =====
+    # The TPS7A8401A output is configured by tying ANY-OUT pins to GND. Default
+    # base 0.5V; adding 50_mV(5), 100_mV(6), 200_mV(9 actually 400_mV…)…
+    # Per design_requirements: Bobcat rails 0.6–1.0V. Target a single setpoint
+    # of 0.8 V (0.5V base + 100mV + 200mV). Tie pins 6 (100_mV) and 7 (200_mV)
+    # to GND; leave 5, 9, 10, 11 NC (no_connect).
+    # ANY-OUT pin world coords (left side, lower):
+    #   5 (50_mV)   (109.68, 152.86)
+    #   6 (100_mV)  (109.68, 150.32) — strap to GND
+    #   7 (200_mV)  (109.68, 147.78) — strap to GND
+    #   9 (400_mV)  (109.68, 145.24)
+    #   10 (800_mV) (109.68, 142.70)
+    #   11 (1.6_V)  (109.68, 140.16)
+    # Tie 6 and 7 to GND (short stubs left + GND symbols)
+    for pn in ("6", "7"):
+        px, py = U1[pn]
+        s.add(wire(px, py, px - 7.62, py))
+        power_at(s, "GND", px - 7.62, py, angle=270)
+    # NC the other ANY-OUT pins to suppress ERC errors
+    for pn in ("5", "9", "10", "11"):
+        px, py = U1[pn]
+        s.add(no_connect(px, py))
+
+    # ===== Cluster B: OUT side =====
+    # OUT pins (1, 19, 20) → tie together → output bus → goes to jumpers + SNS + FB + decoupling
+    # OUT world coords: (150.32, 119.84/122.38/124.92)
+    OUT_BUS_X = 165.1
+    OUT_BUS_Y = 122.38  # midpoint of OUT pins
+    # Stub each OUT pin right to the bus
+    for pn in ("1", "19", "20"):
+        px, py = U1[pn]
+        s.add(wire(px, py, OUT_BUS_X, py))
+    s.add(wire(OUT_BUS_X, U1["1"][1], OUT_BUS_X, U1["20"][1]))   # vertical OUT bus
+    for pn in ("1", "20"):
+        _, py = U1[pn]
+        s.add(junction(OUT_BUS_X, py))
+
+    # SNS (2) → tie to OUT bus (sense to output for kelvin), via wire
+    s.add(wire(U1["2"][0], U1["2"][1], OUT_BUS_X, U1["2"][1]))
+    s.add(wire(OUT_BUS_X, U1["2"][1], OUT_BUS_X, U1["1"][1]))
+    s.add(junction(OUT_BUS_X, U1["2"][1]))
+
+    # FB (3) → tie to OUT (ANY-OUT mode uses internal feedback when FB=OUT)
+    s.add(wire(U1["3"][0], U1["3"][1], OUT_BUS_X, U1["3"][1]))
+    s.add(wire(OUT_BUS_X, U1["2"][1], OUT_BUS_X, U1["3"][1]))
+    s.add(junction(OUT_BUS_X, U1["3"][1]))
+
+    # PG (4) → hier label LDO_PG (open drain, pulled up by FPGA side)
+    s.add(wire(U1["4"][0], U1["4"][1], 167.64, U1["4"][1]))
+    s.add(hier_label("LDO_PG", "output", 167.64, U1["4"][1], angle=0))
+
+    # GND pins (8, 18, 21) → GND
+    for pn in ("8", "18", "21"):
+        px, py = U1[pn]
+        s.add(wire(px, py, px + 5.08, py))
+        power_at(s, "GND", px + 5.08, py)
+
+    # OUT-side decoupling: 22µF (C4) and 0.1µF (C5) — between OUT bus and GND
+    place(s, "Device:C", "C4", "22uF", 172.72, 130, footprint=FP_C0805)
+    s.add(wire(172.72, 126.19, 172.72, U1["1"][1]))
+    s.add(wire(OUT_BUS_X, U1["1"][1], 172.72, U1["1"][1]))
+    s.add(junction(OUT_BUS_X, U1["1"][1]))
+    s.add(wire(172.72, 133.81, 172.72, GND_RAIL_Y))
+    s.add(wire(172.72, GND_RAIL_Y, 180.34, GND_RAIL_Y))
+    power_at(s, "GND", 180.34, GND_RAIL_Y)
+
+    place(s, "Device:C", "C5", "0.1uF", 180.34, 130, footprint=FP_C0402)
+    s.add(wire(180.34, 126.19, 180.34, U1["1"][1]))
+    s.add(wire(172.72, U1["1"][1], 180.34, U1["1"][1]))
+    s.add(junction(172.72, U1["1"][1]))
+    s.add(junction(180.34, U1["1"][1]))
+    s.add(wire(180.34, 133.81, 180.34, GND_RAIL_Y))
+    s.add(junction(180.34, GND_RAIL_Y))
+
+    # ===== Cluster C: Output jumpers (3× 1×2 → VDDD, VDDA1, VDDA2) =====
+    # Place jumpers in a column to the right of the LDO, fanning out from OUT bus
+    # Jumper TSW-102: 2 pins vertical, pin 1 at top, pin 2 below (2.54 mm pitch)
+    # J1 → VDDD, J2 → VDDA1, J3 → VDDA2. Each: pin 1 = LDO OUT bus side, pin 2 = output rail.
+    # Place at x=195.58, y spaced.
+    JX = 195.58
+    for i, (ref, rail) in enumerate([("J1", "+VDDD"), ("J2", "+VDDA1"), ("J3", "+VDDA2")]):
+        jy = 119.38 + i * 17.78   # more vertical breathing room between jumpers
+        J = place(s, "Lib:TSW-102-05-G-S", ref, "1x2 100mil", JX, jy, footprint=FP_HEADER_1x2)
+        # J pin 1 (jx, jy), pin 2 (jx, jy + 2.54)
+        # Pin 1 → OUT bus (route via x = JX-5.08 then back to OUT_BUS_X)
+        s.add(wire(JX, jy, JX - 5.08, jy))
+        s.add(wire(JX - 5.08, jy, JX - 5.08, U1["1"][1]))
+        s.add(wire(JX - 5.08, U1["1"][1], OUT_BUS_X, U1["1"][1]))
+        s.add(junction(OUT_BUS_X, U1["1"][1]))
+        # Pin 2 → power rail symbol with name (rail) for that supply
+        s.add(wire(JX, jy + 2.54, JX + 7.62, jy + 2.54))
+        power_at(s, rail, JX + 7.62, jy + 2.54)
+
+    # ===== Cluster D: Load switch (TPS22916) =====
+    # Place at (235, 130). VIN (A2, left top), ON (B2, left bot), VOUT (A1, right top), GND (B1, right bot).
+    U2 = place(s, "Lib:TPS22916CNYFPR", "U2", "TPS22916", 235, 130, footprint=FP_WCSP4)
+    # VIN (A2) world (214.68, 124.92) — wire to VADJ hier label
+    s.add(wire(U2["A2"][0], U2["A2"][1], 207.01, U2["A2"][1]))
+    s.add(hier_label("VADJ", "input", 207.01, U2["A2"][1], angle=180, justify="right"))
+    # ON (B2): pulldown R2 placed later in this cluster, below the chip.
+
+    # GND (B1) world (255.32, 135.08)
+    s.add(wire(U2["B1"][0], U2["B1"][1], U2["B1"][0] + 5.08, U2["B1"][1]))
+    power_at(s, "GND", U2["B1"][0] + 5.08, U2["B1"][1])
+
+    # VOUT (A1) world (255.32, 124.92) → +VDDIO
+    s.add(wire(U2["A1"][0], U2["A1"][1], U2["A1"][0] + 12.7, U2["A1"][1]))
+    power_at(s, "+VDDIO", U2["A1"][0] + 12.7, U2["A1"][1])
+
+    # TPS22916 decoupling: 0.1 µF on VIN and VOUT (small caps)
+    place(s, "Device:C", "C6", "0.1uF", 220.98, 152.4, footprint=FP_C0402)
+    s.add(wire(220.98, 148.59, 220.98, U2["A2"][1]))
+    s.add(wire(220.98, U2["A2"][1], U2["A2"][0], U2["A2"][1]))
+    s.add(junction(220.98, U2["A2"][1]))
+    s.add(wire(220.98, 156.21, 220.98, GND_RAIL_Y))
+    s.add(wire(180.34, GND_RAIL_Y, 220.98, GND_RAIL_Y))
+    s.add(junction(220.98, GND_RAIL_Y))
+
+    place(s, "Device:C", "C7", "0.1uF", 247.65, 152.4, footprint=FP_C0402)
+    s.add(wire(247.65, 148.59, 247.65, U2["A1"][1]))
+    s.add(wire(247.65, U2["A1"][1], U2["A1"][0], U2["A1"][1]))
+    s.add(junction(247.65, U2["A1"][1]))
+    s.add(wire(247.65, 156.21, 247.65, GND_RAIL_Y))
+    s.add(wire(220.98, GND_RAIL_Y, 247.65, GND_RAIL_Y))
+    s.add(junction(247.65, GND_RAIL_Y))
+
+    # ON pull-down R2 (10k) + LSW_EN hier-label, vertical, between ON stub
+    # and GND rail below the load switch.
+    place(s, "Device:R", "R2", "10k", 207.06, U2["B2"][1] + 7.62, footprint=FP_R0402)
+    # R2 pin 1 (top): (207.06, U2["B2"][1] + 3.81); pin 2 (bot): (207.06, U2["B2"][1] + 11.43)
+    s.add(wire(207.06, U2["B2"][1] + 3.81, 207.06, U2["B2"][1]))
+    s.add(wire(207.06, U2["B2"][1], U2["B2"][0], U2["B2"][1]))
+    s.add(junction(207.06, U2["B2"][1]))
+    s.add(hier_label("LSW_EN", "input", 199.39, U2["B2"][1], angle=180, justify="right"))
+    s.add(wire(199.39, U2["B2"][1], 207.06, U2["B2"][1]))
+    s.add(wire(207.06, U2["B2"][1] + 11.43, 207.06, GND_RAIL_Y))
+    s.add(junction(207.06, GND_RAIL_Y))
+
+    return s
+
+
+# ---------------------------------------------------------------------------
+# Child sheet: Connectors / Breakouts
+# ---------------------------------------------------------------------------
+
+def build_connectors() -> Sheet:
+    """SMA outputs + GPIO breakout header + GND test clips.
+
+    Clusters:
+      A. CLK_OUT0–3 SMAs (4 vertical SMAs, signal pin to hier label)
+      B. OSC_EN / WEIGHT_EN / SAMPLE_TRIG SMAs (also routed to FMC via 0Ω option)
+      C. GPIO 1×4 header
+      D. GND test clips (×3)
+    """
+    s = Sheet(name="connectors", uuid=SHEET_UUIDS["connectors"],
+              page=PAGE_NUMBERS["connectors"],
+              title=f"{PROJECT_NAME} — Connectors / Breakouts")
+
+    # Cluster A: CLK_OUT0–3 SMAs (J1–J4), arranged vertically on the left.
+    for i, net in enumerate(("CLK_OUT0", "CLK_OUT1", "CLK_OUT2", "CLK_OUT3")):
+        ref = f"J{i+1}"
+        # Place SMA at (100, 100 + i*15.24). Pin 1 (signal) at (100, 100+i*15.24).
+        place(s, "Lib:HRM-G-300-467B-1", ref, "SMA", 100, 100 + i*15.24, footprint=FP_SMA)
+        # Wire signal pin out to hier label
+        s.add(wire(100, 100 + i*15.24, 92.71, 100 + i*15.24))
+        s.add(hier_label(net, "input", 92.71, 100 + i*15.24, angle=180, justify="right"))
+
+    # Cluster B: OSC_EN / WEIGHT_EN / SAMPLE_TRIG SMAs (J5–J7) — center column.
+    for i, net in enumerate(("OSC_EN", "WEIGHT_EN", "SAMPLE_TRIG")):
+        ref = f"J{i+5}"
+        place(s, "Lib:HRM-G-300-467B-1", ref, "SMA", 165, 100 + i*15.24, footprint=FP_SMA)
+        s.add(wire(165, 100 + i*15.24, 157.71, 100 + i*15.24))
+        s.add(hier_label(net, "input", 157.71, 100 + i*15.24, angle=180, justify="right"))
+
+    # Cluster C: GPIO 1×4 header (J8). Pin 1 = GPIO0, ..., Pin 4 = GPIO3.
+    GPIO_HDR_X, GPIO_HDR_Y = 230, 100
+    J8 = place(s, "Lib:TSW-104-05-G-S", "J8", "1x4 100mil", GPIO_HDR_X, GPIO_HDR_Y, footprint=FP_HEADER_1x4)
+    # J8 pin world: pin 1 (230, 100), pin 2 (230, 102.54), pin 3 (230, 105.08), pin 4 (230, 107.62)
+    for i, net in enumerate(("GPIO0", "GPIO1", "GPIO2", "GPIO3")):
+        py = GPIO_HDR_Y + i*2.54
+        s.add(wire(GPIO_HDR_X, py, GPIO_HDR_X - 7.29, py))
+        s.add(hier_label(net, "input", GPIO_HDR_X - 7.29, py, angle=180, justify="right"))
+
+    # Cluster D: 3× GND test clips (Keystone-5011), arranged at the bottom.
+    for i in range(3):
+        ref = f"TP{i+1}"
+        place(s, "Lib:Keystone-5011", ref, "GND-CLIP", 100 + i*30, 175, footprint=FP_TESTPOINT)
+        # Single pin at (100 + i*30, 175) — tie to GND
+        power_at(s, "GND", 100 + i*30, 175)
+
+    return s
+
+
+# ---------------------------------------------------------------------------
+# Child sheet: Bias generators
+# ---------------------------------------------------------------------------
+
+def build_bias() -> Sheet:
+    """MCP4728 DAC + 2× channel (OPA2388 + PMOS + sense R + opt NMOS).
+
+    Clusters:
+      A. MCP4728 DAC (4 VOUT channels; we use A and B for the two bias loops).
+      B. Channel 0 (BIAS0): OPA2388 unit A, PMZ1200UPEYL PMOS, 5.11 kΩ sense,
+         optional 2N7002 NMOS isolator (DNP).
+      C. Channel 1 (BIAS1): OPA2388 unit B, second PMOS, second sense R,
+         optional 2N7002 (DNP).
+    """
+    s = Sheet(name="bias", uuid=SHEET_UUIDS["bias"],
+              page=PAGE_NUMBERS["bias"],
+              title=f"{PROJECT_NAME} — Bias Generators")
+
+    GND_Y = 200.66
+
+    # ===== Cluster A: MCP4728 DAC =====
+    # Body: x ∈ [80, 151.12], y ∈ [80, 90.16].
+    # Pin world (angle 0):
+    #   1 VDD   (80, 80)        6 VOUTA (151.12, 90.16)
+    #   2 SCL   (80, 82.54)     7 VOUTB (151.12, 87.62)
+    #   3 SDA   (80, 85.08)     8 VOUTC (151.12, 85.08)
+    #   4 *LDAC (80, 87.62)     9 VOUTD (151.12, 82.54)
+    #   5 RDY*  (80, 90.16)    10 VSS   (151.12, 80)
+    U1 = place(s, "Lib:MCP4728", "U1", "MCP4728", 80, 80, footprint=FP_QFN10)
+
+    # I²C in (left side)
+    for pn, net in [("2", "SCL"), ("3", "SDA")]:
+        px, py = U1[pn]
+        s.add(wire(px, py, 67.31, py))
+        s.add(hier_label(net, "bidirectional", 67.31, py, angle=180, justify="right"))
+
+    # *LDAC (4) — tie to GND for transparent latching
+    s.add(wire(U1["4"][0], U1["4"][1], 67.31, U1["4"][1]))
+    power_at(s, "GND", 67.31, U1["4"][1], angle=270)
+
+    # RDY/*BSY (5) — leave NC
+    s.add(no_connect(U1["5"][0], U1["5"][1]))
+
+    # VDD (1) → +3V3
+    s.add(wire(U1["1"][0], U1["1"][1], 75.18, U1["1"][1]))
+    s.add(wire(75.18, U1["1"][1], 75.18, 67.31))
+    power_at(s, "+3V3", 75.18, 67.31)
+
+    # VSS (10) → GND (right side, dropped down)
+    s.add(wire(U1["10"][0], U1["10"][1], 158.75, U1["10"][1]))
+    s.add(wire(158.75, U1["10"][1], 158.75, GND_Y))
+    power_at(s, "GND", 158.75, GND_Y)
+
+    # VOUTC, VOUTD unused — NC
+    s.add(no_connect(U1["8"][0], U1["8"][1]))
+    s.add(no_connect(U1["9"][0], U1["9"][1]))
+
+    # MCP4728 decoupling: 0.1 µF and 10 nF on VDD. Place WELL TO THE LEFT
+    # of U1's left edge (x=80) so cap bodies don't overlap pin labels.
+    DECAP_X1 = 55.88   # 0.1 µF
+    DECAP_X2 = 50.8    # 10 nF (further left)
+    place(s, "Device:C", "C1", "0.1uF", DECAP_X1, 80, footprint=FP_C0402)
+    s.add(wire(DECAP_X1, 76.19, DECAP_X1, 67.31))
+    s.add(wire(DECAP_X1, 67.31, 75.18, 67.31))
+    s.add(junction(75.18, 67.31))
+    s.add(wire(DECAP_X1, 83.81, DECAP_X1, GND_Y))
+
+    place(s, "Device:C", "C2", "10nF", DECAP_X2, 80, footprint=FP_C0402)
+    s.add(wire(DECAP_X2, 76.19, DECAP_X2, 67.31))
+    s.add(wire(DECAP_X2, 67.31, DECAP_X1, 67.31))
+    s.add(junction(DECAP_X1, 67.31))
+    s.add(wire(DECAP_X2, 83.81, DECAP_X2, GND_Y))
+    s.add(wire(DECAP_X2, GND_Y, DECAP_X1, GND_Y))
+    s.add(junction(DECAP_X1, GND_Y))
+    power_at(s, "GND", DECAP_X2, GND_Y)
+
+    # ===== Bias channel builder — used twice (BIAS0, BIAS1) =====
+    def bias_channel(ch_idx: int, x0: float, dac_pin: str, out_net: str,
+                     refs: tuple[str, str, str, str, str]) -> None:
+        """Place one bias channel (op-amp half, PMOS, sense R, opt NMOS).
+
+        Args:
+          ch_idx: 0 or 1 (informational, used in coordinate names)
+          x0: left edge of channel cluster (mm)
+          dac_pin: MCP4728 pin number that feeds this channel (e.g. "6" for VOUTA)
+          out_net: net name for the channel output (e.g. "BIAS0")
+          refs: (opa_ref, pmos_ref, sense_r_ref, isol_nmos_ref, cap_ref)
+        """
+        opa_ref, pmos_ref, sense_ref, nmos_ref, cap_ref = refs
+
+        # OPA2388 unit (channel A=1, B=2). Pin numbers differ per unit but layout same.
+        # Place at (x0+25, 110) — the op-amp body sits in the middle.
+        opa_unit = ch_idx + 1  # ch0 → unit 1, ch1 → unit 2
+        OPA = place(s, "Lib:OPA2388", opa_ref, "OPA2388", x0 + 25, 110,
+                    footprint=FP_SOIC8, unit=opa_unit)
+        # OPA pins per unit:
+        #   Unit 1: 1=OUT_A, 2=-IN_A, 3=+IN_A, 4=V-, 8=V+
+        #   Unit 2: 7=OUT_B, 6=-IN_B, 5=+IN_B (4 and 8 are common — only shown in one unit's drawing)
+        # For unit 1: in_pin=3, neg_pin=2, out_pin=1
+        # For unit 2: in_pin=5, neg_pin=6, out_pin=7
+        in_pin  = "3" if opa_unit == 1 else "5"
+        neg_pin = "2" if opa_unit == 1 else "6"
+        out_pin = "1" if opa_unit == 1 else "7"
+
+        # +IN connects to DAC VOUT_x (via short routing). DAC VOUTA is at U1["6"]
+        # which is on the right edge of U1. We route the DAC output across to OPA +IN.
+        dac_x, dac_y = U1[dac_pin]
+        in_x, in_y = OPA[in_pin]
+        # Route: from DAC, go right then down to in_y, then right to in_x
+        s.add(wire(dac_x, dac_y, x0 + 5.08, dac_y))
+        s.add(wire(x0 + 5.08, dac_y, x0 + 5.08, in_y))
+        s.add(wire(x0 + 5.08, in_y, in_x, in_y))
+
+        # OPA output drives PMOS gate. Place PMOS at (x0+50, 110).
+        # PMOS pins: 1 G (0,0), 2 S (7.62, -5.08, angle 90), 3 D (7.62, 5.08, angle 270)
+        Q = place(s, "Lib:PMZ1200UPEYL", pmos_ref, "PMZ1200UPEYL", x0 + 50, 110,
+                  footprint=FP_PMOS_DFN)
+        gate_x, gate_y = Q["1"]
+        src_x, src_y = Q["2"]
+        drn_x, drn_y = Q["3"]
+
+        # OPA out → PMOS gate
+        out_x, out_y = OPA[out_pin]
+        s.add(wire(out_x, out_y, gate_x, out_y))
+        if out_y != gate_y:
+            s.add(wire(gate_x, out_y, gate_x, gate_y))
+
+        # PMOS source → 3V3 via sense resistor (R, 5.11k 0.1%)
+        # Sense R: vertical, between +3V3 (top) and PMOS S (bottom).
+        # PMOS S world: (x0+50+7.62, 110+5.08) = (x0+57.62, 115.08)
+        place(s, "Device:R", sense_ref, "5.11k 0.1%", src_x, 100, footprint=FP_R0402)
+        # Sense R pin 1 (top): (src_x, 96.19); pin 2 (bot): (src_x, 103.81)
+        s.add(wire(src_x, 103.81, src_x, src_y))                # bot → S
+        s.add(wire(src_x, 96.19, src_x, 90.17))                 # top → up
+        power_at(s, "+3V3", src_x, 90.17)
+
+        # Op-amp –IN feedback: tie –IN to PMOS source (across sense R)
+        # –IN world: (in_x, in_y + 5.08) — pin 2/6 is below pin 3/5 by 5.08
+        neg_x, neg_y = OPA[neg_pin]
+        # Route: from –IN (in_x, neg_y), go down then right to src_x, then up to src_y
+        s.add(wire(neg_x, neg_y, neg_x, src_y + 7.62))
+        s.add(wire(neg_x, src_y + 7.62, src_x, src_y + 7.62))
+        s.add(wire(src_x, src_y + 7.62, src_x, src_y))
+        s.add(junction(src_x, src_y))
+
+        # PMOS drain → output net (and through optional NMOS for isolation, DNP)
+        # Place 2N7002 (DNP) at (x0+65, 130). For now wire DRAIN directly to hier label.
+        s.add(wire(drn_x, drn_y, drn_x, drn_y + 10.16))
+        s.add(wire(drn_x, drn_y + 10.16, x0 + 75, drn_y + 10.16))
+        s.add(hier_label(out_net, "output", x0 + 75, drn_y + 10.16, angle=0))
+
+        # Optional series NMOS 2N7002 (DNP) — placed but not in path (DNP-aware
+        # users can rework). Just place it visually to the right.
+        place(s, "Lib:2N7002", nmos_ref, "2N7002 (DNP)", x0 + 80, 130, footprint=FP_SOT23)
+        # Pins: 1 G (0,0), 2 S (7.62,-5.08,90), 3 D (7.62,5.08,270)
+        # NC its terminals since it's not in the active path
+        for npn in ("1", "2", "3"):
+            nx, ny = place.__globals__["parse_pins"]("Lib:2N7002")[npn][1:3]
+            # Convert to world
+            ux, uy = pin_world(x0 + 80, 130, 0, nx, ny)
+            s.add(no_connect(ux, uy))
+
+        # Op-amp V+ / V- power pins. Unit 1 carries both; unit 2 omits V+/V-
+        # because they're shared. For unit 1 only:
+        if opa_unit == 1:
+            vplus_x, vplus_y = OPA["8"]
+            vminus_x, vminus_y = OPA["4"]
+            # V+ → +3V3 (rotated 270, so it points up; pin is at top)
+            s.add(wire(vplus_x, vplus_y, vplus_x, vplus_y - 5.08))
+            power_at(s, "+3V3", vplus_x, vplus_y - 5.08)
+            # V- → GND (pin at bottom)
+            s.add(wire(vminus_x, vminus_y, vminus_x, vminus_y + 5.08))
+            power_at(s, "GND", vminus_x, vminus_y + 5.08)
+
+        # Channel decoupling cap (0.1 µF) on +3V3 near the OPA
+        place(s, "Device:C", cap_ref, "0.1uF", x0 + 15, 95, footprint=FP_C0402)
+        s.add(wire(x0 + 15, 91.19, x0 + 15, 87.63))
+        power_at(s, "+3V3", x0 + 15, 87.63)
+        s.add(wire(x0 + 15, 98.81, x0 + 15, 105))
+        power_at(s, "GND", x0 + 15, 105)
+
+    # Channel 0 (BIAS0): MCP4728 VOUTA (pin 6) → OPA2388 unit 1
+    bias_channel(0, x0=180, dac_pin="6", out_net="BIAS0",
+                 refs=("U2", "Q1", "R1", "Q3", "C3"))
+    # Channel 1 (BIAS1): MCP4728 VOUTB (pin 7) → OPA2388 unit 2
+    bias_channel(1, x0=295, dac_pin="7", out_net="BIAS1",
+                 refs=("U2", "Q2", "R2", "Q4", "C4"))
+
+    return s
+
+
+# ---------------------------------------------------------------------------
+# Child sheet: Bobcat DUT
+# ---------------------------------------------------------------------------
+
+def build_bobcat() -> Sheet:
+    """Bobcat 40-QFN DUT.
+
+    Clusters (functional, by supply domain + signal direction):
+      A. Bobcat chip + GND EP
+      B. VDDD decoupling (pins 12, 20)
+      C. VDDIO decoupling (pins 7, 13, 22, 33, 34) + load-switch input
+      D. VDDA1 path (pin 1) — series 0Ω + decoupling
+      E. VDDA2 path (pins 26, 27) — series 0Ω + decoupling
+      F. Pull-up / pull-down network for SPI / control signals
+      G. SAMPLE_OUT, CLK_OUT, BIAS, GPIO, OSC_EN/WEIGHT_EN/SAMPLE_TRIG hier-label exits
+    """
+    s = Sheet(name="bobcat", uuid=SHEET_UUIDS["bobcat"],
+              page=PAGE_NUMBERS["bobcat"],
+              title=f"{PROJECT_NAME} — Bobcat DUT")
+
+    # Place Bobcat at (200, 130). Body local x ∈ [-20.32, 20.32], y ∈ [-20.32, 20.32]
+    # (the chip rectangle), but pins extend to (±22.86). World body: x ∈ [179.68, 220.32].
+    U1 = place(s, "Lib:Bobcat", "U1", "Bobcat", 200, 130, footprint=FP_QFN40)
+
+    # Pin 41 (GND, EP) at chip center (200, 130) — wire to GND symbol nearby
+    s.add(wire(200, 130, 200, 144.78))
+    power_at(s, "GND", 200, 144.78)
+
+    # ===== Cluster B: VDDD decoupling =====
+    # VDDD pins: 12 (bottom, world (-8.89, 22.86) → (191.11, 152.86))
+    #            20 (bottom, world (11.43, 22.86) → (211.43, 152.86))
+    # Place a 0.1µF and a 1µF cap pair for the VDDD rail.
+    # VDDD rail at y = 165.1 (below chip)
+    VDDD_RAIL_Y = 165.1
+    GND_RAIL_BOT = 175.26
+
+    for pn in ("12", "20"):
+        px, py = U1[pn]
+        s.add(wire(px, py, px, VDDD_RAIL_Y))
+    s.add(wire(U1["12"][0], VDDD_RAIL_Y, U1["20"][0], VDDD_RAIL_Y))
+    s.add(junction(U1["12"][0], VDDD_RAIL_Y))
+    s.add(junction(U1["20"][0], VDDD_RAIL_Y))
+    # Decoupling caps near VDDD rail
+    for i, (ref, val) in enumerate([("C1", "0.1uF"), ("C2", "1uF")]):
+        cx = 196.85 + i*5.08
+        place(s, "Device:C", ref, val, cx, VDDD_RAIL_Y + 3.81, footprint=FP_C0402)
+        # Cap pin 1 (top) at (cx, VDDD_RAIL_Y), pin 2 at (cx, VDDD_RAIL_Y + 7.62)
+        s.add(junction(cx, VDDD_RAIL_Y))
+        s.add(wire(cx, VDDD_RAIL_Y + 7.62, cx, GND_RAIL_BOT))
+    # Connect VDDD rail to +VDDD power symbol
+    power_at(s, "+VDDD", U1["12"][0] - 5.08, VDDD_RAIL_Y)
+    s.add(wire(U1["12"][0] - 5.08, VDDD_RAIL_Y, U1["12"][0], VDDD_RAIL_Y))
+    # GND rail at bottom
+    s.add(wire(196.85, GND_RAIL_BOT, 201.93, GND_RAIL_BOT))
+    s.add(junction(196.85, GND_RAIL_BOT))
+    s.add(junction(201.93, GND_RAIL_BOT))
+    power_at(s, "GND", 196.85, GND_RAIL_BOT)
+
+    # ===== Cluster D: VDDA1 path (pin 1) =====
+    # Pin 1 VDDA1 world (177.14, 118.57). Series 0Ω + decoupling.
+    p1_x, p1_y = U1["1"]
+    # Series 0Ω R (R5), placed horizontally to left
+    R5 = place(s, "Device:R", "R5", "0", p1_x - 7.62, p1_y, angle=90, footprint=FP_R0402)
+    # R5 angle 90: pin 1 local (0, 3.81), rotate 90 → (3.81, 0) → world (p1_x - 7.62 + 3.81, p1_y)
+    # Wait that's the OPPOSITE direction. Let me use angle 0 (vertical) and tilt the geometry.
+    # Actually simpler: use a horizontal R5 with angle 90 makes pin 1 at world
+    # (p1_x - 7.62 + 3.81, p1_y) = (p1_x - 3.81, p1_y) and pin 2 at (p1_x - 7.62 - 3.81, p1_y) = (p1_x - 11.43, p1_y).
+    # Wire pin 1 → pin 1 of Bobcat, pin 2 → +VDDA1.
+    s.add(wire(p1_x, p1_y, p1_x - 3.81, p1_y))
+    s.add(wire(p1_x - 11.43, p1_y, p1_x - 17.78, p1_y))
+    power_at(s, "+VDDA1", p1_x - 17.78, p1_y, angle=270)
+    # VDDA1 decoupling at the chip side (after series R)
+    place(s, "Device:C", "C3", "0.1uF", p1_x - 3.81, p1_y + 7.62, footprint=FP_C0402)
+    # C3 pin 1 top (p1_x-3.81, p1_y+3.81), pin 2 (p1_x-3.81, p1_y+11.43)
+    s.add(wire(p1_x - 3.81, p1_y + 3.81, p1_x - 3.81, p1_y))
+    s.add(junction(p1_x - 3.81, p1_y))
+    s.add(wire(p1_x - 3.81, p1_y + 11.43, p1_x - 3.81, p1_y + 17.78))
+    power_at(s, "GND", p1_x - 3.81, p1_y + 17.78)
+
+    # ===== Cluster E: VDDA2 path (pins 26, 27) =====
+    # Pin 26 VDDA2 (222.86, 128.73); Pin 27 VDDA2 (222.86, 126.19).
+    # Tie 26 & 27 together → series 0Ω → +VDDA2 rail
+    p26_x, p26_y = U1["26"]
+    p27_x, p27_y = U1["27"]
+    s.add(wire(p26_x, p26_y, p26_x + 5.08, p26_y))
+    s.add(wire(p27_x, p27_y, p27_x + 5.08, p27_y))
+    s.add(wire(p26_x + 5.08, p26_y, p27_x + 5.08, p27_y))   # tie 26 to 27
+    # Mid point (p26_x + 5.08, (p26_y + p27_y)/2)
+    mid_y = (p26_y + p27_y) / 2
+    # Series 0Ω R6 at (p26_x + 13.97, mid_y) angle 90 (horizontal)
+    place(s, "Device:R", "R6", "0", p26_x + 13.97, mid_y, angle=90, footprint=FP_R0402)
+    # R6 angle 90: pin 1 world (p26_x + 13.97 + 3.81, mid_y), pin 2 (p26_x + 13.97 - 3.81, mid_y)
+    s.add(wire(p26_x + 5.08, mid_y, p26_x + 13.97 - 3.81, mid_y))
+    s.add(wire(p26_x + 13.97 + 3.81, mid_y, p26_x + 22.86, mid_y))
+    power_at(s, "+VDDA2", p26_x + 22.86, mid_y, angle=90)
+    # Decoupling on VDDA2 chip side
+    place(s, "Device:C", "C4", "0.1uF", p26_x + 5.08, mid_y + 7.62, footprint=FP_C0402)
+    s.add(wire(p26_x + 5.08, mid_y + 3.81, p26_x + 5.08, mid_y))
+    s.add(junction(p26_x + 5.08, mid_y))
+    s.add(wire(p26_x + 5.08, mid_y + 11.43, p26_x + 5.08, mid_y + 17.78))
+    power_at(s, "GND", p26_x + 5.08, mid_y + 17.78)
+
+    # ===== Cluster C: VDDIO decoupling =====
+    # VDDIO pins 7 (left), 13/22 (bot/right), 33/34 (top) — drop a +VDDIO
+    # power symbol on each pin's short stub (no shared rail; cleaner because
+    # pins are on all four edges). Decoupling caps live to the side, not above.
+    for pn in ("7", "13", "22", "33", "34"):
+        px, py = U1[pn]
+        if pn == "7":     # left edge
+            s.add(wire(px, py, px - 7.62, py))
+            power_at(s, "+VDDIO", px - 7.62, py, angle=270)
+        elif pn == "22":  # right edge (mid)
+            s.add(wire(px, py, px + 7.62, py))
+            power_at(s, "+VDDIO", px + 7.62, py, angle=90)
+        elif pn == "13":  # bottom edge
+            s.add(wire(px, py, px, py + 7.62))
+            power_at(s, "+VDDIO", px, py + 7.62)
+        else:             # 33, 34 — top edge: route UP into a cap-cluster zone
+            s.add(wire(px, py, px, py - 5.08))
+            power_at(s, "+VDDIO", px, py - 5.08, angle=90)
+    # VDDIO decoupling caps live on the FAR LEFT, well clear of the top-edge
+    # hier-label exit lane. Tie each between +VDDIO and GND.
+    for i, (ref, val) in enumerate([("C5", "0.1uF"), ("C6", "1uF")]):
+        cx = 165.1 - i*5.08   # left of chip body (x=179.68)
+        cy = 100              # well above the chip body top (y=109.68)
+        place(s, "Device:C", ref, val, cx, cy, footprint=FP_C0402)
+        # pin 1 top (cx, cy-3.81), pin 2 bot (cx, cy+3.81)
+        s.add(wire(cx, cy - 3.81, cx, cy - 7.62))
+        power_at(s, "+VDDIO", cx, cy - 7.62, angle=90)
+        s.add(wire(cx, cy + 3.81, cx, cy + 7.62))
+        power_at(s, "GND", cx, cy + 7.62)
+
+    # ===== Cluster F: Pull-up/down network =====
+    # Pull-downs (10k to GND) on: GPIO0-3 (37-40), SPI_DMODE (18), SCLK (16), MOSI (14),
+    #                              OSC_EN (23), WEIGHT_EN (24), SAMPLE_TRIG (25)
+    # Pull-ups (10k to +VDDIO) on: CS_L (17), RESET_N (19)
+    # Place these pull-downs on a rail at the far right (x = U1_right + 30)
+    # and pull-ups on the same rail group but tied to +VDDIO instead of GND.
+
+    # For brevity, route each control pin directly to its hier label + a pull resistor.
+    # Each pull resistor is placed vertically below/above the signal trace.
+
+    # Bottom-edge SPI / control pins (14 MOSI, 15 MISO, 16 SCLK, 17 CS_L,
+    # 18 SPI_DMODE, 19 RESET_N). Bottom-edge pins are at y=152.86. Push hier
+    # labels well below the chip body (which ends at y=150.32) and stagger
+    # alternate pins to avoid label overlap on the dense 2.54mm pitch.
+    for i, (pn, net) in enumerate([("14", "MOSI"), ("15", "MISO"), ("16", "SCLK"),
+                                    ("17", "CS_L"), ("18", "SPI_DMODE"), ("19", "RESET_N")]):
+        px, py = U1[pn]
+        label_y = 180.34 + (i % 2)*7.62
+        s.add(wire(px, py, px, label_y))
+        s.add(hier_label(net, "passive", px, label_y, angle=270, justify="left"))
+
+    # Left-edge pins: pin 1 (VDDA1, done), 2 (SAMPLE_OUTV), 3-10 (SAMPLE_OUT0-7 part),
+    # plus pin 11 (SAMPLE_OUT7, bottom edge), and pin 7 (VDDIO, done).
+    # SAMPLE_OUT* exit to the left as hier labels.
+    for pn, net in [("2", "SAMPLE_OUTV"), ("3", "SAMPLE_OUT0"), ("4", "SAMPLE_OUT1"),
+                     ("5", "SAMPLE_OUT2"), ("6", "SAMPLE_OUT3"), ("8", "SAMPLE_OUT4"),
+                     ("9", "SAMPLE_OUT5"), ("10", "SAMPLE_OUT6"), ("11", "SAMPLE_OUT7")]:
+        px, py = U1[pn]
+        # For pins on left edge (3-6, 8-10) and pin 2: angle 0 means pin points left,
+        # so route stub LEFT.
+        if pn == "11":   # bottom edge pin
+            s.add(wire(px, py, px, py + 10.16))
+            s.add(hier_label(net, "output", px, py + 10.16, angle=270))
+        else:            # left edge
+            s.add(wire(px, py, px - 12.7, py))
+            s.add(hier_label(net, "output", px - 12.7, py, angle=180, justify="right"))
+
+    # Right-edge pins not yet wired: 21 NC, 23 OSC_EN, 24 WEIGHT_EN, 25 SAMPLE_TRIG,
+    # 28 BIAS0, 29 BIAS1, 30 NC
+    for pn, net, direction in [
+        ("23", "OSC_EN", "output"),
+        ("24", "WEIGHT_EN", "output"),
+        ("25", "SAMPLE_TRIG", "output"),
+        ("28", "BIAS0", "input"),
+        ("29", "BIAS1", "input"),
+    ]:
+        px, py = U1[pn]
+        s.add(wire(px, py, px + 12.7, py))
+        s.add(hier_label(net, direction, px + 12.7, py, angle=0))
+    # NC pins 21, 30
+    for pn in ("21", "30"):
+        px, py = U1[pn]
+        s.add(no_connect(px, py))
+
+    # Top-edge pins: 31 CLK_OUT3, 32 CLK_OUT2, 35 CLK_OUT1, 36 CLK_OUT0, 37-40 GPIO3-0
+    # (33, 34 done as VDDIO above). Route UP 30+ mm so labels clear the chip
+    # entirely and don't collide with the VDDIO power-symbol stubs (which exit
+    # only 5 mm above the chip).
+    for pn, net in [("31", "CLK_OUT3"), ("32", "CLK_OUT2"),
+                     ("35", "CLK_OUT1"), ("36", "CLK_OUT0"),
+                     ("37", "GPIO3"), ("38", "GPIO2"),
+                     ("39", "GPIO1"), ("40", "GPIO0")]:
+        px, py = U1[pn]
+        target_y = py - 25.4
+        s.add(wire(px, py, px, target_y))
+        s.add(hier_label(net, "output", px, target_y, angle=90, justify="left"))
+
+    return s
+
+
+# ---------------------------------------------------------------------------
+# Child sheet: FMC connector
+# ---------------------------------------------------------------------------
+
+def build_fmc() -> Sheet:
+    """VITA 57.1 LPC FMC connector. Power + I²C + strapping only (LA bank deferred).
+
+    The 160-pin connector has 4 units (one per row C/D/G/H), 40 pins each.
+    We place all 4 units side-by-side to expose every pin, then wire only:
+      - 3P3V (C36, C38, C40, D39 → +3V3)
+      - VADJ (G40, H39 → VADJ hier label)
+      - SCL (D30 → SCL hier label)
+      - SDA (D31 → SDA hier label)
+      - PRSNT_M2C_L (H2 → GND, presence detect)
+      - GA0/GA1 (C34, C35 → GND, geographical address)
+      - PG_C2M (C1 → LDO_PG hier label)
+      - 12P0V (D35, D37 → NC)
+      - 3P3VAUX (C32 → NC)
+      - VREF_A_M2C (H1 → NC)
+    All other pins on rows C/D/G/H are GND per the standard — emit GND power
+    symbols at those positions. LA-bank signal pins (LA00-LA33 pairs) are left
+    open for later pinning.
+    """
+    s = Sheet(name="fmc", uuid=SHEET_UUIDS["fmc"],
+              page=PAGE_NUMBERS["fmc"],
+              title=f"{PROJECT_NAME} — FMC LPC Connector (Power + I²C only)")
+
+    # Place 4 units of ASP-134606-01 — units 1,2,3,4 for rows C, D, G, H.
+    # Each unit has 40 pins arranged vertically; layout each as a column.
+    # Pin coords within a single unit: x=0, y from 0 down to -99.06 (40 pins × 2.54).
+    # Units are placed side-by-side with horizontal spacing.
+
+    # Unit positions
+    UNIT_X = {1: 80, 2: 140, 3: 200, 4: 260}    # rows C, D, G, H
+    UNIT_Y = 95
+    row_letters = {1: "C", 2: "D", 3: "G", 4: "H"}
+
+    units: dict[int, dict[str, tuple[float, float]]] = {}
+    for unit_num, row_letter in row_letters.items():
+        pins = place(s, "Lib:ASP-134606-01", f"J{unit_num}",
+                     f"FMC LPC ({row_letter})", UNIT_X[unit_num], UNIT_Y,
+                     footprint=FP_FMC, unit=unit_num)
+        units[unit_num] = pins
+
+    # Connect specific named pins. Returns the world coord of pin name X in row.
+    def pin(row: str, num: int) -> tuple[float, float]:
+        # Determine unit
+        unit = {"C": 1, "D": 2, "G": 3, "H": 4}[row]
+        key = f"{row}{num}"
+        return units[unit][key]
+
+    # ===== 3P3V (C36, C38, C40, D39) → +3V3 =====
+    for r, n in [("C", 36), ("C", 38), ("C", 40), ("D", 39)]:
+        px, py = pin(r, n)
+        s.add(wire(px, py, px + 7.62, py))
+        power_at(s, "+3V3", px + 7.62, py, angle=90)
+
+    # ===== VADJ (G40, H39) → VADJ hier label =====
+    for r, n in [("G", 40), ("H", 39)]:
+        px, py = pin(r, n)
+        s.add(wire(px, py, px + 10.16, py))
+        s.add(hier_label("VADJ", "output", px + 10.16, py, angle=0))
+
+    # ===== I²C =====
+    s.add(wire(*pin("D", 30), pin("D", 30)[0] + 10.16, pin("D", 30)[1]))
+    s.add(hier_label("SCL", "bidirectional", pin("D", 30)[0] + 10.16, pin("D", 30)[1], angle=0))
+    s.add(wire(*pin("D", 31), pin("D", 31)[0] + 10.16, pin("D", 31)[1]))
+    s.add(hier_label("SDA", "bidirectional", pin("D", 31)[0] + 10.16, pin("D", 31)[1], angle=0))
+
+    # ===== Strapping: PRSNT_M2C_L (H2), GA0 (C34), GA1 (C35) → GND =====
+    for r, n in [("H", 2), ("C", 34), ("C", 35)]:
+        px, py = pin(r, n)
+        s.add(wire(px, py, px + 7.62, py))
+        power_at(s, "GND", px + 7.62, py)
+
+    # ===== PG_C2M (C1) → LDO_PG hier label =====
+    px, py = pin("C", 1)
+    s.add(wire(px, py, px + 10.16, py))
+    s.add(hier_label("LDO_PG", "input", px + 10.16, py, angle=0))
+
+    # ===== NC pins (12V, 3P3VAUX, VREF_A_M2C) =====
+    for r, n in [("C", 32), ("D", 35), ("D", 37), ("H", 1)]:
+        px, py = pin(r, n)
+        s.add(no_connect(px, py))
+
+    # ===== Control hier labels — LDO_EN, LSW_EN (these come from LA-bank pins,
+    # but pinning is TBD; for now drop them as floating hier labels on a side
+    # area so the parent sheet's pins resolve). =====
+    for i, net in enumerate(("LDO_EN", "LSW_EN")):
+        # Place on the right side of the FMC unit 4
+        lx = UNIT_X[4] + 30
+        ly = UNIT_Y + i*5.08 + 5.08
+        s.add(hier_label(net, "output", lx, ly, angle=0))
+
+    # ===== GND on unlabeled pins =====
+    # Per VITA 57.1, all unlabeled pins on C/D/G/H are GND. Drop GND power
+    # symbols on each pin we have NOT wired above.
+    wired: set[tuple[str, int]] = {
+        ("C", 1), ("C", 32), ("C", 34), ("C", 35),
+        ("C", 36), ("C", 38), ("C", 40),
+        ("D", 30), ("D", 31), ("D", 35), ("D", 37), ("D", 39),
+        ("G", 40),
+        ("H", 1), ("H", 2), ("H", 39),
+    }
+    # Skip LA bank pins too — they're for future Bobcat signal wiring
+    la_bank = set()
+    la_ranges = {
+        "C": [(8,9), (11,12), (14,15), (17,18), (20,21), (23,24), (26,27)],
+        "D": [(10,11), (14,15), (18,19), (22,23), (26,27)],
+        "G": [(7,8), (10,11), (13,14), (16,17), (19,20), (22,23), (25,26),
+              (28,29), (31,32), (34,35), (37,38), (4,5)],
+        "H": [(6,7), (9,10), (12,13), (15,16), (18,19), (21,22), (24,25),
+              (27,28), (30,31), (33,34), (36,37), (2,3)],
+    }
+    # Wait H2/H3 is a clock pair (CLK1_M2C). H2 is already wired to GND but H3 should be LA-bank-like.
+    # Let me just protect everything in the LA ranges from being grounded.
+    for row, pairs in la_ranges.items():
+        for a, b in pairs:
+            la_bank.add((row, a))
+            la_bank.add((row, b))
+    # Also reserve: D2/D3, D6/D7 (gigabit pairs), G4/G5 (CLK0), C4/C5 (GBTCLK0)
+    for row, n in [("D",2),("D",3),("D",6),("D",7),("G",4),("G",5),
+                    ("C",4),("C",5),
+                    # JTAG (C29-C33, C34=GA0 already wired). C29-C31, C33 left as NC.
+                    ("C",29),("C",30),("C",31),("C",33)]:
+        la_bank.add((row, n))
+    # Also: TRST_L is C34 = GA0 (already wired)... no actually TRST_L is a separate pin per spec.
+    # Just NC the JTAG pins.
+    for r, n in [("C",29),("C",30),("C",31),("C",33)]:
+        px, py = pin(r, n)
+        if (r, n) not in wired:
+            s.add(no_connect(px, py))
+            wired.add((r, n))
+
+    # Now ground every unwired, non-LA pin.
+    for row, unit_num in [("C", 1), ("D", 2), ("G", 3), ("H", 4)]:
+        for n in range(1, 41):
+            if (row, n) in wired or (row, n) in la_bank:
+                continue
+            px, py = pin(row, n)
+            s.add(wire(px, py, px + 5.08, py))
+            power_at(s, "GND", px + 5.08, py)
+
+    # NC the LA-bank pins for now (no_connect to avoid orphan-pin warnings)
+    for r, n in la_bank:
+        if (r, n) in wired:
+            continue
+        px, py = pin(r, n)
+        s.add(no_connect(px, py))
+
+    return s
+
 def project_json() -> str:
     sheets = [f'    ["{ROOT_UUID}", ""]']
     for n in SHEET_NAMES:
@@ -839,6 +1722,11 @@ def main() -> int:
     # Real child sheets (filled-in) override stubs.
     real_builders = {
         "eeprom": build_eeprom,
+        "power": build_power,
+        "connectors": build_connectors,
+        "bias": build_bias,
+        "bobcat": build_bobcat,
+        "fmc": build_fmc,
     }
     for n in SHEET_NAMES:
         cpath = OUT_DIR / f"{n}.kicad_sch"
