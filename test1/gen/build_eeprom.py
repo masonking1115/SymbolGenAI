@@ -32,71 +32,68 @@ def build_eeprom() -> Sheet:
               page=PAGE_NUMBERS["eeprom"],
               title=f"{PROJECT_NAME} — EEPROM (24AA08 I²C)")
 
-    # --- U30: 24AA08 at (100.33, 119.38) — snapped to nearest 50-grid corner.
-    # Body x ∈ [100.33, 176.53], y ∈ [119.38, 127.0].
-    # Pin world coords at angle 0:
-    #   1 A_0 (100.33, 119.38)    5 SDA (176.53, 127.0)
-    #   2 A_1 (100.33, 121.92)    6 SCL (176.53, 124.46)
-    #   3 A_2 (100.33, 124.46)    7 WP  (176.53, 121.92)
-    #   4 VSS (100.33, 127.0)     8 VCC (176.53, 119.38)
-    place_from_netlist(s, nl, "U30", x=100.33, y=119.38)
+    # --- U30: 24AA08 at (100.33, 119.38) — 50-grid corner. Pins on left edge
+    # (1-4 at y=119.38..127.0) and right edge (5-8 mirrored).
+    U30 = place_from_netlist(s, nl, "U30", x=100.33, y=119.38)
+    CHIP_LEFT_X  = U30["1"][0]   # left-side pin x
+    CHIP_RIGHT_X = U30["8"][0]   # right-side pin x (= VCC)
 
     # --- Left side: pins 1-4 (A0/A1/A2/VSS) → shared GND rail (Rule 7).
-    gnd_bus(s, [(100.33, y) for y in (119.38, 121.92, 124.46, 127.0)], rail_x=92.71)
+    gnd_bus(s, [U30[pn] for pn in ("1", "2", "3", "4")], rail_x=CHIP_LEFT_X - 7.62)
 
-    # +3V3 rail runs horizontally at y = 105.41 (~14 mm above chip top)
-    RAIL_Y = 105.41
-    GND_RAIL_Y = 142.24  # ~15 mm below chip bottom
+    # +3V3 rail (~14 mm above chip top) + GND rail (~15 mm below chip bottom)
+    RAIL_Y     = U30["1"][1] - 13.97
+    GND_RAIL_Y = U30["4"][1] + 15.24
 
     # Pin 8 VCC → up to +3V3 rail
-    s.add(wire(176.53, 119.38, 184.15, 119.38))
-    s.add(wire(184.15, 119.38, 184.15, RAIL_Y))
+    VCC_COL_X = CHIP_RIGHT_X + 7.62
+    s.add(wire(*U30["8"], VCC_COL_X, U30["8"][1]))
+    s.add(wire(VCC_COL_X, U30["8"][1], VCC_COL_X, RAIL_Y))
 
     # Pin 7 WP → down to GND (separate column, not stacked with VCC)
-    s.add(wire(176.53, 121.92, 189.23, 121.92))
-    s.add(wire(189.23, 121.92, 189.23, GND_RAIL_Y))
-    power_at(s, "GND", 189.23, GND_RAIL_Y)
+    WP_COL_X = CHIP_RIGHT_X + 12.7
+    s.add(wire(*U30["7"], WP_COL_X, U30["7"][1]))
+    s.add(wire(WP_COL_X, U30["7"][1], WP_COL_X, GND_RAIL_Y))
+    power_at(s, "GND", WP_COL_X, GND_RAIL_Y)
 
-    # Pin 6 SCL → horizontal bus, exits as global_label (project-wide I²C).
-    SCL_LABEL_X = 237.49
-    SDA_LABEL_X = 237.49
-    s.add(wire(176.53, 124.46, SCL_LABEL_X, 124.46))
-    s.add(global_label("SCL", "bidirectional", SCL_LABEL_X, 124.46, angle=0))
+    # Pins 6/5 SCL/SDA → horizontal bus, exits as global_label (project-wide I²C).
+    I2C_LABEL_X = CHIP_RIGHT_X + 60.96
+    s.add(wire(*U30["6"], I2C_LABEL_X, U30["6"][1]))
+    s.add(global_label("SCL", "bidirectional", I2C_LABEL_X, U30["6"][1], angle=0))
+    s.add(wire(*U30["5"], I2C_LABEL_X, U30["5"][1]))
+    s.add(global_label("SDA", "bidirectional", I2C_LABEL_X, U30["5"][1], angle=0))
 
-    s.add(wire(176.53, 127.0, SDA_LABEL_X, 127.0))
-    s.add(global_label("SDA", "bidirectional", SDA_LABEL_X, 127.0, angle=0))
+    # --- C30: decoupling cap. Pin 1 (top, +3V3) lands on RAIL_Y; pin 2 to GND_RAIL_Y.
+    C30_X = CHIP_RIGHT_X + 24.13
+    C30_Y = RAIL_Y + 11.43        # cap center; pin 1 at RAIL_Y, pin 2 at RAIL_Y+7.62*2
+    place_from_netlist(s, nl, "C30", x=C30_X, y=C30_Y)
+    s.add(wire(C30_X, C30_Y - 3.81, C30_X, RAIL_Y))           # top to +3V3 rail
+    s.add(wire(C30_X, C30_Y + 3.81, C30_X, GND_RAIL_Y))       # bottom to GND rail
+    power_at(s, "GND", C30_X, GND_RAIL_Y)
 
-    # --- C30: decoupling cap. Place at (200.66, 116.84) so pins land on grid.
-    # Pin 1 (top, +3V3) at (200.66, 113.03); pin 2 (bot, GND) at (200.66, 120.65).
-    place_from_netlist(s, nl, "C30", x=200.66, y=116.84)
-    s.add(wire(200.66, 113.03, 200.66, RAIL_Y))           # top to +3V3 rail
-    s.add(wire(200.66, 120.65, 200.66, GND_RAIL_Y))       # bottom to GND rail
-    power_at(s, "GND", 200.66, GND_RAIL_Y)
+    # --- R60 (SCL pull-up): vertical, placed well above SCL line so the body
+    # doesn't crowd C30 or R61.
+    R60_X = CHIP_RIGHT_X + 39.37
+    R60_Y = RAIL_Y + 7.62
+    place_from_netlist(s, nl, "R60", x=R60_X, y=R60_Y)
+    s.add(wire(R60_X, R60_Y - 3.81, R60_X, RAIL_Y))             # to +3V3 rail
+    s.add(wire(R60_X, R60_Y + 3.81, R60_X, U30["6"][1]))        # down to SCL
+    s.add(junction(R60_X, U30["6"][1]))
 
-    # --- R60 (SCL pull-up): vertical, placed well above the SCL line so the
-    # body doesn't crowd C30 or R61.
-    # Place at (215.9, 113.03). Pin 1 (top, +3V3) at (215.9, 109.22); pin 2
-    # (bot) at (215.9, 116.84). Then route pin 2 down to SCL line at y=124.46.
-    place_from_netlist(s, nl, "R60", x=215.9, y=113.03)
-    s.add(wire(215.9, 109.22, 215.9, RAIL_Y))             # to +3V3 rail
-    s.add(wire(215.9, 116.84, 215.9, 124.46))             # down to SCL
-    s.add(junction(215.9, 124.46))
-
-    # --- R61 (SDA pull-up): same column-spacing rule. Place at (228.6, 113.03)
-    # — 12.7 mm right of R60 — so the value labels don't crowd.
-    place_from_netlist(s, nl, "R61", x=228.6, y=113.03)
-    s.add(wire(228.6, 109.22, 228.6, RAIL_Y))
-    s.add(wire(228.6, 116.84, 228.6, 127.0))
-    s.add(junction(228.6, 127.0))
+    # --- R61 (SDA pull-up): one grid right of R60.
+    R61_X = R60_X + 12.7
+    R61_Y = R60_Y
+    place_from_netlist(s, nl, "R61", x=R61_X, y=R61_Y)
+    s.add(wire(R61_X, R61_Y - 3.81, R61_X, RAIL_Y))
+    s.add(wire(R61_X, R61_Y + 3.81, R61_X, U30["5"][1]))
+    s.add(junction(R61_X, U30["5"][1]))
 
     # --- +3V3 rail: one horizontal wire tying VCC, C30, R60, R61 together ---
-    s.add(wire(184.15, RAIL_Y, 228.6, RAIL_Y))
-    # Junctions where verticals tap the rail
-    for x in (200.66, 215.9):
+    s.add(wire(VCC_COL_X, RAIL_Y, R61_X, RAIL_Y))
+    for x in (C30_X, R60_X):
         s.add(junction(x, RAIL_Y))
-    # +3V3 power symbol — its pin sits at the symbol origin, so place AT the
-    # rail (its triangle extends upward in editor view = lower y on screen)
-    power_at(s, "+3V3", 228.6, RAIL_Y)
+    # +3V3 power symbol at the right end of the rail.
+    power_at(s, "+3V3", R61_X, RAIL_Y)
 
     # Strict validation: every YAML-declared net member is in a connected
     # component named that net (raises ValidationError otherwise).

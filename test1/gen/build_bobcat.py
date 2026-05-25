@@ -42,19 +42,27 @@ def build_bobcat() -> Sheet:
               title=f"{PROJECT_NAME} — Bobcat DUT")
 
     # Place Bobcat at (199.39, 129.54) — snapped to nearest 50-grid corner.
-    # Body local x ∈ [-20.32, 20.32], y ∈ [-20.32, 20.32] (the chip rectangle),
-    # but pins extend to (±22.86). World body: x ∈ [179.07, 219.71].
+    # Body local x ∈ [-20.32, 20.32], y ∈ [-20.32, 20.32], pins extend to ±22.86.
     U1 = place_from_netlist(s, nl, "U20", x=199.39, y=129.54)
 
-    # Pin 41 (GND, EP) at chip center (199.39, 129.54) — wire to GND symbol nearby
-    s.add(wire(199.39, 129.54, 199.39, 144.78))
-    power_at(s, "GND", 199.39, 144.78)
+    # Downstream coords reference these chip bookmarks so a future origin shift
+    # cascades automatically. Pin 41 is the GND EP at chip center; pins on each
+    # edge anchor that edge's bookmark.
+    CHIP_CTR_X, CHIP_CTR_Y = U1["41"]   # center / EP
+    CHIP_BOT_Y = U1["12"][1]            # bottom-edge pin row
+    CHIP_TOP_Y = U1["31"][1]            # top-edge pin row
+    CHIP_LEFT_X  = U1["7"][0]           # left-edge x
+    CHIP_RIGHT_X = U1["22"][0]          # right-edge x
+
+    # Pin 41 (GND, EP) at chip center — wire to GND symbol nearby
+    s.add(wire(CHIP_CTR_X, CHIP_CTR_Y, CHIP_CTR_X, CHIP_CTR_Y + 15.24))
+    power_at(s, "GND", CHIP_CTR_X, CHIP_CTR_Y + 15.24)
 
     # ===== Cluster B: VDDD decoupling =====
     # Pins 12 and 20 are both VDDD, on the chip's bottom edge.
-    VDDD_PSYM_Y = 158.75   # just below chip body, above the cap
-    VDDD_CAP_Y  = 167.64   # cap center
-    GND_BELOW_Y = 177.8    # GND symbol below cap
+    VDDD_PSYM_Y = CHIP_BOT_Y + 6.35    # just below chip body, above the cap
+    VDDD_CAP_Y  = CHIP_BOT_Y + 15.24   # cap center
+    GND_BELOW_Y = CHIP_BOT_Y + 25.4    # GND symbol below cap
     for ref, pn in [("C20", "12"), ("C21", "20")]:
         px, py = U1[pn]
         s.add(wire(px, py, px, VDDD_PSYM_Y))
@@ -123,10 +131,13 @@ def build_bobcat() -> Sheet:
         else:             # 33, 34 — top edge
             s.add(wire(px, py, px, py - 5.08))
             power_at(s, "+VDDIO", px, py - 5.08, angle=90)
-    # VDDIO cap row (5×0.1µF + 1×1µF; W2)
+    # VDDIO cap row (5×0.1µF + 1×1µF; W2) — above the chip top edge, anchored to
+    # the leftmost top-edge pin's x so it follows U1 origin.
+    VDDIO_ROW_Y     = CHIP_TOP_Y - 6.35
+    VDDIO_ROW_X_END = U1["7"][0] - 11.43   # leftmost cap rightmost (=165.1)
     for i, ref in enumerate(["C24", "C25", "C26", "C27", "C28"]):
-        cx = 165.1 - i*5.08
-        cy = 100.33
+        cx = VDDIO_ROW_X_END - i*5.08
+        cy = VDDIO_ROW_Y
         place_from_netlist(s, nl, ref, x=cx, y=cy)
         s.add(wire(cx, cy - 3.81, cx, cy - 7.62))
         power_at(s, "+VDDIO", cx, cy - 7.62, angle=90)
@@ -147,9 +158,9 @@ def build_bobcat() -> Sheet:
         ("18", "SPI_DMODE", "input",  "down", "R25", 27.94),
         ("19", "RESET_N",   "input",  "up",   "R26", 33.02),
     ]
-    SPI_LABEL_Y_START = 185.42
+    SPI_LABEL_Y_START = CHIP_BOT_Y + 33.02   # well below chip body, below VDDD cluster
     SPI_LABEL_Y_STEP  = 10.16
-    SPI_LABEL_X       = 165.1   # common left-of-chip column; labels are horizontal
+    SPI_LABEL_X       = CHIP_LEFT_X - 11.43  # left-of-chip column (= 165.1); horizontal labels
     for i, (pn, net, direction, pull_type, pull_ref, pull_xoff) in enumerate(SPI_PINS):
         px, py = U1[pn]
         label_y = SPI_LABEL_Y_START + i * SPI_LABEL_Y_STEP
@@ -172,7 +183,7 @@ def build_bobcat() -> Sheet:
             power_at(s, "+VDDIO", pull_x, tap_y - 12.7, angle=90)
 
     # SAMPLE_OUT* on left edge + pin 11 (bottom edge, routed LEFT to match column)
-    SAMPLE_LABEL_X = 163.83   # left of chip body; same column for all SAMPLE_OUT labels
+    SAMPLE_LABEL_X = CHIP_LEFT_X - 12.7   # left of chip body; same column for all SAMPLE_OUT labels
     for pn, net in [("2", "SAMPLE_OUTV"), ("3", "SAMPLE_OUT0"), ("4", "SAMPLE_OUT1"),
                      ("5", "SAMPLE_OUT2"), ("6", "SAMPLE_OUT3"), ("8", "SAMPLE_OUT4"),
                      ("9", "SAMPLE_OUT5"), ("10", "SAMPLE_OUT6"), ("11", "SAMPLE_OUT7")]:
@@ -189,17 +200,16 @@ def build_bobcat() -> Sheet:
     # silently shorting OSC_EN/WEIGHT_EN/SAMPLE_TRIG/GND together. The
     # validator missed the short because each net's name was still present
     # in the bridged component's name set. See [[layout-rule-pin-protrusion]].
-    OWT_PULL_ROW_Y = 160.02  # below chip body (body bottom ≈ 149.86)
+    OWT_PULL_ROW_Y = CHIP_BOT_Y + 7.62    # one grid below chip-body bottom (= 160.02)
     # Labels pushed well past the OWT pull columns AND the R21/+VDDA2 cluster
-    # at right-edge of chip — original OWT_LABEL_X=234.95 had label text
-    # overlapping R21 (x=236.22) and crowding +VDDA2 power symbol. Linter:
-    # _check_label_overlap_part catches this with min_gap=2.0.
-    OWT_LABEL_X    = 280.67
+    # at right-edge of chip — originally at CHIP_RIGHT+12.7 the label text
+    # overlapped R21 and crowded +VDDA2. Linter: _check_label_overlap_part.
+    OWT_LABEL_X    = CHIP_RIGHT_X + 58.42  # past every OWT pull column
     OWT_PULLS = [
-        # (chip pin, net, pull R refdes, R column x)
-        ("23", "OSC_EN",      "R27", 251.46),
-        ("24", "WEIGHT_EN",   "R28", 261.62),
-        ("25", "SAMPLE_TRIG", "R29", 271.78),
+        # (chip pin, net, pull R refdes, R column offset from CHIP_RIGHT_X)
+        ("23", "OSC_EN",      "R27", CHIP_RIGHT_X + 29.21),
+        ("24", "WEIGHT_EN",   "R28", CHIP_RIGHT_X + 39.37),
+        ("25", "SAMPLE_TRIG", "R29", CHIP_RIGHT_X + 49.53),
     ]
     for pn, net, pull_ref, pull_x in OWT_PULLS:
         px, py = U1[pn]
@@ -229,12 +239,12 @@ def build_bobcat() -> Sheet:
     # target_y values are ABOVE the GPIO pull area (which sits at y=64-93 for
     # the R bodies + GND symbols); originally the CLK_OUT labels lived at
     # y=81-96 and the linter caught their text overlapping R30/GPIO power symbols.
-    CLK_LABEL_X = 234.95   # right of chip body, matches OWT_LABEL_X column
+    CLK_LABEL_X = CHIP_RIGHT_X + 12.7    # right of chip body
     CLK_OUT_PINS = [
-        ("31", "CLK_OUT3", 59.69),   # rightmost top pin → topmost label
-        ("32", "CLK_OUT2", 54.61),
-        ("35", "CLK_OUT1", 49.53),
-        ("36", "CLK_OUT0", 44.45),
+        ("31", "CLK_OUT3", CHIP_TOP_Y - 46.99),  # rightmost top pin → topmost label
+        ("32", "CLK_OUT2", CHIP_TOP_Y - 52.07),
+        ("35", "CLK_OUT1", CHIP_TOP_Y - 57.15),
+        ("36", "CLK_OUT0", CHIP_TOP_Y - 62.23),
     ]
     for pn, net, target_y in CLK_OUT_PINS:
         px, py = U1[pn]
@@ -250,14 +260,16 @@ def build_bobcat() -> Sheet:
     # vertical drop to land in its own row only (see skill rule 5).
     GPIO_PULLS = [
         # (chip pin, net, pull R refdes, R column x, horizontal row y) — all 50-grid
-        ("37", "GPIO3", "R30", 243.84, 80.01),  # rightmost pin → bottommost row
-        ("38", "GPIO2", "R31", 254.00, 74.93),
-        ("39", "GPIO1", "R32", 264.16, 69.85),
-        ("40", "GPIO0", "R33", 274.32, 64.77),  # leftmost pin → topmost row
+        # Pull columns are offset from CHIP_RIGHT_X so they follow U1; row_y is
+        # offset above CHIP_TOP_Y so the rows sit above the chip body.
+        ("37", "GPIO3", "R30", CHIP_RIGHT_X + 21.59, CHIP_TOP_Y - 26.67),  # rightmost pin → bottommost row
+        ("38", "GPIO2", "R31", CHIP_RIGHT_X + 31.75, CHIP_TOP_Y - 31.75),
+        ("39", "GPIO1", "R32", CHIP_RIGHT_X + 41.91, CHIP_TOP_Y - 36.83),
+        ("40", "GPIO0", "R33", CHIP_RIGHT_X + 52.07, CHIP_TOP_Y - 41.91),  # leftmost pin → topmost row
     ]
     # Horizontal labels off to the LEFT at row_y, separate from pull (RIGHT branch).
     # 3-way T at (px, row_y): drop from pin, left-to-label, right-to-pull.
-    GPIO_LABEL_X = 163.83   # match SAMPLE_OUT column (left-of-chip)
+    GPIO_LABEL_X = SAMPLE_LABEL_X   # share SAMPLE_OUT column (left-of-chip)
     for pn, net, pull_ref, pull_x, row_y in GPIO_PULLS:
         px, py = U1[pn]
         s.add(wire(px, py, px, row_y))                                # drop to own row

@@ -76,9 +76,14 @@ def root_sheet_instances() -> str:
 
 
 def validate(sch_path: Path) -> tuple[bool, str]:
-    """Run kicad-cli sch export svg as a parse check."""
-    cmd = [KICAD_CLI, "sch", "export", "svg",
+    """Run kicad-cli sch export png as a parse check + a viewable render.
+    PNG export is dual-purpose: it parses the schematic (any malformed s-expr
+    fails) AND emits a rendered image into kicad/render/<sheet>.png. The LLM
+    loop can Read those PNGs directly to spot visual issues without a
+    user-side round-trip through eeschema."""
+    cmd = [KICAD_CLI, "sch", "export", "png",
            "--output", str(RENDER_DIR),
+           "--dpi", "150",
            str(sch_path)]
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)

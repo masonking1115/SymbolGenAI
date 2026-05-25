@@ -17,9 +17,11 @@ Pairs with [[kicad-symbol-from-datasheet]] — that skill makes a single `.kicad
 ## Process
 1. **Sketch the topology** as a net list first. Every component pin gets assigned to exactly one net.
 2. **Pick positions**: place each symbol so all its pins land on the chosen grid (2.54 mm typical). Symbols whose pins sit on half-grid offsets force the symbol's `at` X or Y to be half-grid; do the arithmetic before placing.
-3. **Generate** the `.kicad_pro` (minimal JSON) and `.kicad_sch` (full sexpr). For hierarchical designs, emit one `.kicad_sch` per page plus a root sheet that embeds them — see [Hierarchical (multi-page) designs](#hierarchical-multi-page-designs). A Python script is cleaner than hand-writing s-expressions for anything beyond ~5 components.
-4. **Validate**: `kicad-cli sch export svg --output <dir> <file>.kicad_sch` — must print `"Plotted to … Done."`. Any other output is a parse failure.
-5. **Open in eeschema** for visual review. User confirms.
+3. **Express coords RELATIVELY**: every non-anchor coordinate should be expressed as an offset from a chip pin (e.g. `RAIL_3V3_Y = U1["15"][1] - 13.97`), not as an absolute literal. The only true anchors are the chip-placement `(x, y)` per IC. This way a future origin snap cascades automatically — no hand-edits across the build file.
+4. **Generate** the `.kicad_pro` (minimal JSON) and `.kicad_sch` (full sexpr). For hierarchical designs, emit one `.kicad_sch` per page plus a root sheet that embeds them — see [Hierarchical (multi-page) designs](#hierarchical-multi-page-designs). A Python script is cleaner than hand-writing s-expressions for anything beyond ~5 components.
+5. **Validate AND render**: `kicad-cli sch export png --output <dir> <file>.kicad_sch` — this is a dual gate (parse + visible render). Open the PNG immediately and look for the issues the linter doesn't catch (label crowding, weird routing, etc.). PNG is preferred over SVG because the loop can `Read` it visually.
+6. **Lint-first iteration loop**: when a visual issue surfaces (yours or user's), the FIRST move is to convert the rule into a `_check_*` function in `layout_lint.py`, THEN fix the offending case. Examples already in the linter: `vertical_label`, `wire_through_label`, `label_overlap_part`, `wire_crosses_label_text`. Every check that exists is one less round-trip with the user on future iterations. If you find yourself fixing the same class of issue twice, you skipped this step.
+7. **Open in eeschema** for visual review only when the linter is clean and the PNG looks right.
 
 ## Coordinate conventions
 - All coordinates in **mm**. `y` increases **downward** in the schematic file.

@@ -183,17 +183,27 @@ class Sheet:
 # Primitive emitters
 # ---------------------------------------------------------------------------
 
+def _r(v) -> float:
+    """Round emitted world coords to 3 decimal places (sub-micron) so
+    floating-point churn from chained arithmetic (e.g. R10_X - 6.35 - 5.08)
+    doesn't pollute the .kicad_sch git diff."""
+    return round(float(v), 3)
+
+
 def wire(x1, y1, x2, y2) -> str:
+    x1, y1, x2, y2 = _r(x1), _r(y1), _r(x2), _r(y2)
     return (f'  (wire (pts (xy {x1} {y1}) (xy {x2} {y2})) '
             f'(stroke (width 0) (type default)) (uuid "{uid(f"wire_{x1}_{y1}_{x2}_{y2}")}"))')
 
 
 def junction(x, y) -> str:
+    x, y = _r(x), _r(y)
     return (f'  (junction (at {x} {y}) (diameter 0) (color 0 0 0 0) '
             f'(uuid "{uid(f"junc_{x}_{y}")}"))')
 
 
 def label(net: str, x, y, angle: int = 0, justify: str = "left bottom") -> str:
+    x, y = _r(x), _r(y)
     return (f'  (label "{net}" (at {x} {y} {angle}) '
             f'(effects (font (size 1.27 1.27)) (justify {justify})) '
             f'(uuid "{uid(f"label_{net}_{x}_{y}")}"))')
@@ -201,6 +211,7 @@ def label(net: str, x, y, angle: int = 0, justify: str = "left bottom") -> str:
 
 def hier_label(net: str, shape: str, x, y, angle: int = 0,
                justify: str = "left") -> str:
+    x, y = _r(x), _r(y)
     return (f'  (hierarchical_label "{net}" (shape {shape}) (at {x} {y} {angle}) '
             f'(effects (font (size 1.27 1.27)) (justify {justify})) '
             f'(uuid "{uid(f"hlabel_{net}_{x}_{y}")}"))')
@@ -211,12 +222,14 @@ def global_label(net: str, shape: str, x, y, angle: int = 0,
     """Global label — ties by name across all sheets without needing a parent
     pin declaration. Use for project-wide nets (SCL/SDA, deferred LA-bank
     signals) where a hier_label would force redundant parent-pin plumbing."""
+    x, y = _r(x), _r(y)
     return (f'  (global_label "{net}" (shape {shape}) (at {x} {y} {angle}) '
             f'(effects (font (size 1.27 1.27)) (justify {justify})) '
             f'(uuid "{uid(f"glabel_{net}_{x}_{y}")}"))')
 
 
 def no_connect(x, y) -> str:
+    x, y = _r(x), _r(y)
     return f'  (no_connect (at {x} {y}) (uuid "{uid(f"nc_{x}_{y}")}"))'
 
 
@@ -293,13 +306,16 @@ def place(sheet: Sheet, lib_id: str, ref: str, value: str,
 
     instance_uuid = uid(f"inst_{sheet.name}_{ref_actual}_u{unit}")
     dnp_flag = "yes" if dnp else "no"
+    x_e, y_e = _r(x), _r(y)
+    xr_e, yr_e = _r(xr), _r(yr)
+    xv_e, yv_e = _r(xv), _r(yv)
     block = f'''  (symbol
     (lib_id "{lib_id}")
-    (at {x} {y} {angle})
+    (at {x_e} {y_e} {angle})
     (unit {unit}) (in_bom yes) (on_board yes) (dnp {dnp_flag})
     (uuid "{instance_uuid}")
-    (property "Reference" "{ref_actual_e}" (at {xr} {yr} 0){ref_effects})
-    (property "Value" "{value_e}" (at {xv} {yv} 0){value_effects})
+    (property "Reference" "{ref_actual_e}" (at {xr_e} {yr_e} 0){ref_effects})
+    (property "Value" "{value_e}" (at {xv_e} {yv_e} 0){value_effects})
     (property "Footprint" "{footprint_e}" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
     (property "Datasheet" "" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
 {pin_uuids}
