@@ -17,7 +17,7 @@ Pairs with [[kicad-symbol-from-datasheet]] — that skill makes a single `.kicad
 ## Process
 1. **Sketch the topology** as a net list first. Every component pin gets assigned to exactly one net.
 2. **Pick positions**: place each symbol so all its pins land on the chosen grid (2.54 mm typical). Symbols whose pins sit on half-grid offsets force the symbol's `at` X or Y to be half-grid; do the arithmetic before placing.
-3. **Generate** the `.kicad_pro` (minimal JSON) and `.kicad_sch` (full sexpr). A Python script is cleaner than hand-writing s-expressions for anything beyond ~5 components.
+3. **Generate** the `.kicad_pro` (minimal JSON) and `.kicad_sch` (full sexpr). For hierarchical designs, emit one `.kicad_sch` per page plus a root sheet that embeds them — see [Hierarchical (multi-page) designs](#hierarchical-multi-page-designs). A Python script is cleaner than hand-writing s-expressions for anything beyond ~5 components.
 4. **Validate**: `kicad-cli sch export svg --output <dir> <file>.kicad_sch` — must print `"Plotted to … Done."`. Any other output is a parse failure.
 5. **Open in eeschema** for visual review. User confirms.
 
@@ -67,7 +67,7 @@ Position rules per symbol orientation:
 
 ## File templates
 
-### `.kicad_pro` (minimal)
+### `.kicad_pro` (minimal, single-sheet)
 ```json
 {
   "meta": { "filename": "<name>.kicad_pro", "version": 3 },
@@ -76,6 +76,7 @@ Position rules per symbol orientation:
   "text_variables": {}
 }
 ```
+For multi-page designs the `sheets` array gets one entry per page — see [Hierarchical (multi-page) designs](#hierarchical-multi-page-designs).
 
 ### `.kicad_sch` shell
 ```
@@ -113,6 +114,7 @@ Position rules per symbol orientation:
     (project "<project_name>"
       (path "/<schematic_uuid>" (reference "R1") (unit 1)))))
 ```
+For symbols on a child sheet, the path is the full hierarchy: `"/<root_uuid>/<child_sheet_uuid>"` — see [Hierarchical (multi-page) designs](#hierarchical-multi-page-designs).
 
 ### Wire / junction / label / power symbol
 ```
@@ -133,6 +135,102 @@ The schematic must embed every symbol it references in its `lib_symbols` block �
 - `power:+5V`, `power:+3V3`, `power:VCC`, `power:VDD` — as needed for the rails in use
 
 Reuse the embedded definitions from a previous generated schematic in the project — they don't change between schematics.
+
+## Hierarchical (multi-page) designs
+
+**When to split into pages:** >25–30 components, distinct functional blocks (Power, Analog, Digital, RF, Connectors), or when a block will be reused. One `.kicad_sch` per page; the root sheet contains `(sheet …)` blocks that embed each child file.
+
+**File layout:**
+- `<project>.kicad_pro` — `sheets` array lists every page (root first, then children in display order)
+- `<project>.kicad_sch` — root sheet, mostly `(sheet …)` blocks with little or no component placement
+- `<block>.kicad_sch` — one child file per functional block (e.g. `power.kicad_sch`, `digital.kicad_sch`)
+
+**Crossing signals — name + direction must match exactly:**
+- Parent declares `(pin "NAME" <dir>)` on the child sheet's box edge.
+- Child places `(hierarchical_label "NAME" (shape <dir>))` where the signal enters/exits its sheet.
+- `<dir>` ∈ `input` (into child), `output` (out of child), `bidirectional`, `tri_state`, `passive`. Mismatch → ERC error and validator failure.
+- For nets touching ≥3 sheets (global RESET, common buses, supply rails), use `(global_label …)` on every sheet instead — no per-sheet pin declarations needed. **Power symbols (`power:GND`, `power:+5V`) are already global**; do not re-export them as hierarchical pins.
+
+### `.kicad_pro` (multi-sheet)
+```json
+{
+  "meta": { "filename": "<name>.kicad_pro", "version": 3 },
+  "schematic": { "legacy_lib_dir": "", "legacy_lib_list": [] },
+  "sheets": [
+    ["<root_uuid>",    ""],
+    ["<power_uuid>",   "Power"],
+    ["<digital_uuid>", "Digital"]
+  ],
+  "text_variables": {}
+}
+```
+
+### Parent: `(sheet …)` block embedding a child page
+```
+(sheet
+  (at <X> <Y>) (size <W> <H>)
+  (stroke (width 0.1524) (type solid))
+  (fill (color 0 0 0 0.0000))
+  (uuid <child_sheet_uuid>)
+  (property "Sheetname" "Power"            (at <X> <Y_top>    0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (property "Sheetfile" "power.kicad_sch"  (at <X> <Y_bottom> 0) (effects (font (size 1.27 1.27)) (justify left top)))
+  (pin "+5V" output (at <Xp> <Yp> 0)   (effects (font (size 1.27 1.27))) (uuid …))
+  (pin "VIN" input  (at <Xp> <Yp> 180) (effects (font (size 1.27 1.27))) (uuid …))
+  (instances (project "<project>" (path "/<root_uuid>" (page "2")))))
+```
+`<child_sheet_uuid>` is reused in three places: this block's `(uuid …)`, the `.kicad_pro` `sheets` entry, and the child's symbol-instance paths (next).
+
+### Child sheet: hierarchical labels and symbol instances
+```
+(hierarchical_label "+5V" (shape output) (at <x> <y> 0)
+  (effects (font (size 1.27 1.27)) (justify left)) (uuid …))
+```
+Symbol instances on a child sheet use the full hierarchy in their path:
+```
+(instances (project "<project>"
+  (path "/<root_uuid>/<child_sheet_uuid>" (reference "U3") (unit 1))))
+```
+Path order is always root → child → grandchild. Refdes namespace is project-wide, so do not reuse `R1` across sheets.
+
+### Root `sheet_instances` — one entry per page
+```
+(sheet_instances
+  (path "/"                (page "1"))
+  (path "/<power_uuid>"    (page "2"))
+  (path "/<digital_uuid>"  (page "3")))
+```
+Each child `.kicad_sch` carries its own `(sheet_instances (path "/" (page "<n>")))` where `<n>` matches the parent's page number.
+
+### Validation flow
+Run `kicad-cli sch export svg --output <dir> <root>.kicad_sch` from the root — KiCad follows `Sheetfile` references and renders every page (one SVG per page). Common failures:
+- Parent pin name ≠ child hierarchical-label name (typo, case).
+- Direction mismatch — parent `input` vs child `output` of same name.
+- `Sheetfile` path wrong or relative-path broken → "cannot open file".
+- Child symbol instance path missing the `<child_sheet_uuid>` segment → symbol appears unannotated.
+- Same refdes (`R1`) reused on two sheets → ERC duplicate-reference.
+
+### Page breakdown — test1 (Bobcat carrier) reference
+
+> **Project-specific.** This is the chosen split for the test1 Bobcat carrier board. The rules-of-thumb below are candidate generalizations — promote to a project-agnostic rubric once a second design has been broken up the same way.
+
+| Page | File | Block | Notable nets exported |
+|---|---|---|---|
+| 1 (root) | `bobcat_carrier.kicad_sch` | Sheet blocks + title block; no parts | — |
+| 2 | `fmc.kicad_sch` | VITA 57.1 LPC connector (160-pin), PRSNT/GA strapping, PG_C2M tie | `+3P3V` (global), `VADJ` (out), `SCL`/`SDA` (bidir), LA-bank signals |
+| 3 | `power.kicad_sch` | TPS7A8401A LDO + ANY-OUT strap, VADJ load switch, EN pulldowns, output jumpers | `+VDDD`/`+VDDA1`/`+VDDA2`/`+VDDIO` (globals), `LDO_EN`/`LDO_PG`/`LSW_EN` (bidir) |
+| 4 | `bobcat.kicad_sch` | Bobcat 40-QFN DUT, decoupling, VDDA1/VDDA2 series 0Ω, pull-up/down network, series 0Ω signal isolators | SPI bus, `RESET_N`, `GPIO0–3`, `SAMPLE_OUT*`, `CLK_OUT0–3`, `BIAS0/BIAS1`, `OSC_EN`/`WEIGHT_EN`/`SAMPLE_TRIG` |
+| 5 | `eeprom.kicad_sch` | 8-Kbit I²C EEPROM, address straps, SCL/SDA pull-ups (shared with bias) | I²C bus only |
+| 6 | `bias.kicad_sch` | MCP4728 DAC + OPA2388 + PMZ1200UPEYL PMOS + 5.11 kΩ sense, ×2 channels, optional DNP NMOS isolators | `BIAS0`/`BIAS1` (out) |
+| 7 | `connectors.kicad_sch` | CLK_OUT0–3 SMAs, OSC_EN/WEIGHT_EN/SAMPLE_TRIG SMAs + 0Ω routing, GPIO0–3 header, GND clips | `CLK_OUT*` (in), `OSC_EN`/`WEIGHT_EN`/`SAMPLE_TRIG` (bidir), `GPIO0–3` (in) |
+
+**Rules driving the split (candidate generalizations):**
+- **One supply domain per page** when feasible — keeps decoupling-cap clusters local to the rail they serve. Power *generation* gets its own page.
+- **The DUT gets its own page.** Never split a chip's decoupling, pull, or series-isolation network across pages.
+- **Connector banks** (FMC, SMA arrays, breakout headers) get dedicated pages — many nets, few parts, would bloat any page they share.
+- **Independent functional sub-blocks** (EEPROM, Bias) each get their own page even if small — they have a clean I²C-only (or other narrow) interface and are independently editable / removable.
+- **Target 5–15 placed components per page.** Bobcat is the upper edge (~30 with passives); the root sits at 0.
+
+**Globals stay global.** Power symbols (`+3P3V`, `+VDDIO`, `GND`, …) are inherently shared across all sheets by name — drop them where needed and do **not** export them as `(hierarchical_label …)`. Only non-supply nets crossing sheets need hierarchical pin/label pairs.
 
 ## Validation
 
@@ -165,6 +263,6 @@ kicad-cli sch export svg --output <dir> <file>.kicad_sch
 
 ## Output to deliver
 - `<project>.kicad_pro` (minimal JSON)
-- `<project>.kicad_sch` (full schematic)
-- A SVG export at `<project>/render/<project>.svg` for visual sanity check before the user opens eeschema
-- A brief summary of what's in the schematic (parts list, net topology, any non-obvious decisions)
+- `<project>.kicad_sch` (root schematic) plus one `<block>.kicad_sch` per child page for hierarchical designs
+- SVG exports at `<project>/render/<page>.svg` — one per page — for visual sanity check before the user opens eeschema
+- A brief summary of what's in the schematic (page breakdown, parts list, net topology, any non-obvious decisions)
