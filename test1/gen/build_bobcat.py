@@ -131,11 +131,12 @@ def build_bobcat() -> Sheet:
         else:             # 33, 34 — top edge
             s.add(wire(px, py, px, py - 5.08))
             power_at(s, "+VDDIO", px, py - 5.08, angle=90)
-    # VDDIO cap row (5×0.1µF + 1×1µF; W2) — above the chip top edge, anchored to
-    # the leftmost top-edge pin's x so it follows U1 origin.
+    # VDDIO cap row (5×0.1µF + 1×1µF bulk; one per VDDIO pin + bulk) — above
+    # the chip top edge, anchored to the leftmost top-edge pin's x so it
+    # follows U1 origin.
     VDDIO_ROW_Y     = CHIP_TOP_Y - 6.35
     VDDIO_ROW_X_END = U1["7"][0] - 11.43   # leftmost cap rightmost (=165.1)
-    for i, ref in enumerate(["C24", "C25", "C26", "C27", "C28"]):
+    for i, ref in enumerate(["C24", "C25", "C26", "C27", "C28", "C29"]):
         cx = VDDIO_ROW_X_END - i*5.08
         cy = VDDIO_ROW_Y
         place_from_netlist(s, nl, ref, x=cx, y=cy)

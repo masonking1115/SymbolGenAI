@@ -532,7 +532,7 @@
 					)
 				)
 			)
-			(pin input line
+			(pin output line
 				(at 22.86 -6.35 180)
 				(length 2.54)
 				(name "OSC_EN"
@@ -550,7 +550,7 @@
 					)
 				)
 			)
-			(pin input line
+			(pin output line
 				(at 22.86 -3.81 180)
 				(length 2.54)
 				(name "WEIGHT_EN"
@@ -568,7 +568,7 @@
 					)
 				)
 			)
-			(pin input line
+			(pin output line
 				(at 22.86 -1.27 180)
 				(length 2.54)
 				(name "SAMPLE_TRIG"
@@ -622,7 +622,7 @@
 					)
 				)
 			)
-			(pin passive line
+			(pin input line
 				(at 22.86 6.35 180)
 				(length 2.54)
 				(name "BIAS0"
@@ -640,7 +640,7 @@
 					)
 				)
 			)
-			(pin passive line
+			(pin input line
 				(at 22.86 8.89 180)
 				(length 2.54)
 				(name "BIAS1"
