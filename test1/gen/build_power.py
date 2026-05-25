@@ -91,8 +91,10 @@ def build_power() -> Sheet:
     s.add(wire(99.06, 128.27, 99.06, GND_RAIL_Y))
     s.add(wire(92.71, GND_RAIL_Y, 99.06, GND_RAIL_Y))   # bridge IN-rail (ends at C11=92.71) → R10 col
     s.add(junction(99.06, GND_RAIL_Y))
-    s.add(hier_label("LDO_EN", "input", 91.44, U1["14"][1], angle=180, justify="right"))
-    s.add(wire(91.44, U1["14"][1], 99.06, U1["14"][1]))
+    # LDO_EN pushed to x=80.01 (same column as LDO_SET labels) so cap top-drop
+    # columns at x=87.63 (C10) and x=92.71 (C11) don't cross the label text.
+    s.add(hier_label("LDO_EN", "input", 80.01, U1["14"][1], angle=180, justify="right"))
+    s.add(wire(80.01, U1["14"][1], 99.06, U1["14"][1]))
     s.add(junction(99.06, U1["14"][1]))
 
     # NR_SS (13): 10nF cap to GND. C12 sits on its own NR_X column (NOT R10's
@@ -116,13 +118,17 @@ def build_power() -> Sheet:
         ("10", "LDO_SET_800mV"),
         ("11", "LDO_SET_1V6"),
     ]
-    # Labels at x = px - 12.7 (NOT -10.16): -10.16 lands on x=99.06, which is
-    # R10's vertical GND-drop column, so the labels would sit on that wire's
-    # interior. -12.7 places them at x=96.52, a clear column.
+    # Labels at x = px - 29.21 (NOT -12.7): -12.7 lands at x=96.52, and the
+    # label text (~12 chars left of anchor) extends back through C10/C11's
+    # GND-drop columns at x=87.63/92.71 — visually it looks like the cap
+    # GND drops pass straight through the label boxes. -29.21 puts the
+    # anchor at x=80.01, with text extending leftward into clear space PAST
+    # all three cap columns (C17 at 82.55, C10 at 87.63, C11 at 92.71).
+    # Caught by _check_wire_crosses_label_text in the layout linter.
     for pn, net in LDO_SET_PINS:
         px, py = U1[pn]
-        s.add(wire(px, py, px - 12.7, py))
-        s.add(global_label(net, "input", px - 12.7, py, angle=180, justify="right"))
+        s.add(wire(px, py, px - 29.21, py))
+        s.add(global_label(net, "input", px - 29.21, py, angle=180, justify="right"))
 
     # ===== Cluster B: OUT side =====
     # OUT bus is the single vertical wire built later from U1["1"] down to FB

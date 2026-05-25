@@ -620,6 +620,54 @@ def _check_label_overlap_part(sheet: Sheet, min_gap: float = 2.0) -> list[LintIs
     return issues
 
 
+def _check_wire_crosses_label_text(sheet: Sheet) -> list[LintIssue]:
+    """A label's text bbox must not be crossed by any wire other than the one
+    it terminates. When another wire (typically a vertical rail/drop column)
+    passes through the label's text region, the schematic reads as if the
+    label is on multiple nets — extend the label further out past the
+    crossing wire so the text sits in clear space."""
+    issues: list[LintIssue] = []
+    for lbl in sheet._labels:
+        lbb = _label_text_bbox(lbl)
+        xmin, ymin, xmax, ymax = lbb
+        for (a, b) in sheet._wires:
+            # Skip the wire that the label is anchored at — the wire arrives
+            # at the label endpoint and necessarily enters the bbox from the
+            # arrow side.
+            at_a = abs(a[0] - lbl.x) < _TOL and abs(a[1] - lbl.y) < _TOL
+            at_b = abs(b[0] - lbl.x) < _TOL and abs(b[1] - lbl.y) < _TOL
+            if at_a or at_b:
+                continue
+            if abs(a[0] - b[0]) < _TOL:                   # vertical wire
+                wx = a[0]
+                if not (xmin < wx < xmax):
+                    continue
+                y_lo, y_hi = min(a[1], b[1]), max(a[1], b[1])
+                if y_lo < ymax and y_hi > ymin:
+                    issues.append(LintIssue(
+                        "WARNING", "wire_crosses_label_text",
+                        f"{lbl.kind} '{lbl.name}' at ({lbl.x}, {lbl.y}) — "
+                        f"vertical wire {a}–{b} crosses the label's text bbox "
+                        f"{lbb}; extend the label further out past the "
+                        f"crossing column",
+                        [lbl.name],
+                    ))
+            elif abs(a[1] - b[1]) < _TOL:                 # horizontal wire
+                wy = a[1]
+                if not (ymin < wy < ymax):
+                    continue
+                x_lo, x_hi = min(a[0], b[0]), max(a[0], b[0])
+                if x_lo < xmax and x_hi > xmin:
+                    issues.append(LintIssue(
+                        "WARNING", "wire_crosses_label_text",
+                        f"{lbl.kind} '{lbl.name}' at ({lbl.x}, {lbl.y}) — "
+                        f"horizontal wire {a}–{b} crosses the label's text "
+                        f"bbox {lbb}",
+                        [lbl.name],
+                    ))
+    return issues
+
+
 def _check_vertical_label(sheet: Sheet) -> list[LintIssue]:
     """Labels (global/hier/local) should be horizontal (angle 0 or 180), not
     vertical (90/270). Vertical labels stack illegibly and visually appear to
@@ -683,6 +731,7 @@ ALL_CHECKS = (
     _check_refval_on_body,
     _check_vertical_label,
     _check_wire_through_label,
+    _check_wire_crosses_label_text,
     _check_label_overlap_part,
     _check_dense_gnd_cluster,
     _check_duplicate_wires,
