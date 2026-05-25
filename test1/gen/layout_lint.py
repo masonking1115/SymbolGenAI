@@ -570,6 +570,56 @@ def _check_redundant_junctions(sheet: Sheet) -> list[LintIssue]:
     return issues
 
 
+def _label_text_bbox(lbl) -> tuple[float, float, float, float]:
+    """Estimate the rendered text + arrow/shape bbox of a label in world coords.
+    KiCad's default font is 1.27 mm; we use 1.0 mm/char as a conservative width
+    so long labels don't get inflated estimates. half_h=1.0 accounts for font
+    ascender/descender + a small margin. Adds ~2.5 mm of arrow extent on the
+    anchor side (global_label is the widest case)."""
+    char_w = 1.0
+    arrow = 2.5
+    half_h = 1.0
+    text_len = len(lbl.name) * char_w
+    if lbl.angle == 0:        # text extends RIGHT, arrow on left
+        return (lbl.x - arrow, lbl.y - half_h, lbl.x + text_len, lbl.y + half_h)
+    if lbl.angle == 180:      # text extends LEFT, arrow on right
+        return (lbl.x - text_len, lbl.y - half_h, lbl.x + arrow, lbl.y + half_h)
+    if lbl.angle == 90:       # text extends UP, arrow below
+        return (lbl.x - half_h, lbl.y - text_len, lbl.x + half_h, lbl.y + arrow)
+    if lbl.angle == 270:      # text extends DOWN, arrow above
+        return (lbl.x - half_h, lbl.y - arrow, lbl.x + half_h, lbl.y + text_len)
+    return (lbl.x, lbl.y, lbl.x, lbl.y)
+
+
+def _bboxes_intersect(a, b) -> bool:
+    return not (a[2] < b[0] or b[2] < a[0] or a[3] < b[1] or b[3] < a[1])
+
+
+def _check_label_overlap_part(sheet: Sheet, min_gap: float = 2.0) -> list[LintIssue]:
+    """A label's text + arrow extent must stay ≥ min_gap from every part body
+    (including power symbols). When the anchor sits close to a cluster, the
+    label visually crowds neighboring components even if the wire connectivity
+    is fine — extend the connecting wire further out so the label sits clear."""
+    issues: list[LintIssue] = []
+    parts = list(sheet._placed.values())
+    bbs = [(p, _part_bbox(p)) for p in parts]
+    for lbl in sheet._labels:
+        lbb = _label_text_bbox(lbl)
+        expanded = (lbb[0] - min_gap, lbb[1] - min_gap,
+                    lbb[2] + min_gap, lbb[3] + min_gap)
+        for (p, bb) in bbs:
+            if _bboxes_intersect(expanded, bb):
+                issues.append(LintIssue(
+                    "WARNING", "label_overlap_part",
+                    f"{lbl.kind} '{lbl.name}' at ({lbl.x}, {lbl.y}) (text bbox "
+                    f"{lbb}) is within {min_gap} mm of {p.refdes}:u{p.unit}'s "
+                    f"body {bb} — extend the wire so the label sits further "
+                    f"from the cluster",
+                    [lbl.name, p.refdes],
+                ))
+    return issues
+
+
 def _check_vertical_label(sheet: Sheet) -> list[LintIssue]:
     """Labels (global/hier/local) should be horizontal (angle 0 or 180), not
     vertical (90/270). Vertical labels stack illegibly and visually appear to
@@ -633,6 +683,7 @@ ALL_CHECKS = (
     _check_refval_on_body,
     _check_vertical_label,
     _check_wire_through_label,
+    _check_label_overlap_part,
     _check_dense_gnd_cluster,
     _check_duplicate_wires,
     _check_redundant_junctions,

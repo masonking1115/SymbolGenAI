@@ -190,7 +190,11 @@ def build_bobcat() -> Sheet:
     # validator missed the short because each net's name was still present
     # in the bridged component's name set. See [[layout-rule-pin-protrusion]].
     OWT_PULL_ROW_Y = 160.02  # below chip body (body bottom ≈ 149.86)
-    OWT_LABEL_X    = 234.95  # x of global_label, just right of chip pin
+    # Labels pushed well past the OWT pull columns AND the R21/+VDDA2 cluster
+    # at right-edge of chip — original OWT_LABEL_X=234.95 had label text
+    # overlapping R21 (x=236.22) and crowding +VDDA2 power symbol. Linter:
+    # _check_label_overlap_part catches this with min_gap=2.0.
+    OWT_LABEL_X    = 280.67
     OWT_PULLS = [
         # (chip pin, net, pull R refdes, R column x)
         ("23", "OSC_EN",      "R27", 251.46),
@@ -199,9 +203,11 @@ def build_bobcat() -> Sheet:
     ]
     for pn, net, pull_ref, pull_x in OWT_PULLS:
         px, py = U1[pn]
+        # One continuous horizontal chip→label; pull drops as a T-branch off
+        # this horizontal at pull_x (junction explicit since 3 segments meet).
         s.add(wire(px, py, OWT_LABEL_X, py))                          # chip pin → label
         s.add(global_label(net, "output", OWT_LABEL_X, py, angle=0))
-        s.add(wire(OWT_LABEL_X, py, pull_x, py))                      # label → pull column
+        s.add(junction(pull_x, py))
         place_from_netlist(s, nl, pull_ref, x=pull_x, y=OWT_PULL_ROW_Y)
         s.add(wire(pull_x, py, pull_x, OWT_PULL_ROW_Y - 3.81))        # drop down to R top
         s.add(wire(pull_x, OWT_PULL_ROW_Y + 3.81,
@@ -220,12 +226,15 @@ def build_bobcat() -> Sheet:
 
     # Top-edge pins: CLK_OUT3/2/1/0 (no pull) — horizontal labels off to the RIGHT,
     # staggered y per pin so the stacked labels don't overlap each other in x.
+    # target_y values are ABOVE the GPIO pull area (which sits at y=64-93 for
+    # the R bodies + GND symbols); originally the CLK_OUT labels lived at
+    # y=81-96 and the linter caught their text overlapping R30/GPIO power symbols.
     CLK_LABEL_X = 234.95   # right of chip body, matches OWT_LABEL_X column
     CLK_OUT_PINS = [
-        ("31", "CLK_OUT3", 81.28),   # rightmost top pin → topmost label
-        ("32", "CLK_OUT2", 86.36),
-        ("35", "CLK_OUT1", 91.44),
-        ("36", "CLK_OUT0", 96.52),
+        ("31", "CLK_OUT3", 59.69),   # rightmost top pin → topmost label
+        ("32", "CLK_OUT2", 54.61),
+        ("35", "CLK_OUT1", 49.53),
+        ("36", "CLK_OUT0", 44.45),
     ]
     for pn, net, target_y in CLK_OUT_PINS:
         px, py = U1[pn]
