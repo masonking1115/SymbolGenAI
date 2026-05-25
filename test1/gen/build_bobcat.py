@@ -41,19 +41,20 @@ def build_bobcat() -> Sheet:
               page=PAGE_NUMBERS["bobcat"],
               title=f"{PROJECT_NAME} — Bobcat DUT")
 
-    # Place Bobcat at (200, 130). Body local x ∈ [-20.32, 20.32], y ∈ [-20.32, 20.32]
-    # (the chip rectangle), but pins extend to (±22.86). World body: x ∈ [179.68, 220.32].
-    U1 = place_from_netlist(s, nl, "U20", x=200, y=130)
+    # Place Bobcat at (199.39, 129.54) — snapped to nearest 50-grid corner.
+    # Body local x ∈ [-20.32, 20.32], y ∈ [-20.32, 20.32] (the chip rectangle),
+    # but pins extend to (±22.86). World body: x ∈ [179.07, 219.71].
+    U1 = place_from_netlist(s, nl, "U20", x=199.39, y=129.54)
 
-    # Pin 41 (GND, EP) at chip center (200, 130) — wire to GND symbol nearby
-    s.add(wire(200, 130, 200, 144.78))
-    power_at(s, "GND", 200, 144.78)
+    # Pin 41 (GND, EP) at chip center (199.39, 129.54) — wire to GND symbol nearby
+    s.add(wire(199.39, 129.54, 199.39, 144.78))
+    power_at(s, "GND", 199.39, 144.78)
 
     # ===== Cluster B: VDDD decoupling =====
     # Pins 12 and 20 are both VDDD, on the chip's bottom edge.
     VDDD_PSYM_Y = 158.75   # just below chip body, above the cap
     VDDD_CAP_Y  = 167.64   # cap center
-    GND_BELOW_Y = 178.0    # GND symbol below cap
+    GND_BELOW_Y = 177.8    # GND symbol below cap
     for ref, pn in [("C20", "12"), ("C21", "20")]:
         px, py = U1[pn]
         s.add(wire(px, py, px, VDDD_PSYM_Y))
@@ -125,7 +126,7 @@ def build_bobcat() -> Sheet:
     # VDDIO cap row (5×0.1µF + 1×1µF; W2)
     for i, ref in enumerate(["C24", "C25", "C26", "C27", "C28"]):
         cx = 165.1 - i*5.08
-        cy = 100
+        cy = 100.33
         place_from_netlist(s, nl, ref, x=cx, y=cy)
         s.add(wire(cx, cy - 3.81, cx, cy - 7.62))
         power_at(s, "+VDDIO", cx, cy - 7.62, angle=90)
@@ -148,11 +149,13 @@ def build_bobcat() -> Sheet:
     ]
     SPI_LABEL_Y_START = 185.42
     SPI_LABEL_Y_STEP  = 10.16
+    SPI_LABEL_X       = 165.1   # common left-of-chip column; labels are horizontal
     for i, (pn, net, direction, pull_type, pull_ref, pull_xoff) in enumerate(SPI_PINS):
         px, py = U1[pn]
         label_y = SPI_LABEL_Y_START + i * SPI_LABEL_Y_STEP
         s.add(wire(px, py, px, label_y))
-        s.add(global_label(net, direction, px, label_y, angle=270, justify="left"))
+        s.add(wire(px, label_y, SPI_LABEL_X, label_y))         # horizontal LEFT to label
+        s.add(global_label(net, direction, SPI_LABEL_X, label_y, angle=180, justify="right"))
         if pull_type is None:
             continue
         tap_y = label_y - 2.54
@@ -168,17 +171,16 @@ def build_bobcat() -> Sheet:
             s.add(wire(pull_x, tap_y - 7.62, pull_x, tap_y - 12.7))
             power_at(s, "+VDDIO", pull_x, tap_y - 12.7, angle=90)
 
-    # SAMPLE_OUT* on left edge
+    # SAMPLE_OUT* on left edge + pin 11 (bottom edge, routed LEFT to match column)
+    SAMPLE_LABEL_X = 163.83   # left of chip body; same column for all SAMPLE_OUT labels
     for pn, net in [("2", "SAMPLE_OUTV"), ("3", "SAMPLE_OUT0"), ("4", "SAMPLE_OUT1"),
                      ("5", "SAMPLE_OUT2"), ("6", "SAMPLE_OUT3"), ("8", "SAMPLE_OUT4"),
                      ("9", "SAMPLE_OUT5"), ("10", "SAMPLE_OUT6"), ("11", "SAMPLE_OUT7")]:
         px, py = U1[pn]
-        if pn == "11":   # bottom edge pin
-            s.add(wire(px, py, px, py + 10.16))
-            s.add(global_label(net, "output", px, py + 10.16, angle=270))
-        else:            # left edge
-            s.add(wire(px, py, px - 12.7, py))
-            s.add(global_label(net, "output", px - 12.7, py, angle=180, justify="right"))
+        # All labels horizontal, anchored at SAMPLE_LABEL_X. Pin 11 (bottom edge)
+        # exits straight LEFT at its own y (clear of chip body since py > body bottom).
+        s.add(wire(px, py, SAMPLE_LABEL_X, py))
+        s.add(global_label(net, "output", SAMPLE_LABEL_X, py, angle=180, justify="right"))
 
     # Right-edge OSC_EN/WEIGHT_EN/SAMPLE_TRIG with 10kΩ pull-downs (E3).
     # CRITICAL: each chip pin gets its OWN vertical drop column. A previous
@@ -187,13 +189,13 @@ def build_bobcat() -> Sheet:
     # silently shorting OSC_EN/WEIGHT_EN/SAMPLE_TRIG/GND together. The
     # validator missed the short because each net's name was still present
     # in the bridged component's name set. See [[layout-rule-pin-protrusion]].
-    OWT_PULL_ROW_Y = 160.0   # below chip body (body bottom ≈ 150.32)
-    OWT_LABEL_X    = 235.56  # x of global_label, just right of chip pin
+    OWT_PULL_ROW_Y = 160.02  # below chip body (body bottom ≈ 149.86)
+    OWT_LABEL_X    = 234.95  # x of global_label, just right of chip pin
     OWT_PULLS = [
         # (chip pin, net, pull R refdes, R column x)
-        ("23", "OSC_EN",      "R27", 252.0),
-        ("24", "WEIGHT_EN",   "R28", 262.0),
-        ("25", "SAMPLE_TRIG", "R29", 272.0),
+        ("23", "OSC_EN",      "R27", 251.46),
+        ("24", "WEIGHT_EN",   "R28", 261.62),
+        ("25", "SAMPLE_TRIG", "R29", 271.78),
     ]
     for pn, net, pull_ref, pull_x in OWT_PULLS:
         px, py = U1[pn]
@@ -216,13 +218,20 @@ def build_bobcat() -> Sheet:
         px, py = U1[pn]
         s.add(no_connect(px, py))
 
-    # Top-edge pins: CLK_OUT3/2/1/0 (no pull)
-    for pn, net in [("31", "CLK_OUT3"), ("32", "CLK_OUT2"),
-                     ("35", "CLK_OUT1"), ("36", "CLK_OUT0")]:
+    # Top-edge pins: CLK_OUT3/2/1/0 (no pull) — horizontal labels off to the RIGHT,
+    # staggered y per pin so the stacked labels don't overlap each other in x.
+    CLK_LABEL_X = 234.95   # right of chip body, matches OWT_LABEL_X column
+    CLK_OUT_PINS = [
+        ("31", "CLK_OUT3", 81.28),   # rightmost top pin → topmost label
+        ("32", "CLK_OUT2", 86.36),
+        ("35", "CLK_OUT1", 91.44),
+        ("36", "CLK_OUT0", 96.52),
+    ]
+    for pn, net, target_y in CLK_OUT_PINS:
         px, py = U1[pn]
-        target_y = py - 25.4
-        s.add(wire(px, py, px, target_y))
-        s.add(hier_label(net, "output", px, target_y, angle=90, justify="left"))
+        s.add(wire(px, py, px, target_y))                    # drop UP from pin
+        s.add(wire(px, target_y, CLK_LABEL_X, target_y))     # horizontal RIGHT to label
+        s.add(hier_label(net, "output", CLK_LABEL_X, target_y, angle=0, justify="left"))
 
     # GPIO0–3 with 10kΩ pull-downs. CRITICAL: each pin's horizontal must be at
     # its OWN y. A prior version ran all four horizontals at y=75, sharing the
@@ -231,18 +240,22 @@ def build_bobcat() -> Sheet:
     # 244→274.48, so the leftmost pin (40) must take the topmost row for each
     # vertical drop to land in its own row only (see skill rule 5).
     GPIO_PULLS = [
-        # (chip pin, net, pull R refdes, R column x, horizontal row y)
-        ("37", "GPIO3", "R30", 244.0,  80.0),   # rightmost pin → bottommost row
-        ("38", "GPIO2", "R31", 254.16, 75.0),
-        ("39", "GPIO1", "R32", 264.32, 70.0),
-        ("40", "GPIO0", "R33", 274.48, 65.0),   # leftmost pin → topmost row
+        # (chip pin, net, pull R refdes, R column x, horizontal row y) — all 50-grid
+        ("37", "GPIO3", "R30", 243.84, 80.01),  # rightmost pin → bottommost row
+        ("38", "GPIO2", "R31", 254.00, 74.93),
+        ("39", "GPIO1", "R32", 264.16, 69.85),
+        ("40", "GPIO0", "R33", 274.32, 64.77),  # leftmost pin → topmost row
     ]
+    # Horizontal labels off to the LEFT at row_y, separate from pull (RIGHT branch).
+    # 3-way T at (px, row_y): drop from pin, left-to-label, right-to-pull.
+    GPIO_LABEL_X = 163.83   # match SAMPLE_OUT column (left-of-chip)
     for pn, net, pull_ref, pull_x, row_y in GPIO_PULLS:
         px, py = U1[pn]
-        target_y = py - 25.4
         s.add(wire(px, py, px, row_y))                                # drop to own row
-        s.add(hier_label(net, "output", px, target_y, angle=90, justify="left"))
-        s.add(wire(px, row_y, pull_x, row_y))                         # horizontal to pull
+        s.add(wire(px, row_y, GPIO_LABEL_X, row_y))                   # LEFT branch to label
+        s.add(hier_label(net, "output", GPIO_LABEL_X, row_y, angle=180, justify="right"))
+        s.add(wire(px, row_y, pull_x, row_y))                         # RIGHT branch to pull
+        s.add(junction(px, row_y))                                    # 3-way T
         place_from_netlist(s, nl, pull_ref, x=pull_x, y=row_y + 3.81)
         s.add(wire(pull_x, row_y + 7.62, pull_x, row_y + 12.7))
         power_at(s, "GND", pull_x, row_y + 12.7)

@@ -32,38 +32,39 @@ def build_eeprom() -> Sheet:
               page=PAGE_NUMBERS["eeprom"],
               title=f"{PROJECT_NAME} — EEPROM (24AA08 I²C)")
 
-    # --- U30: 24AA08 at (100, 120). Body x ∈ [100, 176.2], y ∈ [120, 127.62].
+    # --- U30: 24AA08 at (100.33, 119.38) — snapped to nearest 50-grid corner.
+    # Body x ∈ [100.33, 176.53], y ∈ [119.38, 127.0].
     # Pin world coords at angle 0:
-    #   1 A_0 (100, 120)        5 SDA (176.2, 127.62)
-    #   2 A_1 (100, 122.54)     6 SCL (176.2, 125.08)
-    #   3 A_2 (100, 125.08)     7 WP  (176.2, 122.54)
-    #   4 VSS (100, 127.62)     8 VCC (176.2, 120)
-    place_from_netlist(s, nl, "U30", x=100, y=120)
+    #   1 A_0 (100.33, 119.38)    5 SDA (176.53, 127.0)
+    #   2 A_1 (100.33, 121.92)    6 SCL (176.53, 124.46)
+    #   3 A_2 (100.33, 124.46)    7 WP  (176.53, 121.92)
+    #   4 VSS (100.33, 127.0)     8 VCC (176.53, 119.38)
+    place_from_netlist(s, nl, "U30", x=100.33, y=119.38)
 
     # --- Left side: pins 1-4 (A0/A1/A2/VSS) → shared GND rail (Rule 7).
-    gnd_bus(s, [(100, y) for y in (120, 122.54, 125.08, 127.62)], rail_x=92.71)
+    gnd_bus(s, [(100.33, y) for y in (119.38, 121.92, 124.46, 127.0)], rail_x=92.71)
 
-    # +3V3 rail runs horizontally at y = 105.41 (14.59 mm above chip top)
+    # +3V3 rail runs horizontally at y = 105.41 (~14 mm above chip top)
     RAIL_Y = 105.41
-    GND_RAIL_Y = 142.24  # 14.62 mm below chip bottom
+    GND_RAIL_Y = 142.24  # ~15 mm below chip bottom
 
     # Pin 8 VCC → up to +3V3 rail
-    s.add(wire(176.2, 120, 184.15, 120))
-    s.add(wire(184.15, 120, 184.15, RAIL_Y))
+    s.add(wire(176.53, 119.38, 184.15, 119.38))
+    s.add(wire(184.15, 119.38, 184.15, RAIL_Y))
 
     # Pin 7 WP → down to GND (separate column, not stacked with VCC)
-    s.add(wire(176.2, 122.54, 189.23, 122.54))
-    s.add(wire(189.23, 122.54, 189.23, GND_RAIL_Y))
+    s.add(wire(176.53, 121.92, 189.23, 121.92))
+    s.add(wire(189.23, 121.92, 189.23, GND_RAIL_Y))
     power_at(s, "GND", 189.23, GND_RAIL_Y)
 
     # Pin 6 SCL → horizontal bus, exits as global_label (project-wide I²C).
     SCL_LABEL_X = 237.49
     SDA_LABEL_X = 237.49
-    s.add(wire(176.2, 125.08, SCL_LABEL_X, 125.08))
-    s.add(global_label("SCL", "bidirectional", SCL_LABEL_X, 125.08, angle=0))
+    s.add(wire(176.53, 124.46, SCL_LABEL_X, 124.46))
+    s.add(global_label("SCL", "bidirectional", SCL_LABEL_X, 124.46, angle=0))
 
-    s.add(wire(176.2, 127.62, SDA_LABEL_X, 127.62))
-    s.add(global_label("SDA", "bidirectional", SDA_LABEL_X, 127.62, angle=0))
+    s.add(wire(176.53, 127.0, SDA_LABEL_X, 127.0))
+    s.add(global_label("SDA", "bidirectional", SDA_LABEL_X, 127.0, angle=0))
 
     # --- C30: decoupling cap. Place at (200.66, 116.84) so pins land on grid.
     # Pin 1 (top, +3V3) at (200.66, 113.03); pin 2 (bot, GND) at (200.66, 120.65).
@@ -75,18 +76,18 @@ def build_eeprom() -> Sheet:
     # --- R60 (SCL pull-up): vertical, placed well above the SCL line so the
     # body doesn't crowd C30 or R61.
     # Place at (215.9, 113.03). Pin 1 (top, +3V3) at (215.9, 109.22); pin 2
-    # (bot) at (215.9, 116.84). Then route pin 2 down to SCL line at y=125.08.
+    # (bot) at (215.9, 116.84). Then route pin 2 down to SCL line at y=124.46.
     place_from_netlist(s, nl, "R60", x=215.9, y=113.03)
     s.add(wire(215.9, 109.22, 215.9, RAIL_Y))             # to +3V3 rail
-    s.add(wire(215.9, 116.84, 215.9, 125.08))             # down to SCL
-    s.add(junction(215.9, 125.08))
+    s.add(wire(215.9, 116.84, 215.9, 124.46))             # down to SCL
+    s.add(junction(215.9, 124.46))
 
     # --- R61 (SDA pull-up): same column-spacing rule. Place at (228.6, 113.03)
     # — 12.7 mm right of R60 — so the value labels don't crowd.
     place_from_netlist(s, nl, "R61", x=228.6, y=113.03)
     s.add(wire(228.6, 109.22, 228.6, RAIL_Y))
-    s.add(wire(228.6, 116.84, 228.6, 127.62))
-    s.add(junction(228.6, 127.62))
+    s.add(wire(228.6, 116.84, 228.6, 127.0))
+    s.add(junction(228.6, 127.0))
 
     # --- +3V3 rail: one horizontal wire tying VCC, C30, R60, R61 together ---
     s.add(wire(184.15, RAIL_Y, 228.6, RAIL_Y))

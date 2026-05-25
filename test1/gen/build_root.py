@@ -20,10 +20,10 @@ def build_root() -> Sheet:
               title=f"{PROJECT_NAME} — Bobcat Carrier (root)")
 
     # 6 sheet blocks in a 2x3 grid, A3 paper (420 x 297 mm usable ~ 400 x 280).
-    # Each block 95 mm wide, 60 mm tall, spaced 15 mm apart.
-    W, H = 100, 65
-    GAP_X, GAP_Y = 25, 30
-    X0, Y0 = 30, 35
+    # All dims snapped to 50-grid (multiples of 1.27 mm).
+    W, H = 100.33, 64.77
+    GAP_X, GAP_Y = 25.4, 30.48
+    X0, Y0 = 30.48, 35.56
 
     layout = [
         ("fmc",        (X0,                 Y0)),
@@ -41,45 +41,46 @@ def build_root() -> Sheet:
     # hier_label direction (i.e. direction is from the child sheet's
     # perspective). Project-wide nets (SCL/SDA, deferred LA-bank signals)
     # use global_label inside child sheets and don't need parent pins here.
+    # All pin offsets are 50-grid (multiples of 1.27 mm); 5.08 mm uniform spacing.
     sheet_pins = {
         "fmc": [
-            SheetPin("VADJ",   "output", "right",  5),    # exits FMC toward Power
-            SheetPin("LDO_EN", "output", "right", 15),    # FPGA → FMC → Power
-            SheetPin("LDO_PG", "input",  "right", 20),    # Power → FMC → FPGA
-            SheetPin("LSW_EN", "output", "right", 25),    # FPGA → FMC → Power
+            SheetPin("VADJ",   "output", "right",  5.08),    # exits FMC toward Power
+            SheetPin("LDO_EN", "output", "right", 15.24),    # FPGA → FMC → Power
+            SheetPin("LDO_PG", "input",  "right", 20.32),    # Power → FMC → FPGA
+            SheetPin("LSW_EN", "output", "right", 25.4),     # FPGA → FMC → Power
         ],
         "power": [
-            SheetPin("VADJ",   "input",  "left",  5),     # enters Power from FMC
-            SheetPin("LDO_EN", "input",  "left", 15),     # enters Power
-            SheetPin("LDO_PG", "output", "left", 20),     # exits Power
-            SheetPin("LSW_EN", "input",  "left", 25),     # enters Power
+            SheetPin("VADJ",   "input",  "left",  5.08),     # enters Power from FMC
+            SheetPin("LDO_EN", "input",  "left", 15.24),     # enters Power
+            SheetPin("LDO_PG", "output", "left", 20.32),     # exits Power
+            SheetPin("LSW_EN", "input",  "left", 25.4),      # enters Power
         ],
         "bobcat": [
-            SheetPin("BIAS0",    "input",  "left",  5),   # from Bias channel 0
-            SheetPin("BIAS1",    "input",  "left", 10),   # from Bias channel 1
-            SheetPin("CLK_OUT0", "output", "right", 5),
-            SheetPin("CLK_OUT1", "output", "right", 10),
-            SheetPin("CLK_OUT2", "output", "right", 15),
-            SheetPin("CLK_OUT3", "output", "right", 20),
-            SheetPin("GPIO0",    "output", "right", 30),
-            SheetPin("GPIO1",    "output", "right", 35),
-            SheetPin("GPIO2",    "output", "right", 40),
-            SheetPin("GPIO3",    "output", "right", 45),
+            SheetPin("BIAS0",    "input",  "left",  5.08),   # from Bias channel 0
+            SheetPin("BIAS1",    "input",  "left", 10.16),   # from Bias channel 1
+            SheetPin("CLK_OUT0", "output", "right", 5.08),
+            SheetPin("CLK_OUT1", "output", "right", 10.16),
+            SheetPin("CLK_OUT2", "output", "right", 15.24),
+            SheetPin("CLK_OUT3", "output", "right", 20.32),
+            SheetPin("GPIO0",    "output", "right", 30.48),
+            SheetPin("GPIO1",    "output", "right", 35.56),
+            SheetPin("GPIO2",    "output", "right", 40.64),
+            SheetPin("GPIO3",    "output", "right", 45.72),
         ],
         "eeprom": [],   # SCL/SDA are global_label
         "bias": [
-            SheetPin("BIAS0", "output", "right", 5),
-            SheetPin("BIAS1", "output", "right", 10),
+            SheetPin("BIAS0", "output", "right", 5.08),
+            SheetPin("BIAS1", "output", "right", 10.16),
         ],
         "connectors": [
-            SheetPin("CLK_OUT0", "input", "left",  5),
-            SheetPin("CLK_OUT1", "input", "left", 10),
-            SheetPin("CLK_OUT2", "input", "left", 15),
-            SheetPin("CLK_OUT3", "input", "left", 20),
-            SheetPin("GPIO0",    "input", "left", 30),
-            SheetPin("GPIO1",    "input", "left", 35),
-            SheetPin("GPIO2",    "input", "left", 40),
-            SheetPin("GPIO3",    "input", "left", 45),
+            SheetPin("CLK_OUT0", "input", "left",  5.08),
+            SheetPin("CLK_OUT1", "input", "left", 10.16),
+            SheetPin("CLK_OUT2", "input", "left", 15.24),
+            SheetPin("CLK_OUT3", "input", "left", 20.32),
+            SheetPin("GPIO0",    "input", "left", 30.48),
+            SheetPin("GPIO1",    "input", "left", 35.56),
+            SheetPin("GPIO2",    "input", "left", 40.64),
+            SheetPin("GPIO3",    "input", "left", 45.72),
         ],
     }
 

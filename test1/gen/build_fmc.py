@@ -37,8 +37,8 @@ def build_fmc() -> Sheet:
               page=PAGE_NUMBERS["fmc"],
               title=f"{PROJECT_NAME} — FMC LPC Connector (Power + I²C only)")
 
-    UNIT_X = {1: 80, 2: 140, 3: 200, 4: 260}    # rows C, D, G, H
-    UNIT_Y = 95
+    UNIT_X = {1: 80.01, 2: 139.7, 3: 199.39, 4: 259.08}    # rows C, D, G, H — 50-grid snapped
+    UNIT_Y = 95.25
     row_letters = {1: "C", 2: "D", 3: "G", 4: "H"}
 
     units: dict[int, dict[str, tuple[float, float]]] = {}
@@ -132,8 +132,8 @@ def build_fmc() -> Sheet:
         # YAML requires R.1 → label side, R.2 → FMC pin side. With horizontal R
         # to the LEFT of the FMC pin, pin 1 (label-side) needs to be the LEFT
         # pin — use angle=270 so local (0, +3.81) maps to world (cx - 3.81, cy).
-        R_x = px - 8.0
-        label_x = px - 20.0
+        R_x = px - 7.62
+        label_x = px - 20.32
         place_from_netlist(s, nl, r_ref, x=R_x, y=py, angle=270)
         s.add(wire(px, py, R_x + 3.81, py))             # FMC pin → R.2 (right, chip-side)
         s.add(wire(R_x - 3.81, py, label_x, py))        # R.1 (left, label-side) → label

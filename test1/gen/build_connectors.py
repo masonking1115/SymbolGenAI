@@ -40,9 +40,9 @@ def build_connectors() -> Sheet:
     # Cluster A: CLK_OUT0–3 SMAs (J50–J53), arranged vertically on the left.
     for i, net in enumerate(("CLK_OUT0", "CLK_OUT1", "CLK_OUT2", "CLK_OUT3")):
         ref = f"J{i+50}"
-        sy = 100 + i*15.24
-        place_from_netlist(s, nl, ref, x=100, y=sy)
-        s.add(wire(100, sy, 92.71, sy))
+        sy = 100.33 + i*15.24
+        place_from_netlist(s, nl, ref, x=100.33, y=sy)
+        s.add(wire(100.33, sy, 92.71, sy))
         s.add(hier_label(net, "input", 92.71, sy, angle=180, justify="right"))
 
     # Cluster B: OSC_EN / WEIGHT_EN / SAMPLE_TRIG SMAs (J54–J56) — center column.
@@ -53,27 +53,27 @@ def build_connectors() -> Sheet:
     for i, net in enumerate(("OSC_EN", "WEIGHT_EN", "SAMPLE_TRIG")):
         j_ref = f"J{i+54}"
         r_ref = f"R{50+i}"
-        sy = 100 + i*15.24
-        # SMA shifted right to x=170 so its body bbox clears R pin 1 by ≥2.54 mm.
-        place_from_netlist(s, nl, j_ref, x=170, y=sy)
-        place_from_netlist(s, nl, r_ref, x=160, y=sy, angle=90)
-        s.add(wire(170, sy, 163.81, sy))   # SMA pin → R pin1 (right)
-        s.add(wire(156.19, sy, 150, sy))   # R pin2 (left) → label
-        s.add(global_label(net, "input", 150, sy, angle=180, justify="right"))
+        sy = 100.33 + i*15.24
+        # SMA shifted right to x=170.18 so its body bbox clears R pin 1 by ≥2.54 mm.
+        place_from_netlist(s, nl, j_ref, x=170.18, y=sy)
+        place_from_netlist(s, nl, r_ref, x=160.02, y=sy, angle=90)
+        s.add(wire(170.18, sy, 163.83, sy))   # SMA pin → R pin1 (right)
+        s.add(wire(156.21, sy, 149.86, sy))   # R pin2 (left) → label
+        s.add(global_label(net, "input", 149.86, sy, angle=180, justify="right"))
 
     # Cluster C: GPIO 1×4 header (J57). Pin 1 = GPIO0, ..., Pin 4 = GPIO3.
-    GPIO_HDR_X, GPIO_HDR_Y = 230, 100
+    GPIO_HDR_X, GPIO_HDR_Y = 229.87, 100.33
     place_from_netlist(s, nl, "J57", x=GPIO_HDR_X, y=GPIO_HDR_Y)
     for i, net in enumerate(("GPIO0", "GPIO1", "GPIO2", "GPIO3")):
         py = GPIO_HDR_Y + i*2.54
-        s.add(wire(GPIO_HDR_X, py, GPIO_HDR_X - 7.29, py))
-        s.add(hier_label(net, "input", GPIO_HDR_X - 7.29, py, angle=180, justify="right"))
+        s.add(wire(GPIO_HDR_X, py, GPIO_HDR_X - 7.62, py))
+        s.add(hier_label(net, "input", GPIO_HDR_X - 7.62, py, angle=180, justify="right"))
 
     # Cluster D: 3× GND test clips (Keystone-5011) — TP50–TP52.
     for i in range(3):
         ref = f"TP{i+50}"
-        place_from_netlist(s, nl, ref, x=100 + i*30, y=175)
-        power_at(s, "GND", 100 + i*30, 175)
+        place_from_netlist(s, nl, ref, x=100.33 + i*30.48, y=175.26)
+        power_at(s, "GND", 100.33 + i*30.48, 175.26)
 
     validate(s, nl)
     return s

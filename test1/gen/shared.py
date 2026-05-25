@@ -55,6 +55,7 @@ class LabelRec:
     name: str
     x: float
     y: float
+    angle: int = 0     # 0/180 = horizontal text, 90/270 = vertical text
 
 
 # Regex parsers used by Sheet.add() to record wires/junctions/labels/no_connects
@@ -62,7 +63,7 @@ class LabelRec:
 _RE_WIRE = re.compile(r"\(wire\s+\(pts\s+\(xy\s+([-\d.]+)\s+([-\d.]+)\)\s+\(xy\s+([-\d.]+)\s+([-\d.]+)\)\)")
 _RE_JUNC = re.compile(r"\(junction\s+\(at\s+([-\d.]+)\s+([-\d.]+)\)")
 _RE_NC = re.compile(r"\(no_connect\s+\(at\s+([-\d.]+)\s+([-\d.]+)\)")
-_RE_LABEL = re.compile(r'\((label|hierarchical_label|global_label)\s+"([^"]+)".*?\(at\s+([-\d.]+)\s+([-\d.]+)')
+_RE_LABEL = re.compile(r'\((label|hierarchical_label|global_label)\s+"([^"]+)".*?\(at\s+([-\d.]+)\s+([-\d.]+)\s+(\d+)\)')
 
 
 # ---------------------------------------------------------------------------
@@ -150,6 +151,7 @@ class Sheet:
                     name=m.group(2),
                     x=float(m.group(3)),
                     y=float(m.group(4)),
+                    angle=int(m.group(5)),
                 ))
 
     def render(self) -> str:
@@ -503,8 +505,8 @@ def sheet_block(child_name: str, child_uuid: str, page: str,
             f'(uuid "{uid(f"sheetpin_{child_name}_{p.name}")}"))'
         )
     pins_str = "\n".join(pin_blocks)
-    sheetname_y = y - 0.5
-    sheetfile_y = y + h + 0.5
+    sheetname_y = y - 1.27
+    sheetfile_y = y + h + 1.27
     return f'''  (sheet
     (at {x} {y}) (size {w} {h})
     (stroke (width 0.1524) (type solid))

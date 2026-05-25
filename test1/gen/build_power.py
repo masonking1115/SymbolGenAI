@@ -42,53 +42,53 @@ def build_power() -> Sheet:
               title=f"{PROJECT_NAME} — Power (LDO + Load Switch)")
 
     # ===== Cluster A: LDO body =====
-    # Place TPS7A8401A at (130, 130). Body spans local x ∈ [-20.32, 20.32] (40.64 wide),
-    # local y ∈ [-22.86, 20.32] (43.18 tall).
-    # World coords: chip body x ∈ [109.68, 150.32], y ∈ [109.68, 152.86].
-    U1 = place_from_netlist(s, nl, "U10", x=130, y=130)
+    # Place TPS7A8401A at (129.54, 129.54) — snapped to nearest 50-grid corner.
+    # Body spans local x ∈ [-20.32, 20.32] (40.64 wide), local y ∈ [-22.86, 20.32].
+    # World coords: chip body x ∈ [109.22, 149.86], y ∈ [109.22, 152.4].
+    U1 = place_from_netlist(s, nl, "U10", x=129.54, y=129.54)
     # Pin world coords (recompute the important ones):
-    # IN (pins 15,16,17): local (-20.32, 20.32/17.78/15.24) → world (109.68, 109.68/112.22/114.76)
-    # EN (14): (-20.32, 10.16) → (109.68, 119.84)
-    # BIAS (12): (-20.32, 5.08) → (109.68, 124.92)
-    # NR_SS (13): (-20.32, -2.54) → (109.68, 132.54)
+    # IN (pins 15,16,17): local (-20.32, 20.32/17.78/15.24) → world (109.22, 109.22/111.76/114.30)
+    # EN (14): (-20.32, 10.16) → (109.22, 119.38)
+    # BIAS (12): (-20.32, 5.08) → (109.22, 124.46)
+    # NR_SS (13): (-20.32, -2.54) → (109.22, 132.08)
     # 50_mV..1.6_V (5,6,7,9,10,11): left side, lower
-    # OUT (1,19,20): (20.32, 10.16/7.62/5.08) → (150.32, 119.84/122.38/124.92)
-    # SNS (2): (20.32, 0) → (150.32, 130)
-    # FB (3): (20.32, -7.62) → (150.32, 137.62)
-    # PG (4): (20.32, 20.32) → (150.32, 109.68)
-    # GND (8): (20.32, -17.78) → (150.32, 147.78)
-    # GND (18): (20.32, -20.32) → (150.32, 150.32)
-    # PAD (21): (20.32, -22.86) → (150.32, 152.86)
+    # OUT (1,19,20): (20.32, 10.16/7.62/5.08) → (149.86, 119.38/121.92/124.46)
+    # SNS (2): (20.32, 0) → (149.86, 129.54)
+    # FB (3): (20.32, -7.62) → (149.86, 137.16)
+    # PG (4): (20.32, 20.32) → (149.86, 109.22)
+    # GND (8): (20.32, -17.78) → (149.86, 147.32)
+    # GND (18): (20.32, -20.32) → (149.86, 149.86)
+    # PAD (21): (20.32, -22.86) → (149.86, 152.4)
 
     # +3V3 input rail at top (y = 95.25)
     RAIL_3V3_Y = 95.25
     GND_RAIL_Y = 175.26
 
     # IN pins (15, 16, 17) + BIAS pin (12) → +3V3 via a single vertical bus at
-    # x=102.06. KiCad auto-connects the horizontal stub endpoints landing on
+    # x=101.60. KiCad auto-connects the horizontal stub endpoints landing on
     # the bus interior (T-intersection), so no explicit junctions are needed.
     for px, py in [U1["15"], U1["16"], U1["17"], U1["12"]]:
-        s.add(wire(px, py, 102.06, py))
-    s.add(wire(102.06, U1["12"][1], 102.06, RAIL_3V3_Y))
-    power_at(s, "+3V3", 102.06, RAIL_3V3_Y)
+        s.add(wire(px, py, 101.60, py))
+    s.add(wire(101.60, U1["12"][1], 101.60, RAIL_3V3_Y))
+    power_at(s, "+3V3", 101.60, RAIL_3V3_Y)
 
     # IN-side decoupling row: C17 (BIAS bypass, W3) + C10 (10µF) + C11 (0.1µF).
     # Each cap top → shared +3V3 rail; each bot → shared GND rail. KiCad
     # auto-junctions where the cap-pin endpoints land on the rail interiors.
     # C11 at 92.71 (not 95.25) so its body clears R10 (EN pulldown) at x=99.06.
     for ref, cx in [("C17", 82.55), ("C10", 87.63), ("C11", 92.71)]:
-        place_from_netlist(s, nl, ref, x=cx, y=130)
-        s.add(wire(cx, 126.19, cx, RAIL_3V3_Y))
-        s.add(wire(cx, 133.81, cx, GND_RAIL_Y))
-    s.add(wire(82.55, RAIL_3V3_Y, 102.06, RAIL_3V3_Y))  # +3V3 rail across caps + IN bus
+        place_from_netlist(s, nl, ref, x=cx, y=129.54)
+        s.add(wire(cx, 125.73, cx, RAIL_3V3_Y))
+        s.add(wire(cx, 133.35, cx, GND_RAIL_Y))
+    s.add(wire(82.55, RAIL_3V3_Y, 101.60, RAIL_3V3_Y))  # +3V3 rail across caps + IN bus
     s.add(wire(82.55, GND_RAIL_Y, 92.71, GND_RAIL_Y))   # GND rail across cap bottoms
     power_at(s, "GND", 87.63, GND_RAIL_Y)
 
     # EN pin (14) → 10k pulldown to GND, hier-label LDO_EN comes from FPGA via FMC.
     s.add(wire(U1["14"][0], U1["14"][1], 99.06, U1["14"][1]))
-    place_from_netlist(s, nl, "R10", x=99.06, y=124.92)
-    s.add(wire(99.06, 121.11, 99.06, U1["14"][1]))
-    s.add(wire(99.06, 128.73, 99.06, GND_RAIL_Y))
+    place_from_netlist(s, nl, "R10", x=99.06, y=124.46)
+    s.add(wire(99.06, 120.65, 99.06, U1["14"][1]))
+    s.add(wire(99.06, 128.27, 99.06, GND_RAIL_Y))
     s.add(wire(92.71, GND_RAIL_Y, 99.06, GND_RAIL_Y))   # bridge IN-rail (ends at C11=92.71) → R10 col
     s.add(junction(99.06, GND_RAIL_Y))
     s.add(hier_label("LDO_EN", "input", 91.44, U1["14"][1], angle=180, justify="right"))
@@ -98,13 +98,13 @@ def build_power() -> Sheet:
     # NR_SS (13): 10nF cap to GND. C12 sits on its own NR_X column (NOT R10's
     # x=99.06) so R10.bot's GND drop doesn't pass through C12.top — that
     # would silently short NR_SS to GND. cy is chosen so C12.bot stays above
-    # the LDO_SET pin row (pin 11 at y=140.16) — places the cap entirely
-    # between pin 13's tap row (132.54) and the LDO_SET fanout zone.
+    # the LDO_SET pin row (pin 11 at y=139.7) — places the cap entirely
+    # between pin 13's tap row (132.08) and the LDO_SET fanout zone.
     NR_X = 104.14
     s.add(wire(U1["13"][0], U1["13"][1], NR_X, U1["13"][1]))
-    place_from_netlist(s, nl, "C12", x=NR_X, y=135)
-    s.add(wire(NR_X, 131.19, NR_X, U1["13"][1]))
-    s.add(wire(NR_X, 138.81, NR_X, GND_RAIL_Y))
+    place_from_netlist(s, nl, "C12", x=NR_X, y=134.62)
+    s.add(wire(NR_X, 130.81, NR_X, U1["13"][1]))
+    s.add(wire(NR_X, 138.43, NR_X, GND_RAIL_Y))
     s.add(wire(99.06, GND_RAIL_Y, NR_X, GND_RAIL_Y))   # extend GND rail to NR_X
 
     # ===== Cluster B: ANY-OUT setpoint pins (FPGA-driven via FMC LA bank) =====
@@ -116,10 +116,13 @@ def build_power() -> Sheet:
         ("10", "LDO_SET_800mV"),
         ("11", "LDO_SET_1V6"),
     ]
+    # Labels at x = px - 12.7 (NOT -10.16): -10.16 lands on x=99.06, which is
+    # R10's vertical GND-drop column, so the labels would sit on that wire's
+    # interior. -12.7 places them at x=96.52, a clear column.
     for pn, net in LDO_SET_PINS:
         px, py = U1[pn]
-        s.add(wire(px, py, px - 10.16, py))
-        s.add(global_label(net, "input", px - 10.16, py, angle=180, justify="right"))
+        s.add(wire(px, py, px - 12.7, py))
+        s.add(global_label(net, "input", px - 12.7, py, angle=180, justify="right"))
 
     # ===== Cluster B: OUT side =====
     # OUT bus is the single vertical wire built later from U1["1"] down to FB
@@ -133,11 +136,11 @@ def build_power() -> Sheet:
     s.add(junction(OUT_BUS_X, U1["1"][1]))
 
     # SNS (2) → kelvin sense to a point AFTER the bulk caps (E9 fix).
-    SNS_SENSE_X = 185.0
-    s.add(wire(U1["2"][0], U1["2"][1], 165.5, U1["2"][1]))               # SNS stub right
-    s.add(wire(165.5, U1["2"][1], 165.5, 117.0))                          # up clear of bus
-    s.add(wire(165.5, 117.0, SNS_SENSE_X, 117.0))                         # across to sense x
-    s.add(wire(SNS_SENSE_X, 117.0, SNS_SENSE_X, U1["1"][1]))              # down to OUT trace
+    SNS_SENSE_X = 185.42
+    s.add(wire(U1["2"][0], U1["2"][1], 166.37, U1["2"][1]))               # SNS stub right
+    s.add(wire(166.37, U1["2"][1], 166.37, 116.84))                       # up clear of bus
+    s.add(wire(166.37, 116.84, SNS_SENSE_X, 116.84))                      # across to sense x
+    s.add(wire(SNS_SENSE_X, 116.84, SNS_SENSE_X, U1["1"][1]))             # down to OUT trace
     s.add(junction(SNS_SENSE_X, U1["1"][1]))                              # tie to OUT net
 
     # FB (3) → tie to OUT BUS locally (ANY-OUT mode uses internal feedback).
@@ -148,14 +151,14 @@ def build_power() -> Sheet:
 
     # PG (4) — open-drain output. Needs (a) a 10kΩ pull-up to +3V3 (E6) and
     # (b) a 1kΩ series resistor in front of the FMC PG_C2M pin (W10).
-    PG_TAP_X = 158.0
+    PG_TAP_X = 157.48
     PG_Y = U1["4"][1]
     s.add(wire(U1["4"][0], PG_Y, PG_TAP_X, PG_Y))                # PG pin → tap
     s.add(junction(PG_TAP_X, PG_Y))
-    place_from_netlist(s, nl, "R12", x=PG_TAP_X, y=PG_Y - 13.49)
-    s.add(wire(PG_TAP_X, PG_Y, PG_TAP_X, PG_Y - 9.68))           # tap → R12 bot
-    s.add(wire(PG_TAP_X, PG_Y - 17.3, PG_TAP_X, PG_Y - 21.11))   # R12 top → +3V3
-    power_at(s, "+3V3", PG_TAP_X, PG_Y - 21.11)
+    place_from_netlist(s, nl, "R12", x=PG_TAP_X, y=PG_Y - 13.97)
+    s.add(wire(PG_TAP_X, PG_Y, PG_TAP_X, PG_Y - 10.16))          # tap → R12 bot
+    s.add(wire(PG_TAP_X, PG_Y - 17.78, PG_TAP_X, PG_Y - 21.59))  # R12 top → +3V3
+    power_at(s, "+3V3", PG_TAP_X, PG_Y - 21.59)
     place_from_netlist(s, nl, "R13", x=PG_TAP_X + 7.62, y=PG_Y, angle=90)
     s.add(wire(PG_TAP_X, PG_Y, PG_TAP_X + 3.81, PG_Y))           # tap → R13 left
     s.add(wire(PG_TAP_X + 11.43, PG_Y, PG_TAP_X + 15.24, PG_Y))  # R13 right → hier
@@ -171,15 +174,15 @@ def build_power() -> Sheet:
     # OUT-row horizontal (jumper tap built below) — auto-T. Bottom stubs end
     # on the GND rail; one explicit rail segment ties C13's drop to the GND
     # symbol; C14 and downstream caps land on rail interior.
-    place_from_netlist(s, nl, "C13", x=172.72, y=130)
-    s.add(wire(172.72, 126.19, 172.72, U1["1"][1]))
-    s.add(wire(172.72, 133.81, 172.72, GND_RAIL_Y))
+    place_from_netlist(s, nl, "C13", x=172.72, y=129.54)
+    s.add(wire(172.72, 125.73, 172.72, U1["1"][1]))
+    s.add(wire(172.72, 133.35, 172.72, GND_RAIL_Y))
     s.add(wire(172.72, GND_RAIL_Y, 180.34, GND_RAIL_Y))   # C13.bot → GND symbol
     power_at(s, "GND", 180.34, GND_RAIL_Y)
 
-    place_from_netlist(s, nl, "C14", x=180.34, y=130)
-    s.add(wire(180.34, 126.19, 180.34, U1["1"][1]))
-    s.add(wire(180.34, 133.81, 180.34, GND_RAIL_Y))
+    place_from_netlist(s, nl, "C14", x=180.34, y=129.54)
+    s.add(wire(180.34, 125.73, 180.34, U1["1"][1]))
+    s.add(wire(180.34, 133.35, 180.34, GND_RAIL_Y))
 
     # ===== Cluster C: Output jumpers (3× 1×2 → VDDD, VDDA1, VDDA2) =====
     # Each jumper fans from JX leftward to a common drop column at JX-5.08,
@@ -202,7 +205,7 @@ def build_power() -> Sheet:
     s.add(wire(COMMON_X, U1["1"][1], OUT_BUS_X, U1["1"][1]))          # OUT-row tap
 
     # ===== Cluster D: Load switch (TPS22916) =====
-    U2 = place_from_netlist(s, nl, "U11", x=270, y=130)
+    U2 = place_from_netlist(s, nl, "U11", x=270.51, y=129.54)
     C6_X         = U2["A2"][0] - 7.62
     VADJ_LABEL_X = U2["A2"][0] - 15.24
     R2_X         = U2["A2"][0] - 22.86

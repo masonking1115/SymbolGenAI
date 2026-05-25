@@ -570,6 +570,54 @@ def _check_redundant_junctions(sheet: Sheet) -> list[LintIssue]:
     return issues
 
 
+def _check_vertical_label(sheet: Sheet) -> list[LintIssue]:
+    """Labels (global/hier/local) should be horizontal (angle 0 or 180), not
+    vertical (90/270). Vertical labels stack illegibly and visually appear to
+    have a wire flowing through them. Place horizontal labels OFF TO THE SIDE
+    at the end of a horizontal wire branch."""
+    issues: list[LintIssue] = []
+    for lbl in sheet._labels:
+        if lbl.angle in (90, 270):
+            issues.append(LintIssue(
+                "WARNING", "vertical_label",
+                f"{lbl.kind} '{lbl.name}' at ({lbl.x}, {lbl.y}) is vertical "
+                f"(angle={lbl.angle}); rotate to angle=0 or 180 and route the "
+                f"wire so the label sits at a horizontal endpoint",
+                [lbl.name],
+            ))
+    return issues
+
+
+def _check_wire_through_label(sheet: Sheet) -> list[LintIssue]:
+    """A label must sit at a wire ENDPOINT, never on a wire's interior. If a
+    wire passes through the label anchor, the wire visually flows through the
+    label box — route the label onto its own short branch instead."""
+    issues: list[LintIssue] = []
+    for lbl in sheet._labels:
+        for (a, b) in sheet._wires:
+            if abs(a[0] - b[0]) < _TOL:        # vertical wire
+                if (abs(lbl.x - a[0]) < _TOL
+                        and min(a[1], b[1]) + _TOL < lbl.y < max(a[1], b[1]) - _TOL):
+                    issues.append(LintIssue(
+                        "WARNING", "wire_through_label",
+                        f"{lbl.kind} '{lbl.name}' at ({lbl.x}, {lbl.y}) sits on "
+                        f"a vertical wire's interior {a}–{b}; place the label "
+                        f"at an endpoint or branch it off horizontally",
+                        [lbl.name],
+                    ))
+            elif abs(a[1] - b[1]) < _TOL:      # horizontal wire
+                if (abs(lbl.y - a[1]) < _TOL
+                        and min(a[0], b[0]) + _TOL < lbl.x < max(a[0], b[0]) - _TOL):
+                    issues.append(LintIssue(
+                        "WARNING", "wire_through_label",
+                        f"{lbl.kind} '{lbl.name}' at ({lbl.x}, {lbl.y}) sits on "
+                        f"a horizontal wire's interior {a}–{b}; place the label "
+                        f"at an endpoint or branch it off vertically",
+                        [lbl.name],
+                    ))
+    return issues
+
+
 # ---------------------------------------------------------------------------
 # Public entry points
 # ---------------------------------------------------------------------------
@@ -583,6 +631,8 @@ ALL_CHECKS = (
     _check_wire_overlap,
     _check_label_on_body,
     _check_refval_on_body,
+    _check_vertical_label,
+    _check_wire_through_label,
     _check_dense_gnd_cluster,
     _check_duplicate_wires,
     _check_redundant_junctions,
