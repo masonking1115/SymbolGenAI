@@ -75,16 +75,120 @@ def root_sheet_instances() -> str:
     return "  (sheet_instances\n" + "\n".join(lines) + "\n  )"
 
 
-def validate(sch_path: Path) -> tuple[bool, str]:
+EESCHEMA_APP = "/Users/masonking/Downloads/kicad/build/eeschema/eeschema.app"
+
+
+def refresh_eeschema(sheet_names: list[str], root_path: Path) -> None:
+    """Reload the project in eeschema so on-disk changes are visible. Closes
+    any of our sheets that are currently open, then opens the root schematic
+    (`<project>.kicad_sch`) — the hierarchical entry point, from which any
+    child sheet can be navigated to.
+
+    eeschema on this dev build is single-document AND has no file-watcher:
+    `open -a` on a file already shown won't reload it, so we drive Cmd+W via
+    AppleScript first. macOS `keystroke` is delivered to the *focused* app
+    globally (NOT redirected by `tell process`), so we explicitly raise
+    eeschema to frontmost with a settle delay before sending Cmd+W —
+    otherwise the keystroke lands on whichever terminal/IDE invoked us.
+
+    No-op opt-out: pass `--no-reopen` on the command line.
+    """
+    if not sheet_names:
+        sheet_names = []
+    needles = [f"{n} " for n in sheet_names]
+    as_list = "{" + ", ".join(f'"{n}"' for n in needles) + "}" if needles else "{}"
+    # IMPORTANT: AppleScript `keystroke` sends a *global* virtual key event
+    # that lands on whatever app is keyboard-focused at the moment of send.
+    # `tell process "eeschema"` only scopes property reads; it does NOT redirect
+    # keystrokes. So before any keystroke we explicitly raise eeschema to
+    # frontmost via `set frontmost ... to true` and let focus settle (delay).
+    # Without this, running from a terminal would send Cmd+W to the terminal
+    # host (e.g. VSCode), closing tabs there — a known footgun.
+    script = f"""
+on run
+    set targets to {as_list}
+    set matched to {{}}
+    tell application "System Events"
+        if not (exists process "eeschema") then return ""
+        -- Capture matching window names FIRST (without touching focus), so we
+        -- can iterate over a stable snapshot and force focus deliberately.
+        tell process "eeschema"
+            set winNames to name of every window
+        end tell
+        repeat with wn in winNames
+            repeat with t in targets
+                if (wn as text) starts with t then
+                    set end of matched to (wn as text)
+                    exit repeat
+                end if
+            end repeat
+        end repeat
+        if (count of matched) is 0 then return ""
+        -- Now focus eeschema once and process every matched window from there.
+        tell application process "eeschema" to set frontmost to true
+        delay 0.4
+        repeat with wn in matched
+            try
+                tell process "eeschema"
+                    set w to window (wn as text)
+                    perform action "AXRaise" of w
+                end tell
+                delay 0.2
+                -- Re-assert frontmost in case raising the window dropped focus
+                tell application process "eeschema" to set frontmost to true
+                delay 0.2
+                tell process "eeschema"
+                    keystroke "w" using {{command down}}
+                end tell
+                delay 0.4
+                try
+                    tell process "eeschema"
+                        click button "Don't Save" of sheet 1 of front window
+                    end tell
+                on error
+                    try
+                        tell process "eeschema"
+                            click button "Discard" of sheet 1 of front window
+                        end tell
+                    end try
+                end try
+            end try
+        end repeat
+    end tell
+    set AppleScript's text item delimiters to ","
+    return (matched as text)
+end run
+"""
+    try:
+        subprocess.run(
+            ["osascript", "-e", script],
+            capture_output=True, text=True, timeout=30,
+        )
+    except Exception as e:
+        print(f"  (eeschema close skipped: {e}; will still try to open root)")
+    # Always (re)open the project root — single source of truth for the
+    # hierarchy. If eeschema is already running, the prior close above means
+    # this `open` reloads the file; if not, it cold-launches eeschema.
+    subprocess.run(["open", "-a", EESCHEMA_APP, str(root_path)])
+    print(f"  opened in eeschema: {root_path.name}")
+
+
+def validate(sch_path: Path, pages: str | None = None) -> tuple[bool, str]:
     """Run kicad-cli sch export png as a parse check + a viewable render.
     PNG export is dual-purpose: it parses the schematic (any malformed s-expr
     fails) AND emits a rendered image into kicad/render/<sheet>.png. The LLM
     loop can Read those PNGs directly to spot visual issues without a
-    user-side round-trip through eeschema."""
+    user-side round-trip through eeschema.
+
+    pages: optional kicad-cli --pages value. Use "1" on the root sheet so
+    kicad-cli renders only the title page, not every hierarchical child
+    (children are rendered separately under their own filenames)."""
     cmd = [KICAD_CLI, "sch", "export", "png",
            "--output", str(RENDER_DIR),
-           "--dpi", "150",
-           str(sch_path)]
+           "--dpi", "150"]
+    if pages:
+        cmd += ["--pages", pages]
+    cmd.append(str(sch_path))
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
     except FileNotFoundError:
@@ -138,9 +242,12 @@ def main() -> int:
             print(f"wrote {n}.kicad_sch (stub)")
 
     # Validate root + every child via kicad-cli (parse gate).
+    # On the root, restrict rendering to page 1 so kicad-cli does not also
+    # emit "test1-<SheetTitle>.png" duplicates for every child sheet.
     failures = 0
-    for path in [root_path] + [OUT_DIR / f"{n}.kicad_sch" for n in SHEET_NAMES]:
-        ok, msg = validate(path)
+    targets = [(root_path, "1")] + [(OUT_DIR / f"{n}.kicad_sch", None) for n in SHEET_NAMES]
+    for path, pages in targets:
+        ok, msg = validate(path, pages=pages)
         flag = "OK " if ok else "FAIL"
         print(f"  [{flag}] {path.name}: {msg.splitlines()[-1] if msg else ''}")
         if not ok:
@@ -157,6 +264,12 @@ def main() -> int:
             total[k] += v
     print(f"total: {total['ERROR']} ERROR, {total['WARNING']} WARNING, "
           f"{total['INFO']} INFO")
+
+    # Always (re)open the project root in eeschema so the user sees the
+    # freshly-regenerated hierarchy. Opt out with `--no-reopen`.
+    if "--no-reopen" not in sys.argv:
+        root_sch_path = OUT_DIR / f"{PROJECT_NAME}.kicad_sch"
+        refresh_eeschema(list(SHEET_NAMES) + [PROJECT_NAME], root_sch_path)
 
     return 0 if failures == 0 else 1
 
