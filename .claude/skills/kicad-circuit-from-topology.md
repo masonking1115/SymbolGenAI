@@ -64,6 +64,35 @@ Position rules per symbol orientation:
 - Minimize crossings. When unavoidable, KiCad shows crossings as plus-shaped intersections; only ones with an explicit `(junction …)` are connected.
 - Add a `(junction)` at any point where 3 or more wires meet AND that point is not a pin endpoint. Skip junctions on pin endpoints — KiCad auto-connects.
 - Power symbol pin endpoints count as "pin endpoints" — no junction needed where a wire meets a `power:GND` connection point.
+- **No net passes through a component body.** When you route a wire that visually passes under a passive's footprint without connecting to its pin, move the passive or reroute. Even though KiCad's connectivity is fine, a reader cannot tell whether the cap is in-path or merely behind the wire.
+
+### 6. Components are in-path or removed — never orphaned
+- **Every placed component must connect to something on both sides.** If a component is "DNP" (do not populate) but lives in a series path, keep it wired in the schematic and just mark `(dnp yes)` plus a `(DNP)` value tag. The reader sees the intent.
+- **Do not** leave a placed component with `no_connect` on all of its pins as a "for later" placeholder — either wire it now or delete it. A floating component with NCs on every pin reads as a bug.
+- **Bypass / decoupling caps belong directly under the pin they decouple**, with one short wire stub to the pin and one short wire stub to a local GND symbol. Don't place a cap so that an unrelated net has to detour around it.
+
+### 7. Ground symbol clustering
+- **One GND symbol per local pin cluster**, not one per pin. When a chip has several adjacent GND pins (e.g., a connector's GND row or an IC's GND + thermal pad), tie them together with a single short wire and drop ONE `power:GND` symbol at the junction.
+- Place the GND triangle at the **end of the wire it terminates**, not on top of a chip body or input pin. Keep ≥ 2.54 mm clearance between the triangle apex and any IC body or signal pin.
+- For connectors with many GND pins (e.g., FMC's "all unlabeled pins are GND"), bus them along a short common rail and drop one GND symbol on that rail. Don't emit dozens of independent `power:GND` symbols.
+
+### 8. Decoupling-cap cluster pattern (read this if doing more than one rail)
+Per the LTC3114 / LD39050 reference style, the canonical IC + decoupling cluster looks like:
+
+```
+          [chip pin Vxx] ───┬──── [pin]
+                            │
+                            ├── C_bulk (e.g. 1 µF, 0805)
+                            │
+                            ├── C_HF   (e.g. 100 nF, 0402)
+                            │
+                          [GND]
+```
+
+- Bulk and HF cap **share a single GND symbol** directly below the cluster.
+- The supply rail label (e.g. `5V`, `+3V3`) lives at the **top** of the cluster, above the pin.
+- For multi-cap decoupling (e.g. 10 µF + 1 µF + 100 nF), place them in a tight horizontal row sharing one rail above and one GND below — not in a single vertical column where each has its own GND.
+- Stay **off the path** of unrelated nets. A cap on the chip's left side shouldn't sit where the chip's right-side signal needs to route.
 
 ## File templates
 

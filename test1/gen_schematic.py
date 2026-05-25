@@ -1018,22 +1018,42 @@ def build_power() -> Sheet:
     s.add(wire(U2["A1"][0], U2["A1"][1], U2["A1"][0] + 12.7, U2["A1"][1]))
     power_at(s, "+VDDIO", U2["A1"][0] + 12.7, U2["A1"][1])
 
-    # TPS22916 decoupling: 0.1 µF on VIN and VOUT (small caps)
-    place(s, "Device:C", "C6", "0.1uF", 220.98, 152.4, footprint=FP_C0402)
-    s.add(wire(220.98, 148.59, 220.98, U2["A2"][1]))
-    s.add(wire(220.98, U2["A2"][1], U2["A2"][0], U2["A2"][1]))
-    s.add(junction(220.98, U2["A2"][1]))
-    s.add(wire(220.98, 156.21, 220.98, GND_RAIL_Y))
-    s.add(wire(180.34, GND_RAIL_Y, 220.98, GND_RAIL_Y))
-    s.add(junction(220.98, GND_RAIL_Y))
+    # TPS22916 decoupling: 0.1 µF on VIN and VOUT. Place to the side of the
+    # chip body (not above/below) and route around the body cleanly. The
+    # caps live in their own column with GND below; the chip-pin connection
+    # goes via a short horizontal stub at the pin's row.
+    #
+    # Cap pin convention: pin 1 = top (rail), pin 2 = bottom (GND).
+    # For caps that decouple a pin AT THE TOP of the chip body, we put the
+    # cap ALONGSIDE the chip (at the same y as the pin) — bottom of cap
+    # goes to GND below, top of cap goes to a short horizontal stub into
+    # the chip pin.
 
-    place(s, "Device:C", "C7", "0.1uF", 247.65, 152.4, footprint=FP_C0402)
-    s.add(wire(247.65, 148.59, 247.65, U2["A1"][1]))
-    s.add(wire(247.65, U2["A1"][1], U2["A1"][0], U2["A1"][1]))
-    s.add(junction(247.65, U2["A1"][1]))
-    s.add(wire(247.65, 156.21, 247.65, GND_RAIL_Y))
-    s.add(wire(220.98, GND_RAIL_Y, 247.65, GND_RAIL_Y))
-    s.add(junction(247.65, GND_RAIL_Y))
+    # C6 — VIN (A2 at y=124.92) decouple. Place LEFT of chip; cap center
+    # such that pin 1 (top) is on the same row as VIN.
+    C6_X = U2["A2"][0] - 7.62          # x = 207.06 (one grid left of body)
+    C6_CENTER_Y = U2["A2"][1] + 3.81   # cap center; pin 1 top at VIN row
+    place(s, "Device:C", "C6", "0.1uF", C6_X, C6_CENTER_Y, footprint=FP_C0402)
+    # pin 1 world: (C6_X, U2["A2"][1])   — VIN row
+    # pin 2 world: (C6_X, U2["A2"][1] + 7.62)  — GND row
+    s.add(wire(C6_X, U2["A2"][1], U2["A2"][0], U2["A2"][1]))   # cap top → VIN pin
+    s.add(junction(C6_X, U2["A2"][1]))
+    s.add(wire(C6_X, U2["A2"][1] + 7.62, C6_X, GND_RAIL_Y))    # cap bottom → GND rail
+    s.add(wire(C6_X, GND_RAIL_Y, 180.34, GND_RAIL_Y))
+    s.add(junction(C6_X, GND_RAIL_Y))
+
+    # C7 — VOUT (A1 at y=124.92) decouple. Place RIGHT of chip.
+    C7_X = U2["A1"][0] + 7.62          # x = 262.94 (one grid right of body)
+    C7_CENTER_Y = U2["A1"][1] + 3.81
+    place(s, "Device:C", "C7", "0.1uF", C7_X, C7_CENTER_Y, footprint=FP_C0402)
+    s.add(wire(C7_X, U2["A1"][1], U2["A1"][0] + 7.62, U2["A1"][1]))
+    # Note: VOUT is also wired to +VDDIO via a longer horizontal earlier;
+    # we extend the +VDDIO net through the cap pin via the existing
+    # power_at call, and the cap pin will join that net.
+    s.add(junction(C7_X, U2["A1"][1]))
+    s.add(wire(C7_X, U2["A1"][1] + 7.62, C7_X, GND_RAIL_Y))
+    s.add(wire(C6_X, GND_RAIL_Y, C7_X, GND_RAIL_Y))
+    s.add(junction(C7_X, GND_RAIL_Y))
 
     # ON pull-down R2 (10k) + LSW_EN hier-label, vertical, between ON stub
     # and GND rail below the load switch.
@@ -1247,22 +1267,33 @@ def build_bias() -> Sheet:
         s.add(wire(src_x, src_y + 7.62, src_x, src_y))
         s.add(junction(src_x, src_y))
 
-        # PMOS drain → output net (and through optional NMOS for isolation, DNP)
-        # Place 2N7002 (DNP) at (x0+65, 130). For now wire DRAIN directly to hier label.
-        s.add(wire(drn_x, drn_y, drn_x, drn_y + 10.16))
-        s.add(wire(drn_x, drn_y + 10.16, x0 + 75, drn_y + 10.16))
-        s.add(hier_label(out_net, "output", x0 + 75, drn_y + 10.16, angle=0))
+        # PMOS drain → 2N7002 drain → 2N7002 source → BIASx hier label.
+        # 2N7002 is DNP (default-removed): when unpopulated the schematic
+        # shows the intended isolation path; populating activates it. Gate
+        # is tied to a hier label for MCU GPIO control (BIAS_ISOx, pulled
+        # low at reset → NMOS off → bias output isolated).
+        # 2N7002 pin coords (angle 0): 1 G (0,0); 2 S (7.62,-5.08); 3 D (7.62,5.08).
+        # Place to the right of the PMOS, on a clear horizontal lane.
+        nmos_x = x0 + 70
+        nmos_y = drn_y + 10.16
+        NM = place(s, "Lib:2N7002", nmos_ref, "2N7002 DNP", nmos_x, nmos_y,
+                   footprint=FP_SOT23)
+        # Mark this instance DNP at the s-expr level too (best-effort: KiCad
+        # may not honour dnp on a no-op instance, but value tag is enough
+        # for downstream BOM filters).
+        # NM pins world (angle 0): G=(nmos_x, nmos_y); S=(nmos_x+7.62, nmos_y+5.08); D=(nmos_x+7.62, nmos_y-5.08)
+        nm_g = NM["1"]; nm_s = NM["2"]; nm_d = NM["3"]
 
-        # Optional series NMOS 2N7002 (DNP) — placed but not in path (DNP-aware
-        # users can rework). Just place it visually to the right.
-        place(s, "Lib:2N7002", nmos_ref, "2N7002 (DNP)", x0 + 80, 130, footprint=FP_SOT23)
-        # Pins: 1 G (0,0), 2 S (7.62,-5.08,90), 3 D (7.62,5.08,270)
-        # NC its terminals since it's not in the active path
-        for npn in ("1", "2", "3"):
-            nx, ny = place.__globals__["parse_pins"]("Lib:2N7002")[npn][1:3]
-            # Convert to world
-            ux, uy = pin_world(x0 + 80, 130, 0, nx, ny)
-            s.add(no_connect(ux, uy))
+        # PMOS drain → NMOS drain
+        s.add(wire(drn_x, drn_y, drn_x, nmos_y - 5.08))   # vertical down
+        s.add(wire(drn_x, nmos_y - 5.08, nm_d[0], nm_d[1]))  # horizontal to NMOS drain
+        # NMOS source → BIASx output
+        s.add(wire(nm_s[0], nm_s[1], nm_s[0] + 5.08, nm_s[1]))
+        s.add(hier_label(out_net, "output", nm_s[0] + 5.08, nm_s[1], angle=0))
+        # NMOS gate → hier label for MCU control (BIAS_ISO0 / BIAS_ISO1)
+        iso_net = f"BIAS_ISO{ch_idx}"
+        s.add(wire(nm_g[0], nm_g[1], nm_g[0] - 7.62, nm_g[1]))
+        s.add(hier_label(iso_net, "input", nm_g[0] - 7.62, nm_g[1], angle=180, justify="right"))
 
         # Op-amp V+ / V- power pins. Unit 1 carries both; unit 2 omits V+/V-
         # because they're shared. For unit 1 only:
@@ -1373,27 +1404,36 @@ def build_bobcat() -> Sheet:
     power_at(s, "GND", p1_x - 3.81, p1_y + 17.78)
 
     # ===== Cluster E: VDDA2 path (pins 26, 27) =====
-    # Pin 26 VDDA2 (222.86, 128.73); Pin 27 VDDA2 (222.86, 126.19).
-    # Tie 26 & 27 together → series 0Ω → +VDDA2 rail
+    # Pin 26 VDDA2 (222.86, 128.73); pin 27 VDDA2 (222.86, 126.19). Two pins
+    # are joined on a short vertical stub; series 0Ω routes RIGHT to +VDDA2;
+    # decoupling cap is placed BELOW the pin-tie stub on its OWN vertical
+    # branch (not in the series path).
     p26_x, p26_y = U1["26"]
     p27_x, p27_y = U1["27"]
-    s.add(wire(p26_x, p26_y, p26_x + 5.08, p26_y))
-    s.add(wire(p27_x, p27_y, p27_x + 5.08, p27_y))
-    s.add(wire(p26_x + 5.08, p26_y, p27_x + 5.08, p27_y))   # tie 26 to 27
-    # Mid point (p26_x + 5.08, (p26_y + p27_y)/2)
+    TIE_X = p26_x + 5.08          # short stub right of both pins
+    s.add(wire(p26_x, p26_y, TIE_X, p26_y))
+    s.add(wire(p27_x, p27_y, TIE_X, p27_y))
+    s.add(wire(TIE_X, p26_y, TIE_X, p27_y))           # vertical tie 26↔27
     mid_y = (p26_y + p27_y) / 2
-    # Series 0Ω R6 at (p26_x + 13.97, mid_y) angle 90 (horizontal)
-    place(s, "Device:R", "R6", "0", p26_x + 13.97, mid_y, angle=90, footprint=FP_R0402)
-    # R6 angle 90: pin 1 world (p26_x + 13.97 + 3.81, mid_y), pin 2 (p26_x + 13.97 - 3.81, mid_y)
-    s.add(wire(p26_x + 5.08, mid_y, p26_x + 13.97 - 3.81, mid_y))
-    s.add(wire(p26_x + 13.97 + 3.81, mid_y, p26_x + 22.86, mid_y))
-    power_at(s, "+VDDA2", p26_x + 22.86, mid_y, angle=90)
-    # Decoupling on VDDA2 chip side
-    place(s, "Device:C", "C4", "0.1uF", p26_x + 5.08, mid_y + 7.62, footprint=FP_C0402)
-    s.add(wire(p26_x + 5.08, mid_y + 3.81, p26_x + 5.08, mid_y))
-    s.add(junction(p26_x + 5.08, mid_y))
-    s.add(wire(p26_x + 5.08, mid_y + 11.43, p26_x + 5.08, mid_y + 17.78))
-    power_at(s, "GND", p26_x + 5.08, mid_y + 17.78)
+
+    # Series 0Ω R6 — horizontal (angle 90), positioned BELOW the chip body
+    # so its lead doesn't fight the VDDIO power symbol on pin 22 above.
+    R6_Y = mid_y + 12.7
+    s.add(wire(TIE_X, p26_y, TIE_X, R6_Y))            # drop from tie down to R6 lane
+    place(s, "Device:R", "R6", "0", p26_x + 13.97, R6_Y, angle=90, footprint=FP_R0402)
+    s.add(wire(TIE_X, R6_Y, p26_x + 13.97 - 3.81, R6_Y))    # tie → R6 left pin
+    s.add(wire(p26_x + 13.97 + 3.81, R6_Y, p26_x + 25.4, R6_Y))  # R6 right pin → power
+    power_at(s, "+VDDA2", p26_x + 25.4, R6_Y, angle=90)
+
+    # Decoupling cap C4: chip-side of R6 (on the TIE_X column), placed BELOW
+    # the R6 lane so the cap body sits on its own branch — not in the
+    # pin-tie wire and not under the OSC_EN/WEIGHT_EN/SAMPLE_TRIG exits.
+    C4_Y = R6_Y + 12.7
+    place(s, "Device:C", "C4", "0.1uF", TIE_X, C4_Y, footprint=FP_C0402)
+    s.add(junction(TIE_X, R6_Y))                       # branch point at R6 lane
+    s.add(wire(TIE_X, R6_Y, TIE_X, C4_Y - 3.81))       # tie → C4 top
+    s.add(wire(TIE_X, C4_Y + 3.81, TIE_X, C4_Y + 7.62))  # C4 bot → GND
+    power_at(s, "GND", TIE_X, C4_Y + 7.62)
 
     # ===== Cluster C: VDDIO decoupling =====
     # VDDIO pins 7 (left), 13/22 (bot/right), 33/34 (top) — drop a +VDDIO
@@ -1629,14 +1669,33 @@ def build_fmc() -> Sheet:
             s.add(no_connect(px, py))
             wired.add((r, n))
 
-    # Now ground every unwired, non-LA pin.
-    for row, unit_num in [("C", 1), ("D", 2), ("G", 3), ("H", 4)]:
-        for n in range(1, 41):
-            if (row, n) in wired or (row, n) in la_bank:
-                continue
+    # Ground all unwired non-LA pins — bus each unit's GND pins onto ONE
+    # vertical rail to the right of the unit, with a SINGLE GND symbol at
+    # the rail's bottom. Avoids the visual clutter of dozens of triangles.
+    for row, _ in [("C", 1), ("D", 2), ("G", 3), ("H", 4)]:
+        gnd_pins = [n for n in range(1, 41)
+                    if (row, n) not in wired and (row, n) not in la_bank]
+        if not gnd_pins:
+            continue
+        # Rail x = pin_x + 5.08; rail spans y from first to last GND-pin y.
+        first_px, first_py = pin(row, gnd_pins[0])
+        _, last_py = pin(row, gnd_pins[-1])
+        rail_x = first_px + 5.08
+        # Short stub from each pin to the rail
+        for n in gnd_pins:
             px, py = pin(row, n)
-            s.add(wire(px, py, px + 5.08, py))
-            power_at(s, "GND", px + 5.08, py)
+            s.add(wire(px, py, rail_x, py))
+        # Vertical rail tying all the stubs
+        s.add(wire(rail_x, first_py, rail_x, last_py))
+        # Junctions at each stub-rail meeting (except endpoints — KiCad
+        # auto-connects there, but be explicit for readability)
+        for n in gnd_pins[1:-1]:
+            _, py = pin(row, n)
+            s.add(junction(rail_x, py))
+        # One GND symbol at the rail's BOTTOM, below the last pin
+        gnd_y = last_py + 5.08
+        s.add(wire(rail_x, last_py, rail_x, gnd_y))
+        power_at(s, "GND", rail_x, gnd_y)
 
     # NC the LA-bank pins for now (no_connect to avoid orphan-pin warnings)
     for r, n in la_bank:
