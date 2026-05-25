@@ -19,7 +19,7 @@ Append new entries at the top. Date every entry.
 ## 2026-05-24 — Parts selection workflow established
 - Copied the per-row prompts from the rightmost column of [test1_bom.xlsx](test1_bom.xlsx) into the Voltai parts-explorer AI.
 - **Default selection authority:** Voltai parts-explorer AI selects all parts for this design unless explicitly overridden.
-- Selections returned by Voltai should be entered back into `test1_bom.xlsx` (Manufacturer / MPN / Distributor P/N / Datasheet URL columns) and reflected in [design_planner.md](design_planner.md)'s parts checklist.
+- Selections returned by Voltai should be entered back into `test1_bom.xlsx` (Manufacturer / MPN / Distributor P/N / Datasheet URL columns).
 
 ## 2026-05-24 — Bias polarity fix: NMOS low-side reverted to PMOS high-side
 - Cross-check against the only Bobcat spec we have ([External] Bobcat Board Design.pdf, page 7) showed the BIASx pins require current SOURCED INTO the pin from a high-side source. Quote: *"Independent programmable current sources for BIAS0 and BIAS1 (nominally 320 µA at 0.5 V)"* with the backup topology drawn as PMOS-from-3.3V → BIASx.
