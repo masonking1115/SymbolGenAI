@@ -1362,34 +1362,23 @@ def build_bobcat() -> Sheet:
     power_at(s, "GND", 200, 144.78)
 
     # ===== Cluster B: VDDD decoupling =====
-    # VDDD pins: 12 (bottom, world (-8.89, 22.86) → (191.11, 152.86))
-    #            20 (bottom, world (11.43, 22.86) → (211.43, 152.86))
-    # Place a 0.1µF and a 1µF cap pair for the VDDD rail.
-    # VDDD rail at y = 165.1 (below chip)
-    VDDD_RAIL_Y = 165.1
-    GND_RAIL_BOT = 175.26
-
-    for pn in ("12", "20"):
+    # Pins 12 and 20 are both VDDD, on the chip's bottom edge at x=191.11 and
+    # x=211.43. No horizontal rail — each pin gets its OWN +VDDD power symbol
+    # (the global net ties them) and its OWN decoupling cap stacked directly
+    # below the pin. This keeps the entire VDDD cluster OUT of the x=196-209
+    # SPI signal exit lane (pins 14-19).
+    VDDD_PSYM_Y = 158.75   # just below chip body, above the cap
+    VDDD_CAP_Y  = 167.64   # cap center (pin 1 top at 163.83, pin 2 bot at 171.45)
+    GND_BELOW_Y = 178.0    # GND symbol below cap
+    for ref, val, pn in [("C1", "0.1uF", "12"), ("C2", "1uF", "20")]:
         px, py = U1[pn]
-        s.add(wire(px, py, px, VDDD_RAIL_Y))
-    s.add(wire(U1["12"][0], VDDD_RAIL_Y, U1["20"][0], VDDD_RAIL_Y))
-    s.add(junction(U1["12"][0], VDDD_RAIL_Y))
-    s.add(junction(U1["20"][0], VDDD_RAIL_Y))
-    # Decoupling caps near VDDD rail
-    for i, (ref, val) in enumerate([("C1", "0.1uF"), ("C2", "1uF")]):
-        cx = 196.85 + i*5.08
-        place(s, "Device:C", ref, val, cx, VDDD_RAIL_Y + 3.81, footprint=FP_C0402)
-        # Cap pin 1 (top) at (cx, VDDD_RAIL_Y), pin 2 at (cx, VDDD_RAIL_Y + 7.62)
-        s.add(junction(cx, VDDD_RAIL_Y))
-        s.add(wire(cx, VDDD_RAIL_Y + 7.62, cx, GND_RAIL_BOT))
-    # Connect VDDD rail to +VDDD power symbol
-    power_at(s, "+VDDD", U1["12"][0] - 5.08, VDDD_RAIL_Y)
-    s.add(wire(U1["12"][0] - 5.08, VDDD_RAIL_Y, U1["12"][0], VDDD_RAIL_Y))
-    # GND rail at bottom
-    s.add(wire(196.85, GND_RAIL_BOT, 201.93, GND_RAIL_BOT))
-    s.add(junction(196.85, GND_RAIL_BOT))
-    s.add(junction(201.93, GND_RAIL_BOT))
-    power_at(s, "GND", 196.85, GND_RAIL_BOT)
+        # pin → power symbol → cap → GND, all on the single vertical x=px line
+        s.add(wire(px, py, px, VDDD_PSYM_Y))
+        power_at(s, "+VDDD", px, VDDD_PSYM_Y)
+        s.add(wire(px, VDDD_PSYM_Y, px, VDDD_CAP_Y - 3.81))
+        place(s, "Device:C", ref, val, px, VDDD_CAP_Y, footprint=FP_C0402)
+        s.add(wire(px, VDDD_CAP_Y + 3.81, px, GND_BELOW_Y))
+        power_at(s, "GND", px, GND_BELOW_Y)
 
     # ===== Cluster D: VDDA1 path (pin 1) =====
     # Pin 1 VDDA1 world (177.14, 118.57). Series 0Ω + decoupling.
@@ -1485,13 +1474,17 @@ def build_bobcat() -> Sheet:
     # Each pull resistor is placed vertically below/above the signal trace.
 
     # Bottom-edge SPI / control pins (14 MOSI, 15 MISO, 16 SCLK, 17 CS_L,
-    # 18 SPI_DMODE, 19 RESET_N). Bottom-edge pins are at y=152.86. Push hier
-    # labels well below the chip body (which ends at y=150.32) and stagger
-    # alternate pins to avoid label overlap on the dense 2.54mm pitch.
-    for i, (pn, net) in enumerate([("14", "MOSI"), ("15", "MISO"), ("16", "SCLK"),
-                                    ("17", "CS_L"), ("18", "SPI_DMODE"), ("19", "RESET_N")]):
+    # 18 SPI_DMODE, 19 RESET_N). These pins are on a 2.54 mm pitch in x —
+    # too dense to put all labels at the same y because rotated-270° hier
+    # label text would overlap (each label is ~5-9 mm tall). Use 6 distinct
+    # y-levels stepped by 10.16 mm so every label has its own band.
+    SPI_PINS = [("14", "MOSI"), ("15", "MISO"), ("16", "SCLK"),
+                ("17", "CS_L"), ("18", "SPI_DMODE"), ("19", "RESET_N")]
+    SPI_LABEL_Y_START = 185.42   # well below VDDD GND symbols at y=178
+    SPI_LABEL_Y_STEP  = 10.16
+    for i, (pn, net) in enumerate(SPI_PINS):
         px, py = U1[pn]
-        label_y = 180.34 + (i % 2)*7.62
+        label_y = SPI_LABEL_Y_START + i * SPI_LABEL_Y_STEP
         s.add(wire(px, py, px, label_y))
         s.add(hier_label(net, "passive", px, label_y, angle=270, justify="left"))
 
@@ -1679,25 +1672,25 @@ def build_fmc() -> Sheet:
             wired.add((r, n))
 
     # Ground all unwired non-LA pins — bus each unit's GND pins onto ONE
-    # vertical rail to the right of the unit, with a SINGLE GND symbol at
-    # the rail's bottom. Avoids the visual clutter of dozens of triangles.
+    # vertical rail to the RIGHT of the unit, with a SINGLE GND symbol at
+    # the rail's bottom. The rail sits 17.78 mm right of the pin endpoints,
+    # well clear of the body, the +3V3 power symbols (at +7.62), the SCL/SDA
+    # / VADJ / LDO_PG hier labels (at +10.16), and their text bounding boxes.
+    GND_RAIL_OFFSET = 17.78
     for row, _ in [("C", 1), ("D", 2), ("G", 3), ("H", 4)]:
         gnd_pins = [n for n in range(1, 41)
                     if (row, n) not in wired and (row, n) not in la_bank]
         if not gnd_pins:
             continue
-        # Rail x = pin_x + 5.08; rail spans y from first to last GND-pin y.
         first_px, first_py = pin(row, gnd_pins[0])
         _, last_py = pin(row, gnd_pins[-1])
-        rail_x = first_px + 5.08
+        rail_x = first_px + GND_RAIL_OFFSET
         # Short stub from each pin to the rail
         for n in gnd_pins:
             px, py = pin(row, n)
             s.add(wire(px, py, rail_x, py))
         # Vertical rail tying all the stubs
         s.add(wire(rail_x, first_py, rail_x, last_py))
-        # Junctions at each stub-rail meeting (except endpoints — KiCad
-        # auto-connects there, but be explicit for readability)
         for n in gnd_pins[1:-1]:
             _, py = pin(row, n)
             s.add(junction(rail_x, py))
