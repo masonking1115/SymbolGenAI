@@ -1,3 +1,6 @@
 __pycache__/
 *.pyc
 kicad/render/
+
+# Review pipeline transient outputs
+test1/parts/
