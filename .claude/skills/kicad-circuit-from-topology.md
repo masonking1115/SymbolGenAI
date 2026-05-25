@@ -34,6 +34,7 @@ Pairs with [[kicad-symbol-from-datasheet]] — that skill makes a single `.kicad
 - **Component groups** (e.g., input filter cluster, output matching cluster): separate groups by **10–15 mm** so wiring between groups has room to route.
 - **ICs**: leave **5–7.5 mm** of clearance around the body so pin labels and external wires don't crowd.
 - Don't try to fit everything tight — schematic real estate is cheap. If it feels cluttered, it is.
+- **Cluster separation must account for side-extending labels.** Power-symbol value text (e.g. `+VDDA1`) extends ~5 mm beyond the symbol pin; hier-label arrows extend ~10–15 mm including the text. If both adjacent clusters have such side-pointing elements, bump the inter-cluster gap to **≥ 25 mm**. The body-to-body distance is not the constraint — it's the *label-bounding-box* distance.
 
 ### 2. Reference / Value label placement — never overlap the symbol body
 The single biggest aesthetic problem. Each symbol instance specifies absolute world positions for its `Reference` and `Value` properties — these are NOT relative to the symbol origin and KiCad will not auto-fix overlaps.

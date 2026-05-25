@@ -1003,11 +1003,26 @@ def build_power() -> Sheet:
         power_at(s, rail, JX + 7.62, jy + 2.54)
 
     # ===== Cluster D: Load switch (TPS22916) =====
-    # Place at (235, 130). VIN (A2, left top), ON (B2, left bot), VOUT (A1, right top), GND (B1, right bot).
-    U2 = place(s, "Lib:TPS22916CNYFPR", "U2", "TPS22916", 235, 130, footprint=FP_WCSP4)
-    # VIN (A2) world (214.68, 124.92) — wire to VADJ hier label
-    s.add(wire(U2["A2"][0], U2["A2"][1], 207.01, U2["A2"][1]))
-    s.add(hier_label("VADJ", "input", 207.01, U2["A2"][1], angle=180, justify="right"))
+    # Placed at x=270 (was 235) — ≥25 mm clear of the jumper power-symbol
+    # column (jumpers + +VDDx labels occupy x≈195-208). VIN (A2, left top),
+    # ON (B2, left bot), VOUT (A1, right top), GND (B1, right bot).
+    U2 = place(s, "Lib:TPS22916CNYFPR", "U2", "TPS22916", 270, 130, footprint=FP_WCSP4)
+    # All anchors in this cluster derive from the U2 pin coords so the whole
+    # block moves as a unit when U2 is repositioned. Lanes left-to-right:
+    #   LSW_LABEL_X — LSW_EN hier label (leftmost)
+    #   R2_X        — LSW_EN pulldown resistor column
+    #   VADJ_LABEL_X — VADJ hier label
+    #   C6_X        — C6 decoupling cap on VIN
+    #   U2 body     — VIN edge at U2["A2"][0]
+    C6_X         = U2["A2"][0] - 7.62
+    VADJ_LABEL_X = U2["A2"][0] - 15.24
+    R2_X         = U2["A2"][0] - 22.86
+    LSW_LABEL_X  = U2["A2"][0] - 30.48
+
+    # VIN (A2) ← VADJ hier label. Wire runs straight across; C6's top pin
+    # (at C6_X, VIN_y) sits ON this wire and is auto-detected by KiCad.
+    s.add(wire(U2["A2"][0], U2["A2"][1], VADJ_LABEL_X, U2["A2"][1]))
+    s.add(hier_label("VADJ", "input", VADJ_LABEL_X, U2["A2"][1], angle=180, justify="right"))
     # ON (B2): pulldown R2 placed later in this cluster, below the chip.
 
     # GND (B1) world (255.32, 135.08)
@@ -1029,43 +1044,37 @@ def build_power() -> Sheet:
     # goes to GND below, top of cap goes to a short horizontal stub into
     # the chip pin.
 
-    # C6 — VIN (A2 at y=124.92) decouple. Place LEFT of chip; cap center
-    # such that pin 1 (top) is on the same row as VIN.
-    C6_X = U2["A2"][0] - 7.62          # x = 207.06 (one grid left of body)
-    C6_CENTER_Y = U2["A2"][1] + 3.81   # cap center; pin 1 top at VIN row
+    # C6 — VIN decouple. Pin 1 (top) sits ON the VADJ→VIN wire (auto-detect);
+    # pin 2 (bot) drops to the GND rail.
+    C6_CENTER_Y = U2["A2"][1] + 3.81
     place(s, "Device:C", "C6", "0.1uF", C6_X, C6_CENTER_Y, footprint=FP_C0402)
-    # pin 1 world: (C6_X, U2["A2"][1])   — VIN row
-    # pin 2 world: (C6_X, U2["A2"][1] + 7.62)  — GND row
-    s.add(wire(C6_X, U2["A2"][1], U2["A2"][0], U2["A2"][1]))   # cap top → VIN pin
-    s.add(junction(C6_X, U2["A2"][1]))
-    s.add(wire(C6_X, U2["A2"][1] + 7.62, C6_X, GND_RAIL_Y))    # cap bottom → GND rail
+    s.add(junction(C6_X, U2["A2"][1]))                          # tap on VADJ wire
+    s.add(wire(C6_X, U2["A2"][1] + 7.62, C6_X, GND_RAIL_Y))     # bot → GND rail
     s.add(wire(C6_X, GND_RAIL_Y, 180.34, GND_RAIL_Y))
     s.add(junction(C6_X, GND_RAIL_Y))
 
-    # C7 — VOUT (A1 at y=124.92) decouple. Place RIGHT of chip.
-    C7_X = U2["A1"][0] + 7.62          # x = 262.94 (one grid right of body)
+    # C7 — VOUT decouple. Pin 1 (top) sits on the VOUT→+VDDIO wire.
+    C7_X = U2["A1"][0] + 7.62
     C7_CENTER_Y = U2["A1"][1] + 3.81
     place(s, "Device:C", "C7", "0.1uF", C7_X, C7_CENTER_Y, footprint=FP_C0402)
-    s.add(wire(C7_X, U2["A1"][1], U2["A1"][0] + 7.62, U2["A1"][1]))
-    # Note: VOUT is also wired to +VDDIO via a longer horizontal earlier;
-    # we extend the +VDDIO net through the cap pin via the existing
-    # power_at call, and the cap pin will join that net.
-    s.add(junction(C7_X, U2["A1"][1]))
+    s.add(junction(C7_X, U2["A1"][1]))                          # tap on VOUT wire
     s.add(wire(C7_X, U2["A1"][1] + 7.62, C7_X, GND_RAIL_Y))
     s.add(wire(C6_X, GND_RAIL_Y, C7_X, GND_RAIL_Y))
     s.add(junction(C7_X, GND_RAIL_Y))
 
     # ON pull-down R2 (10k) + LSW_EN hier-label, vertical, between ON stub
     # and GND rail below the load switch.
-    place(s, "Device:R", "R2", "10k", 207.06, U2["B2"][1] + 7.62, footprint=FP_R0402)
-    # R2 pin 1 (top): (207.06, U2["B2"][1] + 3.81); pin 2 (bot): (207.06, U2["B2"][1] + 11.43)
-    s.add(wire(207.06, U2["B2"][1] + 3.81, 207.06, U2["B2"][1]))
-    s.add(wire(207.06, U2["B2"][1], U2["B2"][0], U2["B2"][1]))
-    s.add(junction(207.06, U2["B2"][1]))
-    s.add(hier_label("LSW_EN", "input", 199.39, U2["B2"][1], angle=180, justify="right"))
-    s.add(wire(199.39, U2["B2"][1], 207.06, U2["B2"][1]))
-    s.add(wire(207.06, U2["B2"][1] + 11.43, 207.06, GND_RAIL_Y))
-    s.add(junction(207.06, GND_RAIL_Y))
+    R2_CENTER_Y = U2["B2"][1] + 7.62
+    place(s, "Device:R", "R2", "10k", R2_X, R2_CENTER_Y, footprint=FP_R0402)
+    # R2 pin 1 (top) world: (R2_X, U2["B2"][1] + 3.81); pin 2 (bot): (R2_X, U2["B2"][1] + 11.43)
+    s.add(wire(R2_X, U2["B2"][1] + 3.81, R2_X, U2["B2"][1]))    # R2 top → ON row
+    s.add(wire(R2_X, U2["B2"][1], U2["B2"][0], U2["B2"][1]))    # across to ON pin
+    s.add(hier_label("LSW_EN", "input", LSW_LABEL_X, U2["B2"][1], angle=180, justify="right"))
+    s.add(wire(LSW_LABEL_X, U2["B2"][1], R2_X, U2["B2"][1]))    # LSW_EN → R2 top stub
+    s.add(junction(R2_X, U2["B2"][1]))
+    s.add(wire(R2_X, U2["B2"][1] + 11.43, R2_X, GND_RAIL_Y))    # R2 bot → GND rail
+    s.add(junction(R2_X, GND_RAIL_Y))
+    s.add(wire(C6_X, GND_RAIL_Y, R2_X, GND_RAIL_Y))             # extend GND rail left to R2
 
     return s
 
