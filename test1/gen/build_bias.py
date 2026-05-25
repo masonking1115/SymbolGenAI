@@ -32,8 +32,6 @@ def build_bias() -> Sheet:
               page=PAGE_NUMBERS["bias"],
               title=f"{PROJECT_NAME} — Bias Generators")
 
-    GND_Y = 200.66
-
     # ===== Cluster A: MCP4728 DAC =====
     # Body: x ∈ [80, 151.12], y ∈ [80, 90.16].
     # Pin world (angle 0):
@@ -43,6 +41,11 @@ def build_bias() -> Sheet:
     #   4 *LDAC (80, 87.62)     9 VOUTD (151.12, 82.54)
     #   5 RDY*  (80, 90.16)    10 VSS   (151.12, 80)
     U1 = place_from_netlist(s, nl, "U40", x=80, y=80)
+    # GND rail for the DAC cluster (decoupling cap bottom + VSS drop). Kept
+    # chip-pin-relative so a future U40 nudge doesn't strand the rail. 10.16 mm
+    # below the body bottom — enough clearance for the GND power symbol arrow
+    # without leaving a long visually-dangling drop.
+    GND_Y = U1["5"][1] + 10.16
 
     # I²C in (left side) — SCL/SDA serve 3 sheets, so global_label.
     for pn, net in [("2", "SCL"), ("3", "SDA")]:
