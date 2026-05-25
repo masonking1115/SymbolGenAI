@@ -10,11 +10,10 @@ See [PROJECT_MEMORY.md](PROJECT_MEMORY.md) for the full handoff doc (architectur
 
 ```
 .claude/skills/        per-stage skill docs (symbol gen, circuit gen, KiCad launch)
+test1/                 active project — Bobcat carrier-board parts library
 PROJECT_MEMORY.md      project memory + handoff
 README.md
 ```
-
-This is a clean-slate workspace as of 2026-05-24. No parts or designs exist yet.
 
 ## Per-project convention — strict isolation
 

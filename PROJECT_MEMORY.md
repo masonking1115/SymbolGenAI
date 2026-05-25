@@ -10,13 +10,12 @@ Repo: `git@github.com:masonking1115/SymbolGenAI.git` (main).
 
 ## Repo layout
 
-The repo was reset to a clean slate on 2026-05-24 to start a fresh project. Current top-level contents:
-
 ```
 SymbolLibraryAI/
 ├── PROJECT_MEMORY.md                ← this file
 ├── README.md
 ├── .claude/skills/                  ← per-stage skill docs (see "Skills" below)
+├── test1/                           ← active Bobcat carrier-board project (see test1/design_requirements.md)
 └── kicad/                           ← symlink to ~/Downloads/kicad/ (gitignored)
 ```
 
@@ -171,7 +170,7 @@ Full 9-stage flow (for larger projects):
 
 ## Current state at handoff
 
-- Clean slate as of 2026-05-24 — no parts, no demo schematics. Only the skills, the project docs, and the KiCad dev-build symlink remain.
+- `test1/` (Bobcat carrier-board) is the active project. Per-sheet generator package at [test1/gen/](test1/gen/), seven sheets emit through `python3 test1/gen_schematic.py` with strict netlist validation and a layout linter ([test1/gen/layout_lint.py](test1/gen/layout_lint.py)). All coords on the 50-grid floor (1.27 mm) as of `995d1e2`.
 - **New parts going forward**: always create `<project>/datasheets/<MPN>/` inside the consuming project and place both the `.kicad_sym` and `.pdf` there. Never put a shared `datasheets/` at the repo root — each project owns its own copies.
 - **Recovery references** (if previous artifacts are ever needed):
   - Phase 1 Electron MVP: commits `d070e42`–`234cd37`.
@@ -187,6 +186,5 @@ Full 9-stage flow (for larger projects):
 
 ## Open suggestions never acted on
 
-- Add a setup README so a fresh clone is one-shot runnable (covers `brew install kicad` or rebuild path, sym-lib-table registration).
-- Scaffold the artifact-template files (`spec.yaml`, `parts/<MPN>.json`, `nets.yaml`, `bom.yaml`) and a per-stage skill file so each pipeline chunk has a clear contract.
+- Scaffold the artifact-template files (`spec.yaml`, `parts/<MPN>.json`, `nets.yaml`, `bom.yaml`) and a per-stage skill file so each pipeline chunk has a clear contract. (test1 hard-codes its netlist YAML per sheet — the abstract template is still TBD.)
 - Integrate the symbol/schematic generation pipeline into the user's internal platform with its own chat front end (waiting on the user to share that platform).
