@@ -17,6 +17,7 @@ from .netlist import load_netlist
 from .shared import (
     Sheet,
     global_label,
+    gnd_bus,
     junction,
     place_from_netlist,
     power_at,
@@ -39,10 +40,8 @@ def build_eeprom() -> Sheet:
     #   4 VSS (100, 127.62)     8 VCC (176.2, 120)
     place_from_netlist(s, nl, "U30", x=100, y=120)
 
-    # --- Left side: pins 1-4 to GND (address slot 000 + VSS) ---
-    for y in (120, 122.54, 125.08, 127.62):
-        s.add(wire(100, y, 92.71, y))
-        power_at(s, "GND", 92.71, y, angle=270)
+    # --- Left side: pins 1-4 (A0/A1/A2/VSS) → shared GND rail (Rule 7).
+    gnd_bus(s, [(100, y) for y in (120, 122.54, 125.08, 127.62)], rail_x=92.71)
 
     # +3V3 rail runs horizontally at y = 105.41 (14.59 mm above chip top)
     RAIL_Y = 105.41

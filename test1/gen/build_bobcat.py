@@ -64,6 +64,9 @@ def build_bobcat() -> Sheet:
         power_at(s, "GND", px, GND_BELOW_Y)
 
     # ===== Cluster D: VDDA1 path (pin 1) =====
+    # Chip pins 2–11 exit LEFT along x = p1_x → p1_x - 12.7, crossing the
+    # x = p1_x - 3.81 column. C22 must NOT sit in that column — place it
+    # HORIZONTAL above pin 1's row instead, where the SAMPLE_OUT lanes are clear.
     p1_x, p1_y = U1["1"]
     place_from_netlist(s, nl, "R20", x=p1_x - 7.62, y=p1_y, angle=90)
     # R20 angle 90 horizontal: pin 1 (chip side) at (p1_x - 3.81, p1_y);
@@ -71,12 +74,13 @@ def build_bobcat() -> Sheet:
     s.add(wire(p1_x, p1_y, p1_x - 3.81, p1_y))
     s.add(wire(p1_x - 11.43, p1_y, p1_x - 17.78, p1_y))
     power_at(s, "+VDDA1", p1_x - 17.78, p1_y, angle=270)
-    # VDDA1 decoupling at the chip side (after series R)
-    place_from_netlist(s, nl, "C22", x=p1_x - 3.81, y=p1_y + 7.62)
-    s.add(wire(p1_x - 3.81, p1_y + 3.81, p1_x - 3.81, p1_y))
-    s.add(junction(p1_x - 3.81, p1_y))
-    s.add(wire(p1_x - 3.81, p1_y + 11.43, p1_x - 3.81, p1_y + 17.78))
-    power_at(s, "GND", p1_x - 3.81, p1_y + 17.78)
+    # VDDA1 decoupling: horizontal C22 above pin 1's row, clear of SAMPLE_OUT
+    # exits. Right pin → vertical down to R20 chip-side; left pin → GND left.
+    C22_LANE_Y = p1_y - 7.62
+    place_from_netlist(s, nl, "C22", x=p1_x - 7.62, y=C22_LANE_Y, angle=90)
+    s.add(wire(p1_x - 3.81, C22_LANE_Y, p1_x - 3.81, p1_y))           # cap right → R20.1
+    s.add(wire(p1_x - 11.43, C22_LANE_Y, p1_x - 17.78, C22_LANE_Y))   # cap left → GND
+    power_at(s, "GND", p1_x - 17.78, C22_LANE_Y, angle=270)
 
     # ===== Cluster E: VDDA2 path (pins 26, 27) =====
     p26_x, p26_y = U1["26"]
@@ -131,7 +135,11 @@ def build_bobcat() -> Sheet:
     # ===== Cluster F: Pull-up/down network =====
     SPI_PINS = [
         # (pin, net, direction, pull_type, pull_ref, pull_x_offset)
-        ("14", "MOSI",      "input",  "down", "R22", 12.7),
+        # pull_x_offset for pin 14 is 15.24 (not 12.7) to avoid landing the
+        # R22 pull column on pin 19's x — pin 14 at x=196.19 with offset 12.7
+        # yields 208.89 which exactly matches pin 19, silently shorting MOSI
+        # GND drop to RESET_N drop.
+        ("14", "MOSI",      "input",  "down", "R22", 15.24),
         ("15", "MISO",      "output", None,   None,  0.0),
         ("16", "SCLK",      "input",  "down", "R23", 17.78),
         ("17", "CS_L",      "input",  "up",   "R24", 22.86),
@@ -172,23 +180,31 @@ def build_bobcat() -> Sheet:
             s.add(wire(px, py, px - 12.7, py))
             s.add(global_label(net, "output", px - 12.7, py, angle=180, justify="right"))
 
-    # Right-edge OSC_EN/WEIGHT_EN/SAMPLE_TRIG with 10kΩ pull-downs (E3) in
-    # pull-bank column.
-    OWT_PULL_BANK_X = 252.0
+    # Right-edge OSC_EN/WEIGHT_EN/SAMPLE_TRIG with 10kΩ pull-downs (E3).
+    # CRITICAL: each chip pin gets its OWN vertical drop column. A previous
+    # version stacked the three pulls in one column at x=252, which caused
+    # the longer drop wires (pin 24/25) to pass through R27/R28's pin coords —
+    # silently shorting OSC_EN/WEIGHT_EN/SAMPLE_TRIG/GND together. The
+    # validator missed the short because each net's name was still present
+    # in the bridged component's name set. See [[layout-rule-pin-protrusion]].
+    OWT_PULL_ROW_Y = 160.0   # below chip body (body bottom ≈ 150.32)
+    OWT_LABEL_X    = 235.56  # x of global_label, just right of chip pin
     OWT_PULLS = [
-        ("23", "OSC_EN",      "R27", 215.0),
-        ("24", "WEIGHT_EN",   "R28", 225.16),
-        ("25", "SAMPLE_TRIG", "R29", 235.32),
+        # (chip pin, net, pull R refdes, R column x)
+        ("23", "OSC_EN",      "R27", 252.0),
+        ("24", "WEIGHT_EN",   "R28", 262.0),
+        ("25", "SAMPLE_TRIG", "R29", 272.0),
     ]
-    for pn, net, pull_ref, pull_y in OWT_PULLS:
+    for pn, net, pull_ref, pull_x in OWT_PULLS:
         px, py = U1[pn]
-        s.add(wire(px, py, px + 12.7, py))
-        s.add(global_label(net, "output", px + 12.7, py, angle=0))
-        s.add(wire(px + 12.7, py, OWT_PULL_BANK_X, py))
-        s.add(wire(OWT_PULL_BANK_X, py, OWT_PULL_BANK_X, pull_y))
-        place_from_netlist(s, nl, pull_ref, x=OWT_PULL_BANK_X, y=pull_y + 3.81)
-        s.add(wire(OWT_PULL_BANK_X, pull_y + 7.62, OWT_PULL_BANK_X, pull_y + 12.7))
-        power_at(s, "GND", OWT_PULL_BANK_X, pull_y + 12.7)
+        s.add(wire(px, py, OWT_LABEL_X, py))                          # chip pin → label
+        s.add(global_label(net, "output", OWT_LABEL_X, py, angle=0))
+        s.add(wire(OWT_LABEL_X, py, pull_x, py))                      # label → pull column
+        place_from_netlist(s, nl, pull_ref, x=pull_x, y=OWT_PULL_ROW_Y)
+        s.add(wire(pull_x, py, pull_x, OWT_PULL_ROW_Y - 3.81))        # drop down to R top
+        s.add(wire(pull_x, OWT_PULL_ROW_Y + 3.81,
+                   pull_x, OWT_PULL_ROW_Y + 8.89))                    # R bot → GND
+        power_at(s, "GND", pull_x, OWT_PULL_ROW_Y + 8.89)
 
     # BIAS0/1 — hier_label, no pull
     for pn, net in [("28", "BIAS0"), ("29", "BIAS1")]:
@@ -208,23 +224,28 @@ def build_bobcat() -> Sheet:
         s.add(wire(px, py, px, target_y))
         s.add(hier_label(net, "output", px, target_y, angle=90, justify="left"))
 
-    # GPIO0–3 with 10kΩ pull-downs in pull-row at y=75
-    GPIO_PULL_ROW_Y = 75.0
+    # GPIO0–3 with 10kΩ pull-downs. CRITICAL: each pin's horizontal must be at
+    # its OWN y. A prior version ran all four horizontals at y=75, sharing the
+    # same line — KiCad merged them into one net, silently shorting GPIO0/1/2/3
+    # together. Pin x decreases 37→40 (right-to-left) and pull_x increases
+    # 244→274.48, so the leftmost pin (40) must take the topmost row for each
+    # vertical drop to land in its own row only (see skill rule 5).
     GPIO_PULLS = [
-        ("37", "GPIO3", "R30", 244.0),
-        ("38", "GPIO2", "R31", 254.16),
-        ("39", "GPIO1", "R32", 264.32),
-        ("40", "GPIO0", "R33", 274.48),
+        # (chip pin, net, pull R refdes, R column x, horizontal row y)
+        ("37", "GPIO3", "R30", 244.0,  80.0),   # rightmost pin → bottommost row
+        ("38", "GPIO2", "R31", 254.16, 75.0),
+        ("39", "GPIO1", "R32", 264.32, 70.0),
+        ("40", "GPIO0", "R33", 274.48, 65.0),   # leftmost pin → topmost row
     ]
-    for pn, net, pull_ref, pull_x in GPIO_PULLS:
+    for pn, net, pull_ref, pull_x, row_y in GPIO_PULLS:
         px, py = U1[pn]
         target_y = py - 25.4
-        s.add(wire(px, py, px, GPIO_PULL_ROW_Y))
+        s.add(wire(px, py, px, row_y))                                # drop to own row
         s.add(hier_label(net, "output", px, target_y, angle=90, justify="left"))
-        s.add(wire(px, GPIO_PULL_ROW_Y, pull_x, GPIO_PULL_ROW_Y))
-        place_from_netlist(s, nl, pull_ref, x=pull_x, y=GPIO_PULL_ROW_Y + 3.81)
-        s.add(wire(pull_x, GPIO_PULL_ROW_Y + 7.62, pull_x, GPIO_PULL_ROW_Y + 12.7))
-        power_at(s, "GND", pull_x, GPIO_PULL_ROW_Y + 12.7)
+        s.add(wire(px, row_y, pull_x, row_y))                         # horizontal to pull
+        place_from_netlist(s, nl, pull_ref, x=pull_x, y=row_y + 3.81)
+        s.add(wire(pull_x, row_y + 7.62, pull_x, row_y + 12.7))
+        power_at(s, "GND", pull_x, row_y + 12.7)
 
     validate(s, nl)
     return s

@@ -109,11 +109,27 @@ def build_bias() -> Sheet:
         if out_y != gate_y:
             s.add(wire(gate_x, out_y, gate_x, gate_y))
 
-        # PMOS source → +3V3 via sense R (vertical)
-        place_from_netlist(s, nl, sense_ref, x=src_x, y=100)
-        s.add(wire(src_x, 103.81, src_x, src_y))
-        s.add(wire(src_x, 96.19, src_x, 90.17))
-        power_at(s, "+3V3", src_x, 90.17)
+        # PMOS source → +3V3 via sense R. The PMZ1200UPEYL has source AND drain
+        # on the SAME vertical (local x=7.62), so a direct vertical wire from
+        # source up to R.bot would pass through drain → silent short. Detour
+        # east of the body, then north, then back west to R.bot.
+        # R is also pushed up to y=95 (was 100) to give bbox spacing vs Q.
+        R_SENSE_Y = 95
+        R_TOP_Y = R_SENSE_Y - 3.81
+        R_BOT_Y = R_SENSE_Y + 3.81
+        # Detour x must fit BETWEEN the drain detour column (src_x + 2.54) and
+        # the NMOS-gate-to-BIAS_ISO-label horizontal which starts at
+        # nm_g[0] - 7.62 = src_x + 4.76. Using src_x + 3.81 (half-grid) clears
+        # both — drain south at +2.54, gate-label wire from +4.76 rightward.
+        SRC_DETOUR_X = src_x + 3.81
+        place_from_netlist(s, nl, sense_ref, x=src_x, y=R_SENSE_Y)
+        # Source → R.bot via east-north-west detour around Q body
+        s.add(wire(src_x, src_y, SRC_DETOUR_X, src_y))
+        s.add(wire(SRC_DETOUR_X, src_y, SRC_DETOUR_X, R_BOT_Y))
+        s.add(wire(SRC_DETOUR_X, R_BOT_Y, src_x, R_BOT_Y))
+        # R.top → +3V3 (straight up)
+        s.add(wire(src_x, R_TOP_Y, src_x, R_TOP_Y - 5))
+        power_at(s, "+3V3", src_x, R_TOP_Y - 5)
 
         # OPA -IN feedback from PMOS source
         neg_x, neg_y = OPA[neg_pin]
@@ -122,20 +138,22 @@ def build_bias() -> Sheet:
         s.add(wire(src_x, src_y + 7.62, src_x, src_y))
         s.add(junction(src_x, src_y))
 
-        # PMOS drain → 2N7002 → BIASx hier_label (with parallel 0Ω jumper)
+        # PMOS drain → 2N7002 → BIASx hier_label (with parallel 0Ω jumper).
+        # Drain is on the same vertical as source — a direct south wire from
+        # drain crosses the Q body. Detour east-then-south-then-east to clear.
+        # Drain detour x sits BETWEEN the body edge and the source detour so
+        # the two detours don't co-occupy a column (which would re-short them).
         nmos_x = x0 + 70
         nmos_y = drn_y + 10.16
         NM = place_from_netlist(s, nl, nmos_ref, x=nmos_x, y=nmos_y)
         nm_g = NM["1"]; nm_s = NM["2"]; nm_d = NM["3"]
-        s.add(wire(drn_x, drn_y, drn_x, nmos_y - 5.08))
-        s.add(wire(drn_x, nmos_y - 5.08, nm_d[0], nm_d[1]))
-        s.add(wire(nm_s[0], nm_s[1], nm_s[0] + 5.08, nm_s[1]))
-        s.add(hier_label(out_net, "output", nm_s[0] + 5.08, nm_s[1], angle=0))
-        iso_net = f"BIAS_ISO{ch_idx}"
-        s.add(wire(nm_g[0], nm_g[1], nm_g[0] - 7.62, nm_g[1]))
-        s.add(global_label(iso_net, "input", nm_g[0] - 7.62, nm_g[1], angle=180, justify="right"))
-
-        # Parallel 0Ω jumper across NMOS D-S
+        DRN_DETOUR_X = drn_x + 2.54     # closer to body than SRC_DETOUR_X (5.08)
+        s.add(wire(drn_x, drn_y, DRN_DETOUR_X, drn_y))
+        s.add(wire(DRN_DETOUR_X, drn_y, DRN_DETOUR_X, nm_d[1]))
+        s.add(wire(DRN_DETOUR_X, nm_d[1], nm_d[0], nm_d[1]))
+        # Parallel 0Ω jumper across NMOS D-S. The hier_label exits PAST the
+        # jumper at (par_x + 5.08, nm_s.y) so the source-side horizontal isn't
+        # drawn twice (jumper tap and label-stub previously overlapped).
         par_x = nmos_x + 15.24
         place_from_netlist(s, nl, par_jumper_ref, x=par_x, y=nmos_y)
         s.add(junction(nm_d[0], nm_d[1]))
@@ -144,6 +162,14 @@ def build_bias() -> Sheet:
         s.add(junction(nm_s[0], nm_s[1]))
         s.add(wire(nm_s[0], nm_s[1], par_x, nm_s[1]))
         s.add(wire(par_x, nm_s[1], par_x, nmos_y + 3.81))
+        # BIASx hier_label exits right of the jumper column. 3 wires meet at
+        # (par_x, nm_s.y): nm_s-stub, vertical-down to R42, horizontal to label.
+        s.add(junction(par_x, nm_s[1]))
+        s.add(wire(par_x, nm_s[1], par_x + 5.08, nm_s[1]))
+        s.add(hier_label(out_net, "output", par_x + 5.08, nm_s[1], angle=0))
+        iso_net = f"BIAS_ISO{ch_idx}"
+        s.add(wire(nm_g[0], nm_g[1], nm_g[0] - 7.62, nm_g[1]))
+        s.add(global_label(iso_net, "input", nm_g[0] - 7.62, nm_g[1], angle=180, justify="right"))
 
         # 10kΩ pull-down on BIAS_ISO gate
         iso_pd_x = nm_g[0] - 3.81

@@ -52,34 +52,40 @@ def build_fmc() -> Sheet:
         unit = {"C": 1, "D": 2, "G": 3, "H": 4}[row]
         return units[unit][f"{row}{num}"]
 
+    # NOTE on routing direction: the ASP-134606-01 symbol has its pin
+    # connection points at local x=0 with the BODY extending RIGHTWARD
+    # (local x ∈ [5.08, 12.7]). Pins protrude LEFTWARD from the body.
+    # ALL wires/labels must exit LEFT (negative x offset) so they don't
+    # pass through the body and overlap pin-name labels rendered inside.
+
     # ===== 3P3V (C36, C38, C40, D39) → +3V3 =====
     for r, n in [("C", 36), ("C", 38), ("C", 40), ("D", 39)]:
         px, py = pin(r, n)
-        s.add(wire(px, py, px + 7.62, py))
-        power_at(s, "+3V3", px + 7.62, py, angle=90)
+        s.add(wire(px, py, px - 7.62, py))
+        power_at(s, "+3V3", px - 7.62, py, angle=270)
 
     # ===== VADJ (G40, H39) → VADJ hier label =====
     for r, n in [("G", 40), ("H", 39)]:
         px, py = pin(r, n)
-        s.add(wire(px, py, px + 10.16, py))
-        s.add(hier_label("VADJ", "output", px + 10.16, py, angle=0))
+        s.add(wire(px, py, px - 10.16, py))
+        s.add(hier_label("VADJ", "output", px - 10.16, py, angle=180, justify="right"))
 
     # ===== I²C — global_label (project-wide bus) =====
-    s.add(wire(*pin("D", 30), pin("D", 30)[0] + 10.16, pin("D", 30)[1]))
-    s.add(global_label("SCL", "bidirectional", pin("D", 30)[0] + 10.16, pin("D", 30)[1], angle=0))
-    s.add(wire(*pin("D", 31), pin("D", 31)[0] + 10.16, pin("D", 31)[1]))
-    s.add(global_label("SDA", "bidirectional", pin("D", 31)[0] + 10.16, pin("D", 31)[1], angle=0))
+    s.add(wire(*pin("D", 30), pin("D", 30)[0] - 10.16, pin("D", 30)[1]))
+    s.add(global_label("SCL", "bidirectional", pin("D", 30)[0] - 10.16, pin("D", 30)[1], angle=180, justify="right"))
+    s.add(wire(*pin("D", 31), pin("D", 31)[0] - 10.16, pin("D", 31)[1]))
+    s.add(global_label("SDA", "bidirectional", pin("D", 31)[0] - 10.16, pin("D", 31)[1], angle=180, justify="right"))
 
     # ===== Strapping: PRSNT_M2C_L (H2), GA0 (C34), GA1 (C35) → GND =====
     for r, n in [("H", 2), ("C", 34), ("C", 35)]:
         px, py = pin(r, n)
-        s.add(wire(px, py, px + 7.62, py))
-        power_at(s, "GND", px + 7.62, py)
+        s.add(wire(px, py, px - 7.62, py))
+        power_at(s, "GND", px - 7.62, py, angle=270)
 
     # ===== PG_C2M (C1) → LDO_PG hier label =====
     px, py = pin("C", 1)
-    s.add(wire(px, py, px + 10.16, py))
-    s.add(hier_label("LDO_PG", "input", px + 10.16, py, angle=0))
+    s.add(wire(px, py, px - 10.16, py))
+    s.add(hier_label("LDO_PG", "input", px - 10.16, py, angle=180, justify="right"))
 
     # ===== NC pins (12V, 3P3VAUX, VREF_A_M2C) =====
     for r, n in [("C", 32), ("D", 35), ("D", 37), ("H", 1)]:
@@ -122,15 +128,19 @@ def build_fmc() -> Sheet:
     for net, r_ref, kind, shape in LA_ROUTING:
         row, num = LA_ASSIGN[net]
         px, py = pin(row, num)
-        R_x = px + 8.0
-        label_x = px + 20.0
-        place_from_netlist(s, nl, r_ref, x=R_x, y=py, angle=90)
-        s.add(wire(px, py, R_x - 3.81, py))
-        s.add(wire(R_x + 3.81, py, label_x, py))
+        # LA-bank R sits LEFT of the connector pin, label further LEFT.
+        # YAML requires R.1 → label side, R.2 → FMC pin side. With horizontal R
+        # to the LEFT of the FMC pin, pin 1 (label-side) needs to be the LEFT
+        # pin — use angle=270 so local (0, +3.81) maps to world (cx - 3.81, cy).
+        R_x = px - 8.0
+        label_x = px - 20.0
+        place_from_netlist(s, nl, r_ref, x=R_x, y=py, angle=270)
+        s.add(wire(px, py, R_x + 3.81, py))             # FMC pin → R.2 (right, chip-side)
+        s.add(wire(R_x - 3.81, py, label_x, py))        # R.1 (left, label-side) → label
         if kind == "global":
-            s.add(global_label(net, shape, label_x, py, angle=0))
+            s.add(global_label(net, shape, label_x, py, angle=180, justify="right"))
         else:
-            s.add(hier_label(net, shape, label_x, py, angle=0))
+            s.add(hier_label(net, shape, label_x, py, angle=180, justify="right"))
         la_routed.add((row, num))
 
     # ===== GND on unlabeled pins =====
@@ -167,8 +177,9 @@ def build_fmc() -> Sheet:
             s.add(no_connect(px, py))
             wired.add((r, n))
 
-    # Ground all unwired non-LA pins via a per-row rail.
-    GND_RAIL_OFFSET = 17.78
+    # Ground all unwired non-LA pins via a per-row rail to the LEFT of the
+    # unit (same side pins protrude from). One GND symbol per rail (Rule 7).
+    GND_RAIL_OFFSET = -17.78    # rail sits LEFT of pin column
     for row, _ in [("C", 1), ("D", 2), ("G", 3), ("H", 4)]:
         gnd_pins = [n for n in range(1, 41)
                     if (row, n) not in wired

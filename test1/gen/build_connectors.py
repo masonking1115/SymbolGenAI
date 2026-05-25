@@ -54,9 +54,10 @@ def build_connectors() -> Sheet:
         j_ref = f"J{i+54}"
         r_ref = f"R{50+i}"
         sy = 100 + i*15.24
-        place_from_netlist(s, nl, j_ref, x=165, y=sy)
+        # SMA shifted right to x=170 so its body bbox clears R pin 1 by ≥2.54 mm.
+        place_from_netlist(s, nl, j_ref, x=170, y=sy)
         place_from_netlist(s, nl, r_ref, x=160, y=sy, angle=90)
-        s.add(wire(165, sy, 163.81, sy))   # SMA pin → R pin1 (right)
+        s.add(wire(170, sy, 163.81, sy))   # SMA pin → R pin1 (right)
         s.add(wire(156.19, sy, 150, sy))   # R pin2 (left) → label
         s.add(global_label(net, "input", 150, sy, angle=180, justify="right"))
 

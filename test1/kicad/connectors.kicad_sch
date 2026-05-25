@@ -1363,11 +1363,11 @@
   (hierarchical_label "CLK_OUT3" (shape input) (at 92.71 145.72 180) (effects (font (size 1.27 1.27)) (justify right)) (uuid "b30a2e12-b043-5351-b04c-2ca5a21eb09a"))
   (symbol
     (lib_id "Lib:HRM-G-300-467B-1")
-    (at 165 100.0 0)
+    (at 170 100.0 0)
     (unit 1) (in_bom yes) (on_board yes) (dnp no)
     (uuid "eb47836f-8619-5df1-81b3-08016d7990fb")
-    (property "Reference" "J54" (at 165 94.92 0) (effects (font (size 1.27 1.27))))
-    (property "Value" "SMA" (at 165 105.08 0) (effects (font (size 1.27 1.27))))
+    (property "Reference" "J54" (at 170 94.92 0) (effects (font (size 1.27 1.27))))
+    (property "Value" "SMA" (at 170 105.08 0) (effects (font (size 1.27 1.27))))
     (property "Footprint" "Connector_Coaxial:SMA_Amphenol_HRM-G_Vertical" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
     (property "Datasheet" "" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
     (pin "1" (uuid "178bbc03-c11f-592f-96d9-9565e4d8ad73"))
@@ -1388,16 +1388,16 @@
     (instances
       (project "test1"
         (path "/4ed7a046-ef33-57d9-8730-321c05965af3/059bce26-e22e-55b8-805e-999a0610e155" (reference "R50") (unit 1)))))
-  (wire (pts (xy 165 100.0) (xy 163.81 100.0)) (stroke (width 0) (type default)) (uuid "dc3db4b5-6036-5bdc-927b-52116080af33"))
+  (wire (pts (xy 170 100.0) (xy 163.81 100.0)) (stroke (width 0) (type default)) (uuid "53c64232-2792-5748-a9ca-0078e549535b"))
   (wire (pts (xy 156.19 100.0) (xy 150 100.0)) (stroke (width 0) (type default)) (uuid "55814024-0c29-5e3e-bcf7-d4aa33d8c95b"))
   (global_label "OSC_EN" (shape input) (at 150 100.0 180) (effects (font (size 1.27 1.27)) (justify right)) (uuid "a4f57cc9-7598-5e60-b937-6411673a9980"))
   (symbol
     (lib_id "Lib:HRM-G-300-467B-1")
-    (at 165 115.24 0)
+    (at 170 115.24 0)
     (unit 1) (in_bom yes) (on_board yes) (dnp no)
     (uuid "8127a350-00b2-56a5-9991-d0d243d2c03e")
-    (property "Reference" "J55" (at 165 110.16 0) (effects (font (size 1.27 1.27))))
-    (property "Value" "SMA" (at 165 120.32 0) (effects (font (size 1.27 1.27))))
+    (property "Reference" "J55" (at 170 110.16 0) (effects (font (size 1.27 1.27))))
+    (property "Value" "SMA" (at 170 120.32 0) (effects (font (size 1.27 1.27))))
     (property "Footprint" "Connector_Coaxial:SMA_Amphenol_HRM-G_Vertical" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
     (property "Datasheet" "" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
     (pin "1" (uuid "4e240bce-ff27-5b3a-8776-42d9e3258710"))
@@ -1418,16 +1418,16 @@
     (instances
       (project "test1"
         (path "/4ed7a046-ef33-57d9-8730-321c05965af3/059bce26-e22e-55b8-805e-999a0610e155" (reference "R51") (unit 1)))))
-  (wire (pts (xy 165 115.24) (xy 163.81 115.24)) (stroke (width 0) (type default)) (uuid "26fe1fd5-709e-5b83-a346-05919d759c04"))
+  (wire (pts (xy 170 115.24) (xy 163.81 115.24)) (stroke (width 0) (type default)) (uuid "c593211e-9487-59d4-832d-011a43b1f876"))
   (wire (pts (xy 156.19 115.24) (xy 150 115.24)) (stroke (width 0) (type default)) (uuid "fa36d1a0-8bfe-59bf-8cf5-3ee7c124024c"))
   (global_label "WEIGHT_EN" (shape input) (at 150 115.24 180) (effects (font (size 1.27 1.27)) (justify right)) (uuid "ea33f178-6373-5313-8c14-89252bd38c5e"))
   (symbol
     (lib_id "Lib:HRM-G-300-467B-1")
-    (at 165 130.48 0)
+    (at 170 130.48 0)
     (unit 1) (in_bom yes) (on_board yes) (dnp no)
     (uuid "acf3ee9c-c16e-50f3-8da4-f104ec42cc95")
-    (property "Reference" "J56" (at 165 125.39999999999999 0) (effects (font (size 1.27 1.27))))
-    (property "Value" "SMA" (at 165 135.56 0) (effects (font (size 1.27 1.27))))
+    (property "Reference" "J56" (at 170 125.39999999999999 0) (effects (font (size 1.27 1.27))))
+    (property "Value" "SMA" (at 170 135.56 0) (effects (font (size 1.27 1.27))))
     (property "Footprint" "Connector_Coaxial:SMA_Amphenol_HRM-G_Vertical" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
     (property "Datasheet" "" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
     (pin "1" (uuid "b97d01dd-bcfe-5ff5-8eb2-18a9df7256e3"))
@@ -1448,7 +1448,7 @@
     (instances
       (project "test1"
         (path "/4ed7a046-ef33-57d9-8730-321c05965af3/059bce26-e22e-55b8-805e-999a0610e155" (reference "R52") (unit 1)))))
-  (wire (pts (xy 165 130.48) (xy 163.81 130.48)) (stroke (width 0) (type default)) (uuid "f7234d75-20a2-5767-9b9b-416a9cf0c069"))
+  (wire (pts (xy 170 130.48) (xy 163.81 130.48)) (stroke (width 0) (type default)) (uuid "5ec1e96b-ad9a-5679-b385-f5e024e73b97"))
   (wire (pts (xy 156.19 130.48) (xy 150 130.48)) (stroke (width 0) (type default)) (uuid "d16bc3c2-5faf-5950-9cd3-fdb61853c91b"))
   (global_label "SAMPLE_TRIG" (shape input) (at 150 130.48 180) (effects (font (size 1.27 1.27)) (justify right)) (uuid "3ede45f5-212c-5e37-a3a6-672229070661"))
   (symbol

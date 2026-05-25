@@ -39,6 +39,7 @@ from gen.config import (
     SHEET_TITLES,
     SHEET_UUIDS,
 )
+from gen.layout_lint import lint, print_report, severity_counts
 from gen.shared import Sheet
 
 
@@ -115,18 +116,23 @@ def main() -> int:
         "bobcat": build_bobcat,
         "fmc": build_fmc,
     }
+    sheet_issues: dict[str, list] = {}
     for n in SHEET_NAMES:
         cpath = OUT_DIR / f"{n}.kicad_sch"
         if n in real_builders:
-            cpath.write_text(real_builders[n]().render())
-            print(f"wrote {n}.kicad_sch")
+            sheet = real_builders[n]()
+            cpath.write_text(sheet.render())
+            sheet_issues[n] = lint(sheet)
+            counts = severity_counts(sheet_issues[n])
+            print(f"wrote {n}.kicad_sch — lint: "
+                  f"{counts['ERROR']}E/{counts['WARNING']}W/{counts['INFO']}I")
         else:
             stub = Sheet(name=n, uuid=SHEET_UUIDS[n], page=PAGE_NUMBERS[n],
                          title=f"{PROJECT_NAME} — {SHEET_TITLES[n]}").render()
             cpath.write_text(stub)
             print(f"wrote {n}.kicad_sch (stub)")
 
-    # Validate root + every child
+    # Validate root + every child via kicad-cli (parse gate).
     failures = 0
     for path in [root_path] + [OUT_DIR / f"{n}.kicad_sch" for n in SHEET_NAMES]:
         ok, msg = validate(path)
@@ -135,6 +141,18 @@ def main() -> int:
         if not ok:
             failures += 1
             print(msg)
+
+    # Layout lint summary — advisory only, does not affect exit code.
+    print()
+    print("===== Layout lint =====")
+    total = {"ERROR": 0, "WARNING": 0, "INFO": 0}
+    for n, issues in sheet_issues.items():
+        print_report(n, issues)
+        for k, v in severity_counts(issues).items():
+            total[k] += v
+    print(f"total: {total['ERROR']} ERROR, {total['WARNING']} WARNING, "
+          f"{total['INFO']} INFO")
+
     return 0 if failures == 0 else 1
 
 

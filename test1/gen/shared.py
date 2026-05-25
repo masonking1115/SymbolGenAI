@@ -361,6 +361,120 @@ def power_at(sheet: Sheet, rail: str, x: float, y: float, angle: int = 0
 
 
 # ---------------------------------------------------------------------------
+# Cluster helpers — bake skill Rules 7 & 8 into reusable calls
+# ---------------------------------------------------------------------------
+
+def gnd_bus(sheet: Sheet,
+            pins: list[tuple[float, float]],
+            rail_x: float,
+            gnd_extra: float = 5.08,
+            ) -> tuple[float, float]:
+    """Bus a column of pins to a vertical GND rail terminated by ONE power:GND.
+
+    Implements skill Rule 7 (GND symbol clustering): instead of dropping one
+    power:GND per pin, fan stubs from each pin into a common rail and drop a
+    single GND at the bottom.
+
+    Args:
+        sheet:    target Sheet
+        pins:     list of world-coord pin positions to bus together
+        rail_x:   x-coordinate of the vertical rail (should clear all pin x's)
+        gnd_extra: how far below the lowest pin the GND symbol sits
+
+    Returns the (x, y) where the GND symbol was placed.
+
+    Junctions are dropped at every interior tap (i.e. every pin except the
+    topmost and bottommost) since 3 wires meet there: the stub coming in,
+    and the two rail segments above/below.
+    """
+    if not pins:
+        raise ValueError("gnd_bus: pins list is empty")
+    sorted_pins = sorted(pins, key=lambda p: p[1])
+    top_y = sorted_pins[0][1]
+    bot_y = sorted_pins[-1][1]
+
+    for (px, py) in sorted_pins:
+        sheet.add(wire(px, py, rail_x, py))
+
+    if len(sorted_pins) >= 2:
+        sheet.add(wire(rail_x, top_y, rail_x, bot_y))
+
+    # Interior junctions (skip endpoints — the rail terminates there).
+    for (_, py) in sorted_pins[1:-1]:
+        sheet.add(junction(rail_x, py))
+
+    gnd_y = bot_y + gnd_extra
+    sheet.add(wire(rail_x, bot_y, rail_x, gnd_y))
+    power_at(sheet, "GND", rail_x, gnd_y)
+    return (rail_x, gnd_y)
+
+
+def decoupling_cluster(sheet: Sheet,
+                       netlist,
+                       cap_refs: list[str],
+                       rail: str,
+                       rail_x: float,
+                       rail_y: float,
+                       spacing: float = 7.62,
+                       gnd_extra: float = 5.08,
+                       ) -> tuple[float, float]:
+    """Lay out a horizontal row of decoupling caps sharing one rail above and
+    ONE power:GND below. Implements skill Rule 8 (decoupling-cap cluster).
+
+    Caps are placed vertically (pin 1 on top → rail, pin 2 on bottom → GND).
+    `cap_refs` are looked up in the YAML netlist for lib_id/value/footprint.
+    The caller wires the rail back to the chip's supply pin themselves — this
+    helper only owns the cap row.
+
+    Args:
+        sheet:     target Sheet
+        netlist:   loaded Netlist (for place_from_netlist)
+        cap_refs:  ordered list of cap refdes (left-to-right placement)
+        rail:      rail name (e.g. "+3V3") — only used for the optional comment;
+                   no power symbol is dropped on the rail end (caller wires it
+                   to the chip)
+        rail_x:    x of the LEFTMOST cap (the rail extends right from here)
+        rail_y:    y of the rail line (pin 1 of each cap sits ON this y)
+        spacing:   horizontal gap between cap centers (default 7.62 = 3 grid)
+        gnd_extra: how far below the cap row the GND symbol sits
+
+    Returns (rail_left_x, rail_right_x) so the caller can extend the rail to
+    the chip's VCC pin (typically with one extra wire segment).
+    """
+    if not cap_refs:
+        raise ValueError("decoupling_cluster: cap_refs is empty")
+
+    # Device:C pin 1 is at local (0, +3.81) → world (cx, cy - 3.81) at angle 0.
+    # So to land pin 1 ON rail_y, cy = rail_y + 3.81.
+    cy = rail_y + 3.81
+    gnd_y = rail_y + 7.62 + gnd_extra        # 7.62 = cap pin-to-pin span
+
+    xs = [rail_x + i * spacing for i in range(len(cap_refs))]
+
+    for (cx, ref) in zip(xs, cap_refs):
+        place_from_netlist(sheet, netlist, ref, x=cx, y=cy)
+
+    # Top rail across pin-1's of every cap (skip if only one cap — pin 1 is
+    # already on rail_y, no rail wire needed; caller adds the connection).
+    if len(xs) > 1:
+        sheet.add(wire(xs[0], rail_y, xs[-1], rail_y))
+        for cx in xs[1:-1]:
+            sheet.add(junction(cx, rail_y))
+
+    # Bottom rail across pin-2's of every cap, plus stubs down to gnd_y at the
+    # rightmost cap only. Single shared GND symbol per Rule 7.
+    pin2_y = rail_y + 7.62
+    if len(xs) > 1:
+        sheet.add(wire(xs[0], pin2_y, xs[-1], pin2_y))
+        for cx in xs[1:-1]:
+            sheet.add(junction(cx, pin2_y))
+    sheet.add(wire(xs[-1], pin2_y, xs[-1], gnd_y))
+    power_at(sheet, "GND", xs[-1], gnd_y)
+
+    return (xs[0], xs[-1])
+
+
+# ---------------------------------------------------------------------------
 # Sheet block (parent embeds child)
 # ---------------------------------------------------------------------------
 
