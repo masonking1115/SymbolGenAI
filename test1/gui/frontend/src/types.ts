@@ -87,7 +87,63 @@ export interface RunStatus {
   lines: string[];
 }
 
-export type TabKey = "library" | "generator" | "review";
+export type TabKey = "library" | "generator" | "review" | "simulation";
+
+export type SimBlockStatus = "implemented" | "planned" | "not_simulatable";
+
+export interface SimType {
+  type: string;
+  rationale: string;
+  pass: string;
+  status: "implemented" | "planned";
+  defer_reason?: string;
+}
+
+export interface SimXAxis {
+  label: string;
+  unit: string;
+  scale: number;
+  log: boolean;
+}
+
+export interface SimDatasheet {
+  mpn: string;
+  file: string;
+}
+
+export interface SimBlock {
+  id: string;
+  title: string;
+  sheet: string;
+  status: SimBlockStatus;
+  description: string;
+  models_needed: string[];
+  datasheets: SimDatasheet[];
+  sim_types: SimType[];
+}
+
+export interface SimSeries {
+  trace: string;
+  signal: string;
+  t: number[];
+  v: number[];
+}
+
+export interface SimResult {
+  block: string;
+  sim_type: string;
+  pass_criterion: string | null;
+  ok: boolean;
+  status: string;
+  message?: string;
+  ngspice_ok?: boolean;
+  analysis?: Record<string, unknown> | null;
+  op_point?: Record<string, number>;
+  plot: SimSeries[];
+  x_axis?: SimXAxis | null;
+  y_label?: string;
+  deck?: string;
+}
 
 export interface FreshnessStamp {
   path: string;

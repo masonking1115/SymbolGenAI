@@ -30,6 +30,7 @@ from .shared import (
     junction,
     place_from_netlist,
     power_at,
+    text,
     wire,
 )
 from .validator import validate
@@ -91,6 +92,7 @@ def build_power() -> Sheet:
     s.add(wire(C17_X, RAIL_3V3_Y, IN_BUS_X, RAIL_3V3_Y))   # +3V3 rail across caps + IN bus
     s.add(wire(C17_X, GND_RAIL_Y, C11_X, GND_RAIL_Y))      # GND rail across cap bottoms
     power_at(s, "GND", C10_X, GND_RAIL_Y)
+    s.add(text("LDO VIN bypass", C17_X - 2.54, C_DECOUPLE_Y, justify="right"))
 
     # EN pin (14) → R10 (10k) pulldown to GND, hier_label LDO_EN from FMC.
     R10_Y = EN_Y + 5.08
@@ -194,6 +196,7 @@ def build_power() -> Sheet:
     place_from_netlist(s, nl, "C14", x=C14_X, y=C_DECOUPLE_Y)
     s.add(wire(C14_X, C_DECOUPLE_Y - 3.81, C14_X, OUT_Y))
     s.add(wire(C14_X, C_DECOUPLE_Y + 3.81, C14_X, GND_RAIL_Y))
+    s.add(text("LDO VOUT bypass", C13_X - 2.54, C_DECOUPLE_Y, justify="right"))
 
     # ===== Cluster C: Output jumpers (3× 1×2 → VDDD, VDDA1, VDDA2) =====
     # Each jumper fans from JX leftward to a common drop column at JX-5.08

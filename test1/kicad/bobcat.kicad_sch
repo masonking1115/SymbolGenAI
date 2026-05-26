@@ -1199,6 +1199,7 @@
     (instances
       (project "test1"
         (path "/4ed7a046-ef33-57d9-8730-321c05965af3/e6b90fa2-2dfc-5319-a99a-2ebf8a1933a0" (reference "#PWR73ac9cc2") (unit 1)))))
+  (text "VDDD core bypass" (at 187.96 167.64 0) (effects (font (size 1.0 1.0)) (justify right)) (uuid "e50ad917-10d0-5a42-8230-63e7b963d6e1"))
   (symbol
     (lib_id "Device:R")
     (at 168.91 118.11 90)
@@ -1642,6 +1643,7 @@
     (instances
       (project "test1"
         (path "/4ed7a046-ef33-57d9-8730-321c05965af3/e6b90fa2-2dfc-5319-a99a-2ebf8a1933a0" (reference "#PWR2794fcca") (unit 1)))))
+  (text "VDDIO supply bypass" (at 137.16 100.33 0) (effects (font (size 1.0 1.0)) (justify right)) (uuid "2734226a-ff8b-546f-9c51-ff72cf8b0405"))
   (wire (pts (xy 195.58 152.4) (xy 195.58 185.42)) (stroke (width 0) (type default)) (uuid "a8b943b9-af5d-5d95-95a5-8363fa6f64eb"))
   (wire (pts (xy 195.58 185.42) (xy 165.1 185.42)) (stroke (width 0) (type default)) (uuid "4369732f-79ee-5b12-b179-780a89d62ab3"))
   (global_label "MOSI" (shape input) (at 165.1 185.42 180) (effects (font (size 1.27 1.27)) (justify right)) (uuid "248bc2f7-7205-5ad7-b287-00f5471ff9e5"))

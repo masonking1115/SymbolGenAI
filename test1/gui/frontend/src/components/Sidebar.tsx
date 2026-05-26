@@ -11,6 +11,7 @@ const ITEMS: { key: TabKey; label: string; icon: (p?: { size?: number }) => JSX.
   { key: "library", label: "Library", icon: I.Library },
   { key: "generator", label: "Schematic Generator", icon: I.Schematic },
   { key: "review", label: "Design Review", icon: I.Review },
+  { key: "simulation", label: "Simulation", icon: I.Wave },
 ];
 
 export function Sidebar({ active, onChange, projectLabel }: Props) {

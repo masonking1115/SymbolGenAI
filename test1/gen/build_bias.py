@@ -33,34 +33,10 @@ def build_bias() -> Sheet:
               page=PAGE_NUMBERS["bias"],
               title=f"{PROJECT_NAME} — Bias Generators")
 
-    # Sheet-level design-intent banner — visible in eeschema's editor view.
-    # Documents the bias-block POR safety story so a future reader doesn't
-    # have to reconstruct it from the topology + DNP flags.
     s.add(text("BIAS BLOCK — POR FAIL-SAFE", 80, 60, size=1.5))
-    s.add(text(
-        "Q42/Q43 isolation NMOSes are POPULATED by default and DEFAULT-OFF",
-        80, 63, size=0.9,
-    ))
-    s.add(text(
-        "(gate pull-downs R44/R45). FPGA must assert BIAS_ISO0/1 HIGH to",
-        80, 64.5, size=0.9,
-    ))
-    s.add(text(
-        "deliver bias to Bobcat — a virgin MCP4728 (default VREF=2.048V,",
-        80, 66, size=0.9,
-    ))
-    s.add(text(
-        "code=0x000) cannot push uncontrolled current at POR.",
-        80, 67.5, size=0.9,
-    ))
-    s.add(text(
-        "R42/R43 (parallel 0Ω) are DNP — populate ONLY to disable the FPGA",
-        80, 69.5, size=0.9,
-    ))
-    s.add(text(
-        "isolation path (benchtop standalone use without FPGA control).",
-        80, 71, size=0.9,
-    ))
+    s.add(text("Q42/Q43 (populated, default-OFF via R44/R45) block bias at POR.", 80, 63, size=0.9))
+    s.add(text("FPGA must drive BIAS_ISO0/1 HIGH; MCP4728 defaults (VREF=2.048V, code=0) are safe.", 80, 65, size=0.9))
+    s.add(text("R42/R43 DNP — short only for FPGA-less benchtop use.", 80, 67, size=0.9))
 
     # ===== Cluster A: MCP4728 DAC =====
     # Body: x ∈ [80, 151.12], y ∈ [80, 90.16].

@@ -437,6 +437,190 @@ After writing, print a one-line summary of the symbol you added.
     return run
 
 
+_SIM_PARAM_CACHE = PROJECT_DIR / "sim" / "cache" / "datasheet_params.json"
+_SIM_CONFIG = PROJECT_DIR / "sim" / "cache" / "sim_config.json"
+
+
+async def start_sim_setup(
+    *,
+    block_id: str,
+    datasheets: list[dict],          # [{mpn, file}]
+    sheet: str,                      # the block's netlist sheet, e.g. "power.yaml"
+) -> AgentRun:
+    """Context-first setup: read the datasheets + requirements + the CURRENT
+    design (netlist), then determine the parameters to apply to the sim — both
+    device model params AND the operating-point scenario — BEFORE the sim runs."""
+    ds_lines = "\n".join(
+        f"  - {d['mpn']}: {PROJECT_DIR / 'Parts Library' / d['mpn'] / d['file']}"
+        for d in datasheets
+    )
+    cached = dscache_cached_mpns()
+    netlist_path = PROJECT_DIR / "netlist" / sheet
+    instructions = f"""\
+This is a SIM-SETUP pass for block '{block_id}'. The order is context FIRST,
+then parameters, THEN the sim runs (done by the backend after you finish).
+
+Datasheets for this block's parts:
+{ds_lines}
+
+Requirements (intent/spec):  {PROJECT_DIR / 'design_requirements.md'}
+Current design (as-built):   {netlist_path}
+Device-param cache:          {_SIM_PARAM_CACHE}
+Sim-scenario cache:          {_SIM_CONFIG}
+
+Already-cached device parts (don't re-read their PDFs unless you need a
+clarification): {sorted(cached)}
+
+Your job — gain context, then determine the parameters to apply:
+1. Read the requirements AND the current netlist to understand the as-built
+   circuit (what this block actually drives, at what voltages/currents). Read
+   any not-yet-cached datasheets.
+2. Write device model params per MPN into {_SIM_PARAM_CACHE} (descriptive keys
+   with units, e.g. "DROPOUT_mV_max_VIN1V1_BIAS_3A"; a code mapper converts
+   them to ngspice inputs). Read the file first, merge, write it back.
+3. Determine the SIM SCENARIO and write {_SIM_CONFIG} keyed by '{block_id}'
+   (read first, merge, write back):
+     - operating_points_V: the REAL operating point(s) grounded in the
+       requirements + the current design — e.g. if the LDO feeds the Bobcat
+       core rails at 0.6-1.0V, use [0.6, 1.0], NOT an arbitrary default.
+     - primary_vout_set_V: the single representative setpoint to sim by default.
+     - load_note, rationale, sources (files you used), needs_clarification
+       (null, or a question if intent is ambiguous).
+4. Do NOT run the sim and do NOT edit netlists. Finish with one line:
+   SETUP_DONE: <one-sentence summary of the scenario you chose>
+"""
+    proc, _cmd = await _spawn_claude(
+        prompt=instructions,
+        system_suffix="",
+        permission_mode="acceptEdits",   # writes the two cache files
+    )
+    run = _register("sim-setup")
+    asyncio.create_task(_run_subprocess(run, proc))
+    return run
+
+
+async def start_sim_interpret(
+    *,
+    block_id: str,
+    sim_type: str,
+    pass_criterion: str,
+    datasheets: list[dict],          # [{mpn, file}]
+    result_json: str,                # the raw ngspice result the GUI computed
+) -> AgentRun:
+    """Read the block's datasheets + requirements, extract/cache the key
+    device parameters, and interpret the sim result against spec."""
+    ds_lines = "\n".join(
+        f"  - {d['mpn']}: {PROJECT_DIR / 'Parts Library' / d['mpn'] / d['file']}"
+        for d in datasheets
+    )
+    cached = {m: True for m in dscache_cached_mpns()}
+    cache_note = (
+        f"Already-cached parts (DON'T re-read their PDFs unless you need a "
+        f"clarification): {sorted(cached)}" if cached else
+        "Nothing cached yet — read the PDFs below."
+    )
+    instructions = f"""\
+This is a SIMULATION-INTERPRET pass for block '{block_id}', sim '{sim_type}'.
+
+Datasheets for this block's parts:
+{ds_lines}
+
+Spec: {PROJECT_DIR / 'design_requirements.md'}
+Parameter cache (read + update this JSON): {_SIM_PARAM_CACHE}
+
+{cache_note}
+
+The GUI already ran the ngspice sim. Raw result JSON:
+{result_json}
+
+The block's nominal pass criterion was: {pass_criterion}
+
+Your job:
+1. For any of this block's parts NOT already cached, read its datasheet and
+   extract the key electrical parameters into {_SIM_PARAM_CACHE}, keyed by MPN
+   with sub-keys `model_params` and `spec`. Use DESCRIPTIVE keys that name the
+   value, its condition, and its UNIT (e.g. "DROPOUT_mV_max_VIN1V1_BIAS_3A",
+   "RON_mOhm_max_VIN1V8_85C", "tON_us_typ_VIN1V8", "VOS_uV_max_25C", "GBW_MHz",
+   "AOL_dB_typ"). A deterministic code-side mapper (sim/param_map.py) converts
+   these into the ngspice model inputs, so accuracy + clear units matter more
+   than matching a fixed name. Read {_SIM_PARAM_CACHE} first, merge, write it
+   back. Set `source`, `extracted_at`, and `needs_clarification` (null, or a
+   question if the datasheet is ambiguous about a value that matters here).
+2. Cross-check the sim RESULT against the datasheet specs AND design
+   requirements. State whether it meets spec, with the actual margin and a
+   datasheet citation (section/page or the number).
+3. SUGGESTIONS are CIRCUIT-DESIGN changes ONLY — edits the schematic-generation
+   phase can apply to netlist/*.yaml or gen/*.py and then regenerate the board.
+   The changelog feeds an apply pass that edits the DESIGN, so every bullet must
+   be an actionable circuit edit: change a component value, add/remove a part or
+   decoupling cap, swap a part for a better one (e.g. a lower-RON load switch),
+   change a pull resistor, change topology. State the target (what to change and
+   to what value) and cite the datasheet/requirement that motivates it.
+
+   Do NOT put simulation or test-setup items in SUGGESTIONS — no sweep ranges,
+   operating points, "verify X", "re-run with…", or "add a sim". Those are not
+   circuit changes and the apply pass can't act on them. If your finding is a
+   sim-coverage gap or an open question (not a circuit edit), put it in CLARIFY.
+   Only suggest a circuit change when the design actually warrants one; write
+   "- none" if the circuit is fine as-is. Do NOT edit files or push yourself.
+4. ITERATE (optional, HARD-capped at 3). If a clarification would be resolved
+   by an INSTANT re-sim with a corrected SCENARIO parameter — e.g. the wrong
+   operating point or load was used — you MAY fix it and re-run:
+     a) update the scenario in {_SIM_CONFIG} (e.g. primary_vout_set_V, keyed by
+        '{block_id}'),
+     b) re-run:  python3 sim/iterate_sim.py --block {block_id} --sim-type {sim_type}
+        (it prints the new result JSON). Re-read the result and continue.
+   The CLI enforces a hard limit of 3 re-sims; once it returns limit_reached,
+   STOP iterating and emit the verdict on the best result so far. ONLY iterate
+   when a re-sim genuinely resolves the issue — do NOT iterate for circuit-
+   design problems (those are SUGGESTIONS) or for questions needing external
+   info (those stay in CLARIFY). If no re-sim is warranted, don't iterate.
+
+Finish with a compact block exactly like (SUGGESTIONS is a bullet list of
+circuit edits, one per line; "- none" if no circuit change is warranted):
+  VERDICT: MEETS_SPEC | OUT_OF_SPEC | NEEDS_CLARIFICATION
+  MARGIN: <one line, with the datasheet number you compared against>
+  SUGGESTIONS:
+  - <circuit edit: what to change, to what value, why (datasheet/req)>
+  CLARIFY: <sim-coverage gap or open question, or "none">
+  ITERATIONS: <how many re-sims you ran (0 if none), and what you changed>
+"""
+    # Reset the per-(block,sim) re-sim counter so the agent gets a fresh budget
+    # of 3 this turn (the iterate_sim CLI enforces the cap).
+    try:
+        safe = f"{block_id}_{sim_type}".replace("/", "_")
+        counter = PROJECT_DIR / "sim" / "cache" / f".iter_{safe}.json"
+        counter.parent.mkdir(parents=True, exist_ok=True)
+        counter.write_text(json.dumps({"count": 0}))
+    except OSError:
+        pass
+
+    proc, _cmd = await _spawn_claude(
+        prompt=instructions,
+        system_suffix="",
+        permission_mode="acceptEdits",   # auto-approves cache/scenario edits
+        # Whitelist the bounded iterate CLI so the agent can actually re-sim
+        # (acceptEdits alone blocks arbitrary Bash in non-interactive -p mode).
+        allowed_tools=[
+            "Read", "Edit", "Write", "Glob", "Grep",
+            "Bash(python3 sim/iterate_sim.py:*)",
+            "Bash(python sim/iterate_sim.py:*)",
+        ],
+    )
+    run = _register("sim-interpret")
+    asyncio.create_task(_run_subprocess(run, proc))
+    return run
+
+
+def dscache_cached_mpns() -> list[str]:
+    """MPNs already present in the param cache without a pending clarification."""
+    try:
+        data = json.loads(_SIM_PARAM_CACHE.read_text())
+    except (json.JSONDecodeError, OSError, FileNotFoundError):
+        return []
+    return [m for m, e in data.items() if isinstance(e, dict) and not e.get("needs_clarification")]
+
+
 async def stream_run(run_id: str) -> AsyncIterator[bytes]:
     """SSE generator — replay buffered events then live-tail."""
     run = _RUNS.get(run_id)

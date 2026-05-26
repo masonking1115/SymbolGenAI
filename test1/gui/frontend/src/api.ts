@@ -9,6 +9,8 @@ import type {
   RunStatus,
   RunSummary,
   SheetMeta,
+  SimBlock,
+  SimResult,
   SymbolInfo,
 } from "./types";
 
@@ -107,6 +109,26 @@ export const api = {
     `/api/png/${encodeURIComponent(sheet)}${bust !== undefined ? `?t=${bust}` : ""}`,
   datasheetUrl: (mpn: string) =>
     `/api/library/${encodeURIComponent(mpn)}/datasheet`,
+
+  simBlocks: () => j<{ blocks: SimBlock[] }>("/api/sim/blocks"),
+  simRun: (block: string, simType: string, voutSet = 1.8) =>
+    j<SimResult>("/api/sim/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ block, sim_type: simType, vout_set: voutSet }),
+    }),
+  simSetup: (block: string, simType: string) =>
+    j<{ fresh: boolean; run_id?: string; skipped?: string }>("/api/sim/setup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ block, sim_type: simType }),
+    }),
+  simInterpret: (block: string, simType: string, voutSet = 1.8) =>
+    j<{ run_id: string; sim_ok: boolean }>("/api/sim/interpret", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ block, sim_type: simType, vout_set: voutSet }),
+    }),
 
   librarySymbol: (mpn: string) =>
     j<SymbolInfo>(`/api/library/${encodeURIComponent(mpn)}/symbol`),

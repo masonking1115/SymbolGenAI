@@ -129,4 +129,9 @@ export const I = {
       <path d="M14 7a4 4 0 1 1-4 4l-6 6 3 3 6-6a4 4 0 0 1 4-4" />
     </svg>
   ),
+  Wave: (p: Props = {}) => (
+    <svg {...stroke(p)}>
+      <path d="M2 12h3l2-7 4 14 3-9 2 4h6" />
+    </svg>
+  ),
 };

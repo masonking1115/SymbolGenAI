@@ -18,7 +18,10 @@
 fp-info-cache
 
 # KiCad per-project auto-versioning
-*/.history/
+.history/
+
+# Office temp lock files
+~$*
 
 # Python bytecode cache
 __pycache__/
@@ -26,3 +29,10 @@ __pycache__/
 
 # Locally-exported KiCad PDFs (regenerated on demand)
 test1/kicad/*.pdf
+
+# Simulation runtime artifacts (caches, iter counters, ngspice outputs)
+test1/sim/cache/
+test1/sim/results/
+
+# Review pipeline transient output
+test1/review/findings.json

@@ -1,0 +1,271 @@
+# ============================================================================
+# Curated test-block catalog for the test1 schematic.
+#
+# This is the LIBRARY surfaced in the (future) Simulation tab. Each entry is
+# a testable sub-circuit: what sheet it comes from, which simulation types
+# apply (with the rationale + a concrete pass criterion), which behavioral
+# models it needs, and what boundary stub sits on each cut edge.
+#
+# Reviewer notes (Mason): this is the curation to check. The numbers in
+# `pass` and boundary `params` are first-pass estimates from datasheets +
+# the YAML notes — flag any you want tightened or that look wrong. Stubs
+# reference shapes in stubs.py; models reference builders in models.py.
+#
+# status values:
+#   implemented      — deck builder exists and runs today (PoC)
+#   planned          — curated here, deck builder not yet written
+#   not_simulatable  — no useful SPICE behavior; documented so the tab can
+#                      show *why* rather than silently omitting the sheet.
+# ============================================================================
+
+blocks:
+
+  # --------------------------------------------------------------------------
+  - id: ldo_rail
+    title: LDO power rail (TPS7A8401A + TPS22916)
+    sheet: power.yaml
+    status: implemented
+    description: >
+      +3V3 → TPS7A8401A ANY-OUT LDO → VADJ → TPS22916 load switch → +VDDIO,
+      with full input/output decoupling. The setpoint is selected by the
+      LDO_SET_* globals; for sim it's passed as VOUT_SET.
+    models_needed: [LDO_TPS7A8401A, SW_TPS22916]
+    datasheets:
+      - { mpn: TPS7A8401A, file: tps7a84a.pdf }
+      - { mpn: TPS22916CNYFPR, file: TPS22916CNYFPR.pdf }
+    # Base boundaries describe the steady, rails-already-up case (== op-point).
+    # Each sim_type below overrides only the params that differ for its test.
+    boundaries:
+      "+3V3":   { stub: RailIn,       params: { V: 3.3, R_src: 0.020 } }
+      LDO_EN:   { stub: DigitalDrive, params: { t_on: 0 } }      # static-high
+      LSW_EN:   { stub: DigitalDrive, params: { t_on: 0 } }      # static-high
+      "+VDDIO": { stub: RailOut,      params: { I_base: 0.010 } } # steady 10mA
+      LDO_PG:   { stub: DigitalOut,   params: { pull_to: V3V3, R_pull: 10e3 } }
+    sim_types:
+      - type: dc_op_point
+        rationale: Confirm every rail settles where it should and the LDO isn't in dropout.
+        pass: "|V_measured - V_expected| <= 50mV on +3V3/LDO_OUT/VADJ; <= 100mV on +VDDIO (Rdson drop)."
+        # Uses base boundaries unchanged (static EN, steady 10mA load).
+      - type: transient_powerup
+        rationale: >
+          STIMULUS CHECK (not autonomous sequencing): with the FPGA driving
+          LDO_EN before LSW_EN as modeled, verifies the rails ramp in order and
+          inrush stays bounded. The real bring-up ORDER is FPGA firmware, off-
+          schematic; this confirms the analog response to that assumed timing.
+        pass: "LDO_OUT crosses 90% before +VDDIO; peak inrush <= 1A."
+        boundary_overrides:
+          LDO_EN:   { t_on: 100e-6 }       # ASSUMED FPGA timing: LDO enable at 100us
+          LSW_EN:   { t_on: 600e-6 }       # ASSUMED FPGA timing: switch enable at 600us
+          "+VDDIO": { R_load: 36 }          # resistive load (tracks rising rail)
+      - type: transient_load_step
+        rationale: Decoupling must hold the rail under a dynamic load from Bobcat.
+        pass: "Droop on +VDDIO <= 50mV and recovery to within 25mV <= 100us for a 10->100mA step."
+        boundary_overrides:
+          "+VDDIO": { I_step: 0.090, t_step: 8e-3 }   # 10 -> 100mA step, after the 3ms switch turn-on settles
+      - type: line_regulation
+        rationale: Output must hold regulation as the FMC +3V3 rail varies across tolerance.
+        pass: "Vout span <= 10mV across +3V3 = 3.0..3.6V, and mean Vout within 50mV of setpoint."
+        # Uses base boundaries (static EN, steady load); the deck sweeps the +3V3 source.
+      - type: setpoint_coverage
+        rationale: >
+          The ANY-OUT LDO exposes several selectable rails (LDO_SET_*). Every
+          selectable output must regulate with dropout headroom, not just one.
+        pass: "Each setpoint (0.8/1.0/1.2/1.5/1.8V) regulates within 50mV with >=0.3V headroom."
+        # Runs a DC op-point per setpoint internally (no single deck / boundary set).
+      - type: output_noise
+        status: planned
+        rationale: The low-noise LDO feeds sensitive analog; rail noise density matters.
+        pass: "Integrated output noise within budget (TBD)."
+        defer_reason: "Behavioral LDO is noiseless; a .noise run needs the TPS7A8401A noise-density spec to mean anything."
+    notes: >
+      VADJ is tied to LDO_OUT through the jumper (RJUMP) rather than stubbed,
+      since in normal operation the LDO sets the rail the load switch passes.
+      LDO_SET_* are not stubbed individually; the selected setpoint is the
+      VOUT_SET parameter.
+
+  # --------------------------------------------------------------------------
+  - id: opa_bias
+    title: V-to-I bias loop (OPA2388 + PMZ1200 PMOS)
+    sheet: bias.yaml
+    status: implemented
+    description: >
+      Per-channel precision current source: MCP4728 DAC voltage → OPA2388
+      +IN; opamp drives a PMOS gate; PMOS source returns to +3V3 through a
+      5.11k 0.1% sense R; opamp -IN samples the source node (closed loop).
+      PMOS drain → 2N7002 isolator → BIASx. The loop forces I_bias =
+      (3V3 - V_DAC)/5.11k, so the DAC inversely sets 0..646uA.
+    models_needed: [OPA2388, PMOS_PMZ1200, NMOS_2N7002]
+    datasheets:
+      - { mpn: OPA2388, file: opa2388.pdf }
+      - { mpn: MCP4728, file: 22187E.pdf }
+      - { mpn: PMZ1200UPEYL, file: PMZ1200UPE.pdf }
+      - { mpn: 2N7002, file: 2n7002.pdf }
+      - { mpn: TNPW06035K11BEEA, file: tnpw_e3.pdf }
+    boundaries:
+      "+3V3":      { stub: RailIn,        params: { V: 3.3, R_src: 0.020 } }
+      BIAS0:       { stub: AnalogOutLoad, params: { R_load: 100, C_load: 20e-12 } }
+      BIAS_ISO0:   { stub: DigitalDrive,  params: { t_on: 0, V_hi: 3.3 } }   # isolator ON
+    sim_types:
+      - type: dc_sweep
+        rationale: >
+          Sweep DAC 0..3.3V; the loop should force I_bias = (3V3-V_DAC)/5.11k.
+          This is the headline spec — V-to-I accuracy across the output range.
+        pass: "I_BIAS error vs ideal <= 1% from 10% to 100% of full-scale (646uA)."
+      - type: ac_stability
+        rationale: >
+          opamp + PMOS gate (capacitive load) + sense-R form a feedback loop —
+          classic stability risk. Closed-loop peaking is the phase-margin proxy.
+        pass: "Closed-loop peaking <= 3 dB (≈ phase margin >= 45 degrees)."
+      - type: transient_settling
+        rationale: When the FPGA writes a new DAC code, BIASx must settle without ringing.
+        pass: "Bias current settles within 1% <= 50us, no sustained oscillation, for a mid-scale step."
+      - type: por_failsafe
+        rationale: >
+          Safety gate. A virgin MCP4728 powers up at code 0xFFF (VOUT=VDD) and
+          BIAS_ISO is held low by its gate pull-down, so NO bias must reach the
+          DUT until the FPGA enables it.
+        pass: "Bias current into the DUT at POR <= 1uA."
+        boundary_overrides:
+          BIAS_ISO0: { V_hi: 0 }     # isolator OFF (gate pull-down at POR)
+      - type: monte_carlo_accuracy
+        status: planned
+        rationale: >
+          Worst-case full-scale accuracy is a tolerance stack-up (5.11k 0.1%
+          sense R + op-amp offset distribution). Nominal-value sims can't sign
+          this off. Doesn't need new device models — just parameter variation.
+        pass: "3-sigma I_bias error <= 1% across the regulated range."
+        defer_reason: "Needs an ngspice Monte Carlo control loop (agauss on R_sense/Vos). No new models required — this is the clear next implementation step."
+      - type: output_noise
+        status: planned
+        rationale: >
+          BIASx output noise corrupts the DUT measurement — the precision spec.
+        pass: "Integrated BIASx RMS current noise within budget (TBD per DUT)."
+        defer_reason: "Behavioral OPA2388 is noiseless; a .noise run needs the datasheet input voltage-noise density + 1/f corner to be meaningful."
+      - type: temp_drift
+        status: planned
+        rationale: Accuracy over temperature (op-amp offset drift + sense-R tempco).
+        pass: "I_bias drift <= 0.5% over 0..70 C."
+        defer_reason: "Needs tempco data (op-amp Vos drift, R tempco) the behavioral models don't carry."
+    notes: >
+      Single channel (ch-0); ch-1 is identical. The MCP4728 is INSIDE the
+      block — I2C control isn't simulated; the DAC output is a programmable
+      source we sweep/step. The BIAS0 output is wrapped with an ammeter in the
+      deck (low-compliance current-input load) so the delivered current is
+      measurable. Behavioral op-amp: good for accuracy/stability/settling, but
+      NOT noise (see opa_bias_noise, deferred).
+
+  # --------------------------------------------------------------------------
+  - id: vddio_pdn
+    title: VDDIO decoupling network (PDN)
+    sheet: bobcat.yaml
+    status: implemented
+    description: >
+      The +VDDIO decoupling bank (C24-C29 row + power-sheet bulk). Tests the
+      power-distribution network the chip sees, independent of how +VDDIO is
+      generated. Each cap is modeled as series R-L-C (ESR + ESL).
+    models_needed: []
+    sim_types:
+      - type: transient_load_step
+        rationale: >
+          The schematic-level decoupling gate. A fast load step exposes whether
+          the cap bank can supply the transient charge — verified sensitive:
+          stripping caps drives droop well past the limit (catches a dropped C29).
+        pass: "Droop <= 30mV for a 50->250mA step (100ns edge)."
+      - type: ac_pdn_impedance
+        status: planned
+        rationale: >
+          Z(f) profile + anti-resonance peak. Sensitive to decoupling, BUT the
+          peak magnitude is dominated by supply-path inductance (a LAYOUT value):
+          ~115mOhm at 2nH vs ~1.1Ohm at 20nH for the same caps.
+        pass: "|Z(+VDDIO)| peak <= 100mOhm across 100kHz-50MHz."
+        defer_reason: "The anti-resonance peak is set by board L_src (layout), not the schematic. Needs PCB parasitic extraction to give a trustworthy absolute Z; the schematic-level decoupling gate is the load-step."
+    datasheets:
+      - { mpn: GRM155R71C104KA88D, file: GRM155R71C104KA88-01.pdf }
+      - { mpn: GRM155R70J105KA12D, file: GRM155R70J105KA12-01.pdf }
+      - { mpn: Bobcat, file: Bobcat_preview.pdf }
+    boundaries:
+      "+VDDIO": { stub: RailIn, params: { V: 1.8, R_src: 0.005, L_src: 10e-9 } }
+    notes: >
+      Caps modeled with ESR + ESL. Source modeled as R_src + L_src (inductive
+      above the VRM bandwidth) so the cap bank actually determines the response
+      — without L_src a flat low-Z source masks the decoupling entirely.
+
+  # --------------------------------------------------------------------------
+  - id: vddd_pdn
+    title: VDDD decoupling network (PDN)
+    sheet: bobcat.yaml
+    status: implemented
+    description: >
+      The +VDDD decoupling (C20 0.1uF + C21 1uF, per-pin caps on the SPI-exit
+      domain). Same R-L-C PDN treatment as VDDIO, on a smaller cap bank.
+    models_needed: []
+    sim_types:
+      - type: transient_load_step
+        rationale: Confirm the 2-cap VDDD bank holds the rail under a load step.
+        pass: "Droop <= 50mV for a 50->250mA step (100ns edge)."
+      - type: ac_pdn_impedance
+        status: planned
+        rationale: Z(f) profile; peak dominated by layout supply inductance.
+        pass: "|Z(+VDDD)| peak <= 200mOhm (fewer caps than VDDIO; looser target)."
+        defer_reason: "Same as vddio_pdn — the anti-resonance peak is a layout (L_src) property; needs PCB extraction. Schematic gate is the load-step."
+    datasheets:
+      - { mpn: GRM155R71C104KA88D, file: GRM155R71C104KA88-01.pdf }
+      - { mpn: GRM155R70J105KA12D, file: GRM155R70J105KA12-01.pdf }
+      - { mpn: Bobcat, file: Bobcat_preview.pdf }
+    boundaries:
+      "+VDDD": { stub: RailIn, params: { V: 1.8, R_src: 0.010, L_src: 15e-9 } }
+    notes: >
+      Only two caps (C20/C21), so the impedance target is looser than VDDIO.
+      VDDA1/VDDA2 are NOT covered: their single decoupling cap sits on a
+      post-series-0R internal node, which needs extra netlist plumbing to
+      collect — deferred (see notes), low value (one cap each).
+
+  # --------------------------------------------------------------------------
+  - id: system_sequencing
+    title: System-level multi-rail sequencing
+    sheet: (power + bias + bobcat)
+    status: planned
+    description: >
+      The pass-2 integration test: full 3V3 -> LDO -> {VDDD/VDDA1/VDDA2 +
+      VDDIO} plus bias-enable, confirming a safe bring-up order and that bias
+      stays off the DUT until all rails are up. Each block's own power-up is
+      already covered; this stitches them together.
+    models_needed: []
+    sim_types:
+      - type: multi_rail_sequencing
+        status: planned
+        rationale: Confirm safe whole-board bring-up order + bias-after-rails interlock.
+        pass: "All rails settle in the intended order; bias current = 0 until rails are up."
+        defer_reason: "Requires composing the power + bias decks into one integration deck (the two-pass boundary-extraction scheme) — build after the per-block sims are accepted."
+
+  # --------------------------------------------------------------------------
+  # Not simulatable — documented so the tab explains the gap.
+  # --------------------------------------------------------------------------
+  - id: eeprom
+    title: I2C EEPROM (24AA08)
+    sheet: eeprom.yaml
+    status: not_simulatable
+    reason: >
+      Digital I2C device on +3V3 with a decoupling cap. No analog behavior
+      worth a SPICE model; correctness is protocol/addressing, which belongs
+      to the design-review / netlist checks, not simulation. (A trivial
+      decoupling check could fold into vddio_pdn-style PDN if ever wanted.)
+
+  - id: fmc
+    title: VITA 57.1 FMC connector (ASP-134606-01)
+    sheet: fmc.yaml
+    status: not_simulatable
+    reason: >
+      Pure connector + 0R routing network. No active devices; "correctness"
+      is pinout/routing, checked by the strict netlist validator. Signal-
+      integrity of the LA bank is a PCB-layout (impedance) concern, not a
+      schematic-level SPICE one.
+
+  - id: connectors
+    title: SMAs / GPIO header / GND clips
+    sheet: connectors.yaml
+    status: not_simulatable
+    reason: >
+      Passive coaxial + header connectors with 0R series elements. Nothing to
+      bias or solve; any meaningful analysis (SMA impedance, return loss) is
+      EM/PCB-layout territory, not schematic SPICE.

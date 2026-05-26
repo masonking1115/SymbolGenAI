@@ -69,6 +69,11 @@ FINDINGS_JSON = PROJECT_DIR / "review" / "findings.json"
 SEMANTIC_FINDINGS = PROJECT_DIR / "review" / "semantic_findings.json"
 DESIGN_REQS = PROJECT_DIR / "design_requirements.md"
 
+# Make the sim package importable as `test1.sim` (repo root on path).
+sys.path.insert(0, str(PROJECT_DIR.parent))
+from test1.sim import service as sim_service  # noqa: E402
+from test1.sim import simconfig as sim_config  # noqa: E402
+
 
 # ---------------------------------------------------------------------------
 # Run registry
@@ -1024,6 +1029,82 @@ def changelog_delete(item_id: str) -> dict:
 def changelog_clear() -> dict:
     agent_mod.clear_changelog()
     return {"ok": True}
+
+
+# ---- Simulation (ngspice-backed) -----------------------------------------
+class SimRunReq(BaseModel):
+    block: str
+    sim_type: str
+    # None → the service uses the agent-determined operating point (sim_config),
+    # falling back to 1.8V only if no scenario has been determined yet.
+    vout_set: float | None = None
+
+
+@app.get("/api/sim/blocks")
+def sim_blocks() -> dict:
+    return {"blocks": sim_service.list_blocks()}
+
+
+@app.post("/api/sim/run")
+def sim_run(req: SimRunReq) -> dict:
+    """Run one (block, sim_type). Synchronous — sims finish in ~1s and
+    FastAPI runs sync endpoints in a threadpool, so the ngspice subprocess
+    blocks its worker thread, not the event loop."""
+    try:
+        return sim_service.run_block_sim(req.block, req.sim_type, vout_set=req.vout_set)
+    except KeyError as e:
+        raise HTTPException(404, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/sim/setup")
+async def sim_setup(req: SimRunReq) -> dict:
+    """Context-first stage: if the block's scenario is stale or missing, spawn
+    the agent to read datasheets + requirements + the current design and write
+    the device params + operating-point scenario. If fresh, skip — the sim can
+    run immediately on the cached scenario (cache-gated)."""
+    blocks = {b["id"]: b for b in sim_service.list_blocks()}
+    block = blocks.get(req.block)
+    if not block:
+        raise HTTPException(404, f"no block {req.block!r}")
+    if block.get("status") != "implemented":
+        return {"fresh": True, "skipped": "block not runnable"}
+    if sim_config.is_fresh(block):
+        return {"fresh": True}
+    run = await agent_mod.start_sim_setup(
+        block_id=req.block,
+        datasheets=block.get("datasheets", []),
+        sheet=block.get("sheet", ""),
+    )
+    return {"fresh": False, "run_id": run.run_id}
+
+
+@app.post("/api/sim/interpret")
+async def sim_interpret(req: SimRunReq) -> dict:
+    """Run the sim, then spawn the agent to read the block's datasheets +
+    requirements, cache the extracted device parameters, and interpret the
+    result against spec. Returns an agent run_id to stream via
+    /api/agent/{run_id}/stream."""
+    res = sim_service.run_block_sim(req.block, req.sim_type, vout_set=req.vout_set)
+    if res.get("status") not in ("ran",):
+        raise HTTPException(400, f"sim not runnable ({res.get('status')}): {res.get('message','')}")
+
+    blocks = {b["id"]: b for b in sim_service.list_blocks()}
+    block = blocks.get(req.block, {})
+    compact = {
+        "block": req.block, "sim_type": req.sim_type,
+        "ok": res.get("ok"), "analysis": res.get("analysis"),
+        "op_point": res.get("op_point"),
+    }
+    run = await agent_mod.start_sim_interpret(
+        block_id=req.block,
+        sim_type=req.sim_type,
+        pass_criterion=res.get("pass_criterion") or "",
+        datasheets=block.get("datasheets", []),
+        result_json=json.dumps(compact, indent=2),
+    )
+    return {"run_id": run.run_id, "sim_ok": res.get("ok")}
 
 
 # ---- Generate with changelog-apply ----------------------------------------

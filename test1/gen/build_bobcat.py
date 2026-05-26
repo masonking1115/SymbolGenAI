@@ -30,6 +30,7 @@ from .shared import (
     no_connect,
     place_from_netlist,
     power_at,
+    text,
     wire,
 )
 from .validator import validate
@@ -71,6 +72,7 @@ def build_bobcat() -> Sheet:
         place_from_netlist(s, nl, ref, x=px, y=VDDD_CAP_Y)
         s.add(wire(px, VDDD_CAP_Y + 3.81, px, GND_BELOW_Y))
         power_at(s, "GND", px, GND_BELOW_Y)
+    s.add(text("VDDD core bypass", min(U1["12"][0], U1["20"][0]) - 2.54, VDDD_CAP_Y, justify="right"))
 
     # ===== Cluster D: VDDA1 path (pin 1) =====
     # Chip pins 2–11 exit LEFT along x = p1_x → p1_x - 12.7, crossing the
@@ -144,6 +146,7 @@ def build_bobcat() -> Sheet:
         power_at(s, "+VDDIO", cx, cy - 7.62, angle=90)
         s.add(wire(cx, cy + 3.81, cx, cy + 7.62))
         power_at(s, "GND", cx, cy + 7.62)
+    s.add(text("VDDIO supply bypass", VDDIO_ROW_X_END - 5*5.08 - 2.54, VDDIO_ROW_Y, justify="right"))
 
     # ===== Cluster F: Pull-up/down network =====
     SPI_PINS = [

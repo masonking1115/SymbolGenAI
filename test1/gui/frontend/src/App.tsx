@@ -8,12 +8,14 @@ import { AgentRail } from "./components/AgentRail";
 import { Generator } from "./tabs/Generator";
 import { Library } from "./tabs/Library";
 import { Review } from "./tabs/Review";
+import { Simulation } from "./tabs/Simulation";
 import type { PhaseEvent, StagePhase, TabKey } from "./types";
 
 const TAB_TITLES: Record<TabKey, string> = {
   library: "Library / Bobcat Carrier",
   generator: "Schematic Generator / test1",
   review: "Design Review / test1",
+  simulation: "Simulation / test1",
 };
 
 export default function App() {
@@ -69,6 +71,8 @@ export default function App() {
   const mainContent =
     tab === "library" ? (
       <Library />
+    ) : tab === "simulation" ? (
+      <Simulation setHealth={setHealth} />
     ) : tab === "review" ? (
       <Review
         onArtifactsChanged={onArtifactsChanged}
