@@ -294,14 +294,14 @@ def run(findings: list[Finding], *,
         for n in prop.notes:
             print(f"    note: {n}")
 
-        if non_interactive:
-            print("  (non-interactive — skipping)")
-            print()
-            continue
-
         if apply_trivial and f.autofix in ("pullup_pulldown", "decoupling"):
             print("  → auto-applying (trivial bucket)")
             _apply(prop)
+            print()
+            continue
+
+        if non_interactive:
+            print("  (non-interactive — skipping)")
             print()
             continue
 
