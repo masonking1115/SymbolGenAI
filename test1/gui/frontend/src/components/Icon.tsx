@@ -134,4 +134,30 @@ export const I = {
       <path d="M2 12h3l2-7 4 14 3-9 2 4h6" />
     </svg>
   ),
+  Resources: (p: Props = {}) => (
+    <svg {...stroke(p)}>
+      <path d="M12 3 3 7.5 12 12l9-4.5L12 3z" />
+      <path d="M3 12l9 4.5L21 12" />
+      <path d="M3 16.5 12 21l9-4.5" />
+    </svg>
+  ),
+  Datasheet: (p: Props = {}) => (
+    <svg {...stroke(p)}>
+      <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
+      <path d="M14 3v6h6" />
+      <path d="M8 13h8M8 17h8M8 9h2" />
+    </svg>
+  ),
+  Upload: (p: Props = {}) => (
+    <svg {...stroke(p)}>
+      <path d="M12 16V4M7 9l5-5 5 5" />
+      <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+    </svg>
+  ),
+  Trash: (p: Props = {}) => (
+    <svg {...stroke(p)}>
+      <path d="M4 7h16M10 11v6M14 11v6" />
+      <path d="M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13M9 7V4h6v3" />
+    </svg>
+  ),
 };

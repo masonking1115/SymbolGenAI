@@ -87,7 +87,32 @@ export interface RunStatus {
   lines: string[];
 }
 
-export type TabKey = "library" | "generator" | "review" | "simulation";
+export type TabKey =
+  | "resources"
+  | "library"
+  | "generator"
+  | "review"
+  | "simulation";
+
+export type ResourceSubTab = "datasheets" | "requirements" | "skills";
+
+export interface DatasheetItem {
+  mpn: string;
+  file: string;
+  size: number;
+}
+
+export interface RequirementDoc {
+  name: string;
+  size: number;
+}
+
+export interface SkillItem {
+  slug: string;
+  title: string;
+  size: number;
+  updated: number;
+}
 
 export type SimBlockStatus = "implemented" | "planned" | "not_simulatable";
 
@@ -162,6 +187,21 @@ export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   ts: number;
+}
+
+export interface ChatSessionMeta {
+  id: string;
+  title: string;
+  created: number;
+  updated: number;
+  is_default: boolean;
+  message_count: number;
+  has_summary: boolean;
+}
+
+export interface ChatSession extends ChatSessionMeta {
+  messages: ChatMessage[];
+  summary: string | null;
 }
 
 export interface ChangelogItem {

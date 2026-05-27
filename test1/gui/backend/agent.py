@@ -21,8 +21,11 @@ No API key is read from the env. The subprocess inherits the user's env.
 
 State on disk
 -------------
-  state/chat.json      — conversation transcript (advisory; agent reads it
-                         too, on each chat turn, so multi-turn context works)
+  state/chats.json     — multi-session chat store: per-session transcript +
+                         compacted summary. Replayed each chat turn so
+                         multi-turn context works; the default session is the
+                         one the GUI selects on load.
+  state/chat.json      — legacy single transcript (migrated into chats.json)
   state/changelog.json — queued items: [{id, summary, source, ts}]
   state/status.json    — most recent pipeline status snapshot
 """
@@ -45,7 +48,8 @@ from typing import AsyncIterator
 HERE = Path(__file__).resolve().parent
 PROJECT_DIR = HERE.parent.parent          # test1/
 STATE_DIR = HERE.parent / "state"         # test1/gui/state/
-CHAT_FILE = STATE_DIR / "chat.json"
+CHAT_FILE = STATE_DIR / "chat.json"       # legacy single transcript (migrated)
+CHATS_FILE = STATE_DIR / "chats.json"     # multi-session chat store
 CHANGELOG_FILE = STATE_DIR / "changelog.json"
 STATUS_FILE = STATE_DIR / "status.json"
 
@@ -73,11 +77,174 @@ def _save(path: Path, value) -> None:
 
 
 def load_chat() -> list[dict]:
+    """Legacy single transcript — only read during one-time migration."""
     return _load(CHAT_FILE, [])
 
 
-def save_chat(history: list[dict]) -> None:
-    _save(CHAT_FILE, history)
+# ---------------------------------------------------------------------------
+# Multi-session chat store
+# ---------------------------------------------------------------------------
+# chats.json shape:
+#   {"sessions": [{id, title, created, updated, summary, messages:[...]}],
+#    "default_id": "<id>"}
+# A session's `summary` holds compacted earlier context (null until compacted);
+# `messages` is the live tail since the last compaction. The default session is
+# the one selected when the GUI loads.
+def _new_id() -> str:
+    return uuid.uuid4().hex[:10]
+
+
+def _general_session() -> dict:
+    now = time.time()
+    return {
+        "id": _new_id(),
+        "title": "General",
+        "created": now,
+        "updated": now,
+        "summary": None,
+        "messages": [],
+    }
+
+
+def load_sessions() -> dict:
+    """Load the session store, migrating the legacy flat chat.json on first
+    use and guaranteeing at least one session plus a valid default_id."""
+    store = _load(CHATS_FILE, None)
+    if store is None:
+        legacy = load_chat()
+        seed = _general_session()
+        if isinstance(legacy, list) and legacy:
+            seed["messages"] = legacy
+        store = {"sessions": [seed], "default_id": seed["id"]}
+        save_sessions(store)
+        return store
+    changed = False
+    if not store.get("sessions"):
+        seed = _general_session()
+        store["sessions"] = [seed]
+        store["default_id"] = seed["id"]
+        changed = True
+    if store.get("default_id") not in {s["id"] for s in store["sessions"]}:
+        store["default_id"] = store["sessions"][0]["id"]
+        changed = True
+    if changed:
+        save_sessions(store)
+    return store
+
+
+def save_sessions(store: dict) -> None:
+    _save(CHATS_FILE, store)
+
+
+def _find_session(store: dict, sid: str) -> dict | None:
+    for s in store["sessions"]:
+        if s["id"] == sid:
+            return s
+    return None
+
+
+def _session_meta(s: dict, default_id: str | None) -> dict:
+    return {
+        "id": s["id"],
+        "title": s.get("title", "Chat"),
+        "created": s.get("created", 0),
+        "updated": s.get("updated", 0),
+        "is_default": s["id"] == default_id,
+        "message_count": len(s.get("messages", [])),
+        "has_summary": bool(s.get("summary")),
+    }
+
+
+def list_sessions() -> dict:
+    store = load_sessions()
+    did = store.get("default_id")
+    return {
+        "sessions": [_session_meta(s, did) for s in store["sessions"]],
+        "default_id": did,
+    }
+
+
+def get_session(sid: str) -> dict | None:
+    store = load_sessions()
+    s = _find_session(store, sid)
+    if not s:
+        return None
+    return {
+        **_session_meta(s, store.get("default_id")),
+        "messages": s.get("messages", []),
+        "summary": s.get("summary"),
+    }
+
+
+def create_session(title: str | None = None) -> dict:
+    store = load_sessions()
+    s = _general_session()
+    s["title"] = (title or "New chat").strip()[:60] or "New chat"
+    store["sessions"].append(s)
+    save_sessions(store)
+    return _session_meta(s, store.get("default_id"))
+
+
+def delete_session(sid: str) -> bool:
+    store = load_sessions()
+    kept = [s for s in store["sessions"] if s["id"] != sid]
+    if len(kept) == len(store["sessions"]):
+        return False
+    store["sessions"] = kept
+    if store.get("default_id") == sid:
+        store["default_id"] = kept[0]["id"] if kept else None
+    save_sessions(store)
+    load_sessions()  # re-seed if that emptied the store
+    return True
+
+
+def rename_session(sid: str, title: str) -> bool:
+    store = load_sessions()
+    s = _find_session(store, sid)
+    if not s:
+        return False
+    s["title"] = title.strip()[:60] or s.get("title", "Chat")
+    s["updated"] = time.time()
+    save_sessions(store)
+    return True
+
+
+def set_default_session(sid: str) -> bool:
+    store = load_sessions()
+    if not _find_session(store, sid):
+        return False
+    store["default_id"] = sid
+    save_sessions(store)
+    return True
+
+
+def clear_session(sid: str) -> bool:
+    store = load_sessions()
+    s = _find_session(store, sid)
+    if not s:
+        return False
+    s["messages"] = []
+    s["summary"] = None
+    s["updated"] = time.time()
+    save_sessions(store)
+    return True
+
+
+def append_session_msg(sid: str, role: str, content: str) -> dict | None:
+    store = load_sessions()
+    s = _find_session(store, sid)
+    if not s:
+        return None
+    entry = {
+        "id": uuid.uuid4().hex[:10],
+        "role": role,
+        "content": content,
+        "ts": time.time(),
+    }
+    s.setdefault("messages", []).append(entry)
+    s["updated"] = entry["ts"]
+    save_sessions(store)
+    return entry
 
 
 def load_changelog() -> list[dict]:
@@ -86,19 +253,6 @@ def load_changelog() -> list[dict]:
 
 def save_changelog(items: list[dict]) -> None:
     _save(CHANGELOG_FILE, items)
-
-
-def append_chat(role: str, content: str) -> dict:
-    history = load_chat()
-    entry = {
-        "id": uuid.uuid4().hex[:10],
-        "role": role,
-        "content": content,
-        "ts": time.time(),
-    }
-    history.append(entry)
-    save_chat(history)
-    return entry
 
 
 def append_changelog(summary: str, source: str = "agent") -> dict:
@@ -157,24 +311,50 @@ Be terse. The user can see your tool calls; don't narrate them.
 """
 
 _CHAT_INSTRUCTIONS = f"""\
-This is a CHAT TURN. Rules:
+This is a CHAT TURN in a general, long-lived working session. You are the
+user's thinking partner for this project. The PRIMARY purpose of this session
+is to build and RETAIN deep context about the whole system — the schematic,
+the parts library, the simulation work, and the design review — and to answer
+the user's questions accurately. This is NOT primarily a "what should we
+change" channel; do not steer every turn toward edits.
 
-1. DO NOT edit netlist/*.yaml or gen/*.py on a chat turn. Those edits
-   happen only at apply-changelog time (separate invocation, different
-   instructions).
-2. When the user asks for changes to the schematic — even small ones —
-   append a one-line bullet to the changelog by writing to
-   {CHANGELOG_FILE} (read it first, append your entry, write it back).
-   Each entry is a JSON object: {{"id": "<8-hex>", "summary": "<one line>",
-   "source": "agent", "ts": <unix epoch>}}.
-3. Respond to the user in plain prose. If you added changelog items, list
-   them at the end so the user sees them. Keep it short (≤3 sentences plus
-   the bullets).
-4. If the user asks a question that doesn't require changes (e.g. "what
-   does this part do?", "why is the bias circuit fail-safe?"), just
-   answer — no changelog entry.
-5. Tools you may use freely: Read, Grep (Bash with grep), Glob. Edit/Write
-   should be limited to the changelog file on chat turns.
+How to behave:
+1. Prioritize understanding. When the user asks about the design, READ the
+   relevant sources and answer from what you actually find — cite the file or
+   the number. Proactively gather context you're missing instead of guessing.
+   Useful sources:
+     - netlist/*.yaml            as-built parts + nets
+     - gen/build_<sheet>.py      placement code per sheet
+     - design_requirements.md    spec / intent
+     - review/ findings + rules  design-review state
+     - sim/cache/*, sim/results/ simulation params + outputs
+     - Parts Library/<MPN>/      datasheets + symbols
+2. Retain context. The earlier conversation in THIS session is replayed to you
+   (and may begin with a compacted summary). Build on it; keep continuity.
+3. Read freely: Read, Glob, Grep (Bash for grep/inspection). Answer in plain
+   prose, terse — the user can see your tool calls, so don't narrate them.
+4. DO NOT edit netlist/*.yaml or gen/*.py on a chat turn. Design edits happen
+   only at apply-changelog time (a separate invocation).
+5. Changelog is SECONDARY and opt-in. ONLY when the user EXPLICITLY asks for a
+   design change should you append a one-line bullet to {CHANGELOG_FILE} (read
+   it first, append {{"id": "<8-hex>", "summary": "<one line>", "source":
+   "agent", "ts": <unix epoch>}}, write it back) and tell the user what you
+   queued. If the user is asking a question, exploring, or building context,
+   DO NOT touch the changelog.
+"""
+
+
+_COMPACT_INSTRUCTIONS = """\
+This is a COMPACTION pass. You are given the running transcript of a chat
+session (optionally preceded by an earlier summary). Produce a dense, faithful
+briefing that preserves everything needed to continue the session seamlessly:
+  - the user's goals, preferences, and how they want to work,
+  - key facts learned about the schematic / library / simulation / review,
+  - decisions made and their rationale,
+  - open questions and anything still in progress,
+  - any changelog items queued this session.
+Write compact prose and bullets. Do NOT use any tools. Output ONLY the summary
+text — no preamble, no sign-off.
 """
 
 _APPLY_INSTRUCTIONS = f"""\
@@ -196,14 +376,22 @@ You will receive a list of changelog items the user accumulated. Your job:
 """
 
 
-def _build_chat_prompt(history: list[dict], new_user_msg: str) -> str:
-    """Stitch prior conversation + the new user turn into one prompt string.
+def _build_chat_prompt(session: dict, new_user_msg: str) -> str:
+    """Stitch the session's compacted summary + recent turns + the new user
+    turn into one prompt string.
 
-    `claude -p` is one-shot; multi-turn continuity comes from replaying
-    history. Capped at MAX_HISTORY_TURNS so prompts don't grow unbounded.
+    `claude -p` is one-shot; multi-turn continuity comes from replaying the
+    session. The live tail is capped at MAX_HISTORY_TURNS so prompts don't grow
+    unbounded — older context lives in the (compacted) summary.
     """
-    tail = history[-MAX_HISTORY_TURNS:] if len(history) > MAX_HISTORY_TURNS else history
+    messages = session.get("messages", [])
+    summary = session.get("summary")
+    tail = messages[-MAX_HISTORY_TURNS:] if len(messages) > MAX_HISTORY_TURNS else messages
     lines = []
+    if summary:
+        lines.append("Summary of earlier conversation in this session:")
+        lines.append(summary)
+        lines.append("")
     if tail:
         lines.append("Prior conversation:")
         for t in tail:
@@ -211,6 +399,23 @@ def _build_chat_prompt(history: list[dict], new_user_msg: str) -> str:
             lines.append(f"  {role}: {t['content']}")
         lines.append("")
     lines.append(f"Current user message: {new_user_msg}")
+    return "\n".join(lines)
+
+
+def _build_compact_prompt(session: dict) -> str:
+    messages = session.get("messages", [])
+    summary = session.get("summary")
+    if not messages and not summary:
+        return "There is nothing to summarize. Respond with: NOTHING_TO_COMPACT"
+    lines = []
+    if summary:
+        lines.append("Earlier summary of this session:")
+        lines.append(summary)
+        lines.append("")
+    lines.append("Conversation to compact (oldest first):")
+    for t in messages:
+        role = "User" if t["role"] == "user" else "Assistant"
+        lines.append(f"  {role}: {t['content']}")
     return "\n".join(lines)
 
 
@@ -372,12 +577,16 @@ def _register(kind: str) -> AgentRun:
     return run
 
 
-async def start_chat_turn(user_msg: str) -> AgentRun:
-    """Append the user's message to history, kick off `claude -p`, return
+async def start_chat_turn(session_id: str, user_msg: str) -> AgentRun:
+    """Append the user's message to the session, kick off `claude -p`, return
     the AgentRun. Caller subscribes via SSE to see the response stream."""
-    append_chat("user", user_msg)
-    history = load_chat()[:-1]  # exclude the just-appended user turn
-    prompt = _build_chat_prompt(history, user_msg)
+    append_session_msg(session_id, "user", user_msg)
+    store = load_sessions()
+    session = _find_session(store, session_id) or {"messages": [], "summary": None}
+    # Build from the session state EXCLUDING the just-appended user turn (it's
+    # passed separately as the current message).
+    prior = {**session, "messages": session.get("messages", [])[:-1]}
+    prompt = _build_chat_prompt(prior, user_msg)
     proc, _cmd = await _spawn_claude(
         prompt=prompt,
         system_suffix=_CHAT_INSTRUCTIONS,
@@ -387,9 +596,42 @@ async def start_chat_turn(user_msg: str) -> AgentRun:
 
     async def driver() -> None:
         await _run_subprocess(run, proc)
-        # Persist the assistant's final text into chat history.
+        # Persist the assistant's final text into the session transcript.
         if run.text.strip():
-            append_chat("assistant", run.text.strip())
+            append_session_msg(session_id, "assistant", run.text.strip())
+
+    asyncio.create_task(driver())
+    return run
+
+
+async def start_compact(session_id: str) -> AgentRun | None:
+    """Summarize a session and collapse its transcript. On completion the
+    session's `summary` is replaced with the briefing and `messages` is
+    emptied — future turns replay the summary instead of the full history."""
+    store = load_sessions()
+    session = _find_session(store, session_id)
+    if not session:
+        return None
+    prompt = _build_compact_prompt(session)
+    proc, _cmd = await _spawn_claude(
+        prompt=prompt,
+        system_suffix=_COMPACT_INSTRUCTIONS,
+        permission_mode="acceptEdits",
+    )
+    run = _register("compact")
+
+    async def driver() -> None:
+        await _run_subprocess(run, proc)
+        summary = run.text.strip()
+        if not summary or summary == "NOTHING_TO_COMPACT":
+            return
+        st = load_sessions()
+        s = _find_session(st, session_id)
+        if s:
+            s["summary"] = summary
+            s["messages"] = []
+            s["updated"] = time.time()
+            save_sessions(st)
 
     asyncio.create_task(driver())
     return run

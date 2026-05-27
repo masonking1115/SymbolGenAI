@@ -242,7 +242,7 @@ function PartDetail({
                 rel="noreferrer"
                 className="h-7 px-2 text-xs rounded-md border border-edge text-ink-700 hover:border-ink-300 inline-flex items-center gap-1"
               >
-                <I.Folder size={12} /> Datasheet
+                <I.Datasheet size={13} /> Datasheet
               </a>
             )}
             {!sym.present && (

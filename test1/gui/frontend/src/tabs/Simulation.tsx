@@ -356,7 +356,7 @@ export function Simulation({ setHealth, blocks, selected }: Props) {
                       title={`${d.file} — open PDF`}
                       className="h-7 px-2.5 inline-flex items-center gap-1.5 rounded-md border border-edge bg-white text-ink-700 hover:border-ink-300 hover:text-ink-900 text-xs"
                     >
-                      <I.Folder size={13} />
+                      <I.Datasheet size={14} />
                       <span className="font-mono">{d.mpn}</span>
                     </a>
                   ))}

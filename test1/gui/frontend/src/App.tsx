@@ -7,11 +7,13 @@ import { Splitter } from "./components/Splitter";
 import { AgentRail } from "./components/AgentRail";
 import { Generator } from "./tabs/Generator";
 import { Library } from "./tabs/Library";
+import { Resources } from "./tabs/Resources";
 import { Review } from "./tabs/Review";
 import { Simulation } from "./tabs/Simulation";
 import type { PhaseEvent, SimBlock, StagePhase, TabKey } from "./types";
 
 const TAB_TITLES: Record<TabKey, string> = {
+  resources: "Design Resources / test1",
   library: "Library / Bobcat Carrier",
   generator: "Schematic Generator / test1",
   review: "Design Review / test1",
@@ -87,7 +89,9 @@ export default function App() {
   }, [tab]);
 
   const mainContent =
-    tab === "library" ? (
+    tab === "resources" ? (
+      <Resources />
+    ) : tab === "library" ? (
       <Library />
     ) : tab === "simulation" ? (
       <Simulation
@@ -118,11 +122,15 @@ export default function App() {
   //   Generator/Library + !pngOpen → content | AgentRail
   //   Review tab        + pngOpen  → content | PNG
   //   Review tab        + !pngOpen → content
-  const showRail = tab === "generator" || tab === "library" || tab === "simulation";
+  const showRail =
+    tab === "generator" ||
+    tab === "library" ||
+    tab === "simulation" ||
+    tab === "resources";
 
-  // The Library tab is about component symbols (rendered in its own detail
-  // pane), so the full-schematic PNG inspector doesn't belong there.
-  const showPng = pngOpen && tab !== "library";
+  // Library + Design Resources are about component symbols / source files, not
+  // the schematic, so the full-schematic PNG inspector doesn't belong there.
+  const showPng = pngOpen && tab !== "library" && tab !== "resources";
 
   // Generator/Review/Simulation are width-capped content columns, so the
   // canvas should grow into the otherwise-dead gutter on wide screens. Splits
@@ -184,7 +192,7 @@ export default function App() {
         health={healthError ? { text: "backend offline", tone: "err" } : health}
         onTogglePng={() => setPngOpen((v) => !v)}
         pngOpen={pngOpen}
-        canTogglePng={tab !== "library"}
+        canTogglePng={tab !== "library" && tab !== "resources"}
       />
       <div className="flex-1 min-h-0">{body}</div>
     </div>

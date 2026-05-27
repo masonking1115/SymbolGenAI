@@ -13,10 +13,11 @@ interface Props {
 }
 
 const ITEMS: { key: TabKey; label: string; icon: (p?: { size?: number }) => JSX.Element }[] = [
+  { key: "resources", label: "Design Resources", icon: I.Resources },
   { key: "library", label: "Library", icon: I.Library },
   { key: "generator", label: "Schematic Generator", icon: I.Schematic },
-  { key: "review", label: "Design Review", icon: I.Review },
   { key: "simulation", label: "Simulation", icon: I.Wave },
+  { key: "review", label: "Design Review", icon: I.Review },
 ];
 
 const STATUS_DOT: Record<string, string> = {

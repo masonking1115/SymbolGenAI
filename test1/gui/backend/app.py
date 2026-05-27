@@ -37,6 +37,8 @@ import json
 import os
 import re
 import shutil
+import base64
+import mimetypes
 import subprocess
 import sys
 import uuid
@@ -68,6 +70,9 @@ ERROR_LOG = PROJECT_DIR / "error_log.md"
 FINDINGS_JSON = PROJECT_DIR / "review" / "findings.json"
 SEMANTIC_FINDINGS = PROJECT_DIR / "review" / "semantic_findings.json"
 DESIGN_REQS = PROJECT_DIR / "design_requirements.md"
+RESOURCES_DIR = PROJECT_DIR / "resources"
+REQ_DOCS_DIR = RESOURCES_DIR / "requirements"   # uploaded requirement source docs
+SKILLS_DIR = RESOURCES_DIR / "skills"           # agent skills (md), used by chat later
 
 # Make the sim package importable as `test1.sim` (repo root on path).
 sys.path.insert(0, str(PROJECT_DIR.parent))
@@ -855,6 +860,184 @@ def requirements() -> dict:
     return {"exists": True, "content": DESIGN_REQS.read_text()}
 
 
+# ---- Design Resources: datasheets · requirement docs · skills --------------
+MAX_UPLOAD_BYTES = 30 * 1024 * 1024  # 30 MB cap for base64 JSON uploads
+
+
+def _decode_upload(content_b64: str) -> bytes:
+    """Decode a base64 (or data: URL) payload, enforcing a size cap.
+
+    Uploads come in as JSON base64 rather than multipart so the backend needs
+    no extra dependency (python-multipart isn't installed)."""
+    s = content_b64.strip()
+    if s.startswith("data:") and "," in s:
+        s = s.split(",", 1)[1]
+    try:
+        raw = base64.b64decode(s, validate=False)
+    except (ValueError, TypeError):
+        raise HTTPException(400, "bad base64 content")
+    if not raw:
+        raise HTTPException(400, "empty file")
+    if len(raw) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, "file too large (30 MB max)")
+    return raw
+
+
+def _safe_upload_name(name: str, exts: tuple[str, ...]) -> str:
+    base = Path(name).name
+    if not base or base.startswith("."):
+        raise HTTPException(400, "bad filename")
+    if not re.fullmatch(r"[A-Za-z0-9 _.\-()]+", base):
+        raise HTTPException(400, "filename has unsupported characters")
+    ext = base.lower().rsplit(".", 1)[-1] if "." in base else ""
+    if exts and ext not in exts:
+        raise HTTPException(400, f"extension must be one of: {', '.join(exts)}")
+    return base
+
+
+class DatasheetUpload(BaseModel):
+    mpn: str
+    filename: str
+    content_b64: str
+
+
+class RequirementUpload(BaseModel):
+    filename: str
+    content_b64: str
+
+
+class SkillSave(BaseModel):
+    title: str
+    content: str
+    slug: str | None = None
+
+
+@app.get("/api/resources/datasheets")
+def resources_datasheets() -> dict:
+    """Every datasheet PDF already in the parts library, grouped by MPN."""
+    out: list[dict] = []
+    if LIBRARY_DIR.exists():
+        for d in sorted(LIBRARY_DIR.iterdir(), key=lambda p: p.name.lower()):
+            if not d.is_dir():
+                continue
+            for pdf in sorted(d.glob("*.pdf")):
+                out.append({"mpn": d.name, "file": pdf.name, "size": pdf.stat().st_size})
+    return {"datasheets": out}
+
+
+@app.post("/api/resources/datasheets")
+def resources_datasheet_upload(body: DatasheetUpload) -> dict:
+    """Upload a datasheet into Parts Library/<MPN>/ so it ports into the rest
+    of the app (Library + Simulation see it via the existing endpoints)."""
+    mpn = body.mpn.strip()
+    if not re.fullmatch(r"[A-Za-z0-9_\-\.]+", mpn):
+        raise HTTPException(400, "bad mpn (letters, digits, _ - . only)")
+    fname = _safe_upload_name(body.filename, ("pdf",))
+    raw = _decode_upload(body.content_b64)
+    dest = LIBRARY_DIR / mpn
+    dest.mkdir(parents=True, exist_ok=True)
+    (dest / fname).write_bytes(raw)
+    return {"ok": True, "mpn": mpn, "file": fname, "size": len(raw)}
+
+
+@app.get("/api/resources/requirements")
+def resources_requirements() -> dict:
+    docs: list[dict] = []
+    if REQ_DOCS_DIR.exists():
+        for f in sorted(REQ_DOCS_DIR.iterdir(), key=lambda p: p.name.lower()):
+            if f.is_file():
+                docs.append({"name": f.name, "size": f.stat().st_size})
+    return {"active_md_exists": DESIGN_REQS.exists(), "docs": docs}
+
+
+@app.post("/api/resources/requirements")
+def resources_requirement_upload(body: RequirementUpload) -> dict:
+    fname = _safe_upload_name(
+        body.filename, ("pdf", "docx", "doc", "pptx", "ppt", "md", "txt")
+    )
+    raw = _decode_upload(body.content_b64)
+    REQ_DOCS_DIR.mkdir(parents=True, exist_ok=True)
+    (REQ_DOCS_DIR / fname).write_bytes(raw)
+    return {"ok": True, "file": fname, "size": len(raw)}
+
+
+@app.get("/api/resources/requirements/file")
+def resources_requirement_file(name: str = Query(...)):
+    fname = Path(name).name
+    target = REQ_DOCS_DIR / fname
+    if not target.exists() or not target.is_file():
+        raise HTTPException(404, "no such file")
+    media = mimetypes.guess_type(str(target))[0] or "application/octet-stream"
+    return FileResponse(target, media_type=media, filename=fname)
+
+
+def _skill_slug(name: str) -> str:
+    slug = re.sub(r"[^A-Za-z0-9_\-]+", "-", name.strip().lower()).strip("-")
+    if not slug:
+        raise HTTPException(400, "bad skill name")
+    return slug[:64]
+
+
+def _skill_title(text: str, fallback: str) -> str:
+    for line in text.splitlines():
+        if line.lstrip().startswith("#"):
+            t = line.lstrip("#").strip()
+            if t:
+                return t
+        if line.strip():
+            break
+    return fallback
+
+
+@app.get("/api/resources/skills")
+def resources_skills() -> dict:
+    skills: list[dict] = []
+    if SKILLS_DIR.exists():
+        for f in sorted(SKILLS_DIR.glob("*.md"), key=lambda p: p.name.lower()):
+            text = f.read_text(errors="replace")
+            st = f.stat()
+            skills.append({
+                "slug": f.stem,
+                "title": _skill_title(text, f.stem),
+                "size": st.st_size,
+                "updated": st.st_mtime,
+            })
+    return {"skills": skills}
+
+
+@app.get("/api/resources/skills/{slug}")
+def resources_skill_get(slug: str) -> dict:
+    if not re.fullmatch(r"[A-Za-z0-9_\-]+", slug):
+        raise HTTPException(400, "bad slug")
+    f = SKILLS_DIR / f"{slug}.md"
+    if not f.exists():
+        raise HTTPException(404, "no such skill")
+    return {"slug": slug, "content": f.read_text(errors="replace")}
+
+
+@app.post("/api/resources/skills")
+def resources_skill_save(body: SkillSave) -> dict:
+    if not body.title.strip():
+        raise HTTPException(400, "empty title")
+    slug = body.slug or _skill_slug(body.title)
+    if not re.fullmatch(r"[A-Za-z0-9_\-]+", slug):
+        raise HTTPException(400, "bad slug")
+    SKILLS_DIR.mkdir(parents=True, exist_ok=True)
+    (SKILLS_DIR / f"{slug}.md").write_text(body.content)
+    return {"ok": True, "slug": slug}
+
+
+@app.delete("/api/resources/skills/{slug}")
+def resources_skill_delete(slug: str) -> dict:
+    if not re.fullmatch(r"[A-Za-z0-9_\-]+", slug):
+        raise HTTPException(400, "bad slug")
+    f = SKILLS_DIR / f"{slug}.md"
+    if not f.exists():
+        raise HTTPException(404, "no such skill")
+    f.unlink()
+    return {"ok": True}
+
+
 # ---- Latest run summary (for stale-UI recovery) ---------------------------
 _SHEET_LINE = re.compile(
     r"wrote\s+(?P<sheet>\S+\.kicad_sch)(?:\s+—\s+lint:\s+(?P<lint>.+))?"
@@ -952,33 +1135,92 @@ def run_phases(run_id: str) -> dict:
 # ---- Agent: chat + changelog + apply --------------------------------------
 class ChatMessage(BaseModel):
     content: str
+    session_id: str | None = None
+
+
+class SessionCreate(BaseModel):
+    title: str | None = None
+
+
+class SessionRename(BaseModel):
+    title: str
 
 
 class ChangelogAdd(BaseModel):
     summary: str
 
 
-@app.get("/api/chat/history")
-def chat_history() -> dict:
-    return {"messages": agent_mod.load_chat()}
+@app.get("/api/chat/sessions")
+def chat_sessions() -> dict:
+    """List chat sessions (metadata only) and which one is the default."""
+    return agent_mod.list_sessions()
 
 
-@app.post("/api/chat/clear")
-def chat_clear() -> dict:
-    agent_mod.save_chat([])
+@app.post("/api/chat/sessions")
+def chat_session_create(body: SessionCreate = SessionCreate()) -> dict:
+    return agent_mod.create_session(body.title)
+
+
+@app.get("/api/chat/sessions/{sid}")
+def chat_session_get(sid: str) -> dict:
+    s = agent_mod.get_session(sid)
+    if not s:
+        raise HTTPException(404, "no such session")
+    return s
+
+
+@app.post("/api/chat/sessions/{sid}/rename")
+def chat_session_rename(sid: str, body: SessionRename) -> dict:
+    if not body.title.strip():
+        raise HTTPException(400, "empty title")
+    if not agent_mod.rename_session(sid, body.title):
+        raise HTTPException(404, "no such session")
     return {"ok": True}
+
+
+@app.post("/api/chat/sessions/{sid}/default")
+def chat_session_default(sid: str) -> dict:
+    if not agent_mod.set_default_session(sid):
+        raise HTTPException(404, "no such session")
+    return {"ok": True}
+
+
+@app.post("/api/chat/sessions/{sid}/clear")
+def chat_session_clear(sid: str) -> dict:
+    if not agent_mod.clear_session(sid):
+        raise HTTPException(404, "no such session")
+    return {"ok": True}
+
+
+@app.delete("/api/chat/sessions/{sid}")
+def chat_session_delete(sid: str) -> dict:
+    if not agent_mod.delete_session(sid):
+        raise HTTPException(404, "no such session")
+    return {"ok": True}
+
+
+@app.post("/api/chat/sessions/{sid}/compact")
+async def chat_session_compact(sid: str) -> dict:
+    """Summarize the session and collapse its transcript. Returns an agent
+    run_id to stream via /api/agent/{run_id}/stream; on completion the
+    session's summary is updated and its messages are cleared."""
+    run = await agent_mod.start_compact(sid)
+    if not run:
+        raise HTTPException(404, "no such session")
+    return {"run_id": run.run_id, "kind": run.kind}
 
 
 @app.post("/api/chat")
 async def chat_send(msg: ChatMessage) -> dict:
-    """Send a user turn. The agent runs as a subprocess and may append
-    bullets to the changelog. Frontend subscribes to /api/agent/{run_id}/stream
-    to watch the response stream in."""
+    """Send a user turn in a session. The agent runs as a subprocess and may
+    append bullets to the changelog when explicitly asked. Frontend subscribes
+    to /api/agent/{run_id}/stream to watch the response stream in."""
     content = msg.content.strip()
     if not content:
         raise HTTPException(400, "empty message")
-    run = await agent_mod.start_chat_turn(content)
-    return {"run_id": run.run_id, "kind": run.kind}
+    sid = msg.session_id or agent_mod.list_sessions()["default_id"]
+    run = await agent_mod.start_chat_turn(sid, content)
+    return {"run_id": run.run_id, "kind": run.kind, "session_id": sid}
 
 
 @app.get("/api/agent/{run_id}")

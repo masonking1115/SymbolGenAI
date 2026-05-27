@@ -1,16 +1,20 @@
 import type {
   ChangelogItem,
-  ChatMessage,
+  ChatSession,
+  ChatSessionMeta,
+  DatasheetItem,
   FindingsReport,
   Freshness,
   LibraryPart,
   LintReport,
+  RequirementDoc,
   RunHandle,
   RunStatus,
   RunSummary,
   SheetMeta,
   SimBlock,
   SimResult,
+  SkillItem,
   SymbolInfo,
 } from "./types";
 
@@ -72,15 +76,47 @@ export const api = {
   runPhases: (id: string) =>
     j<RunSummary>(`/api/run/${id}/phases`),
 
-  chatHistory: () => j<{ messages: ChatMessage[] }>("/api/chat/history"),
-  chatSend: (content: string) =>
-    j<{ run_id: string }>("/api/chat", {
+  chatSessions: () =>
+    j<{ sessions: ChatSessionMeta[]; default_id: string | null }>(
+      "/api/chat/sessions",
+    ),
+  chatSession: (id: string) =>
+    j<ChatSession>(`/api/chat/sessions/${encodeURIComponent(id)}`),
+  chatCreateSession: (title?: string) =>
+    j<ChatSessionMeta>("/api/chat/sessions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({ title: title ?? null }),
     }),
-  chatClear: () =>
-    j<{ ok: boolean }>("/api/chat/clear", { method: "POST" }),
+  chatRenameSession: (id: string, title: string) =>
+    j<{ ok: boolean }>(`/api/chat/sessions/${encodeURIComponent(id)}/rename`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title }),
+    }),
+  chatSetDefault: (id: string) =>
+    j<{ ok: boolean }>(`/api/chat/sessions/${encodeURIComponent(id)}/default`, {
+      method: "POST",
+    }),
+  chatClearSession: (id: string) =>
+    j<{ ok: boolean }>(`/api/chat/sessions/${encodeURIComponent(id)}/clear`, {
+      method: "POST",
+    }),
+  chatDeleteSession: (id: string) =>
+    j<{ ok: boolean }>(`/api/chat/sessions/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
+  chatCompact: (id: string) =>
+    j<{ run_id: string }>(
+      `/api/chat/sessions/${encodeURIComponent(id)}/compact`,
+      { method: "POST" },
+    ),
+  chatSend: (content: string, sessionId?: string) =>
+    j<{ run_id: string; session_id: string }>("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content, session_id: sessionId ?? null }),
+    }),
 
   changelog: () => j<{ items: ChangelogItem[] }>("/api/changelog"),
   changelogAdd: (summary: string) =>
@@ -107,8 +143,53 @@ export const api = {
 
   pngUrl: (sheet: string, bust?: number | string) =>
     `/api/png/${encodeURIComponent(sheet)}${bust !== undefined ? `?t=${bust}` : ""}`,
-  datasheetUrl: (mpn: string) =>
-    `/api/library/${encodeURIComponent(mpn)}/datasheet`,
+  datasheetUrl: (mpn: string, name?: string) =>
+    `/api/library/${encodeURIComponent(mpn)}/datasheet${
+      name ? `?name=${encodeURIComponent(name)}` : ""
+    }`,
+
+  // ---- Design Resources ----
+  resourcesDatasheets: () =>
+    j<{ datasheets: DatasheetItem[] }>("/api/resources/datasheets"),
+  uploadDatasheet: (mpn: string, filename: string, contentB64: string) =>
+    j<{ ok: boolean; mpn: string; file: string; size: number }>(
+      "/api/resources/datasheets",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mpn, filename, content_b64: contentB64 }),
+      },
+    ),
+  resourcesRequirements: () =>
+    j<{ active_md_exists: boolean; docs: RequirementDoc[] }>(
+      "/api/resources/requirements",
+    ),
+  uploadRequirement: (filename: string, contentB64: string) =>
+    j<{ ok: boolean; file: string; size: number }>(
+      "/api/resources/requirements",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename, content_b64: contentB64 }),
+      },
+    ),
+  requirementFileUrl: (name: string) =>
+    `/api/resources/requirements/file?name=${encodeURIComponent(name)}`,
+  resourcesSkills: () => j<{ skills: SkillItem[] }>("/api/resources/skills"),
+  resourcesSkill: (slug: string) =>
+    j<{ slug: string; content: string }>(
+      `/api/resources/skills/${encodeURIComponent(slug)}`,
+    ),
+  saveSkill: (title: string, content: string, slug?: string) =>
+    j<{ ok: boolean; slug: string }>("/api/resources/skills", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title, content, slug: slug ?? null }),
+    }),
+  deleteSkill: (slug: string) =>
+    j<{ ok: boolean }>(`/api/resources/skills/${encodeURIComponent(slug)}`, {
+      method: "DELETE",
+    }),
 
   simBlocks: () => j<{ blocks: SimBlock[] }>("/api/sim/blocks"),
   simRun: (block: string, simType: string, voutSet = 1.8) =>
