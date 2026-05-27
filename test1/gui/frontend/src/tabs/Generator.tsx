@@ -232,6 +232,11 @@ export function Generator({
             onClick={() => {
               refreshLint();
               refreshFresh();
+              refreshChangelogCount();
+              // Re-pull the rendered sheets too (bumps PngViewer's `bust`, which
+              // re-fetches /api/sheets — the new mtimes cache-bust the images),
+              // so Refresh shows whatever the current on-disk build is.
+              onArtifactsChanged();
             }}
             className="h-9 px-3 inline-flex items-center gap-2 rounded-md border border-edge text-ink-700 text-sm hover:border-ink-300"
           >
@@ -285,7 +290,26 @@ export function Generator({
                   </span>
                   <div className="min-w-0">
                     <div className="text-sm text-ink-900">{r.summary}</div>
-                    <div className="text-[11px] text-ink-500 font-mono">{r.id}</div>
+                    <div className="text-[11px] text-ink-500 font-mono flex items-center gap-1.5">
+                      <span>{r.id}</span>
+                      {r.severity && (
+                        <span
+                          className={
+                            "px-1 rounded text-[9.5px] font-semibold uppercase tracking-wide " +
+                            (r.severity === "ERROR"
+                              ? "bg-err/10 text-err"
+                              : r.severity === "WARNING"
+                              ? "bg-warn/10 text-warn"
+                              : "bg-edge text-ink-500")
+                          }
+                        >
+                          {r.severity}
+                        </span>
+                      )}
+                      {r.scope === "library" && (
+                        <span className="px-1 rounded text-[9.5px] bg-edge text-ink-500">lib</span>
+                      )}
+                    </div>
                     {hits.length > 0 && (
                       <div className="mt-1 space-y-0.5">
                         {hits.slice(0, 4).map((h, i) => (

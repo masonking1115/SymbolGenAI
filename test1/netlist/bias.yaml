@@ -8,8 +8,9 @@
 #   NMOS is DNP'd (default). 10 kΩ pull-down on each BIAS_ISO gate ensures
 #   FET-OFF at POR when the NMOS is populated (E7).
 #
-# Note: U41 is a dual op-amp (OPA2388) — unit 1 drives channel 0, unit 2
-# drives channel 1. YAML members use `U41:u2.<pin>` for unit 2.
+# Note: U41 is a dual op-amp (OPA2388), placed as ONE single-unit symbol (the
+# Ultra-Librarian part). Channel 0 uses amp A (pins 1/2/3), channel 1 uses amp
+# B (pins 5/6/7); V+/V- (8/4) are shared. All members reference unit 1.
 
 parts:
   # ===== Quad I²C DAC =====
@@ -24,13 +25,13 @@ parts:
     footprint: Capacitor_SMD:C_0402_1005Metric
     notes: VDD decoupling per 22187E Figure 2-1
 
-  # ===== Dual RRIO op-amp (one part, two units) =====
+  # ===== Dual RRIO op-amp (one part, single-unit UL symbol) =====
   U41:
     lib_id: Lib:OPA2388
     value: OPA2388
     footprint: Package_SO:SOIC-8_3.9x4.9mm_P1.27mm
-    units: [1, 2]
-    notes: Unit 1 = channel 0 op-amp, unit 2 = channel 1 op-amp; V+/V- pins live in unit 1 only.
+    units: [1]
+    notes: Single 8-pin symbol. Amp A (1/2/3)=ch0, amp B (5/6/7)=ch1, V+/V- (8/4) shared.
 
   # ===== Channel 0 (BIAS0) =====
   Q40:
@@ -102,7 +103,7 @@ nets:
     members:
       - U40.1        # MCP4728 VDD
       - C40.1        # MCP4728 VDD decoupling top
-      - U41:u1.8     # OPA2388 V+ (shared, lives in unit-1 drawing only)
+      - U41.8     # OPA2388 V+ (shared, lives in unit-1 drawing only)
       - C42.1        # channel-0 +3V3 decoupling top
       - C43.1        # channel-1 +3V3 decoupling top
       - R40.1        # ch-0 sense R top → +3V3
@@ -113,7 +114,7 @@ nets:
       - U40.4        # MCP4728 *LDAC tied to GND
       - U40.10       # MCP4728 VSS
       - C40.2        # MCP4728 VDD decoupling bot
-      - U41:u1.4     # OPA2388 V- (shared, unit-1 drawing only)
+      - U41.4     # OPA2388 V- (shared, unit-1 drawing only)
       - C42.2        # channel-0 +3V3 decoupling bot
       - C43.2        # channel-1 +3V3 decoupling bot
       - R44.2        # ch-0 BIAS_ISO pull-down bot
@@ -133,26 +134,26 @@ nets:
   internal_VOUTA_to_OPA_pos:
     type: internal
     # MCP4728 VOUTA → OPA2388 unit-1 +IN (pin 3)
-    members: [U40.6, U41:u1.3]
+    members: [U40.6, U41.3]
   internal_VOUTB_to_OPA_pos:
     type: internal
     # MCP4728 VOUTB → OPA2388 unit-2 +IN (pin 5)
-    members: [U40.7, U41:u2.5]
+    members: [U40.7, U41.5]
   internal_OPA0_out_to_PMOS_gate:
     type: internal
     # OPA2388 unit-1 OUT (pin 1) → PMOS Q40 gate (pin 1)
-    members: [U41:u1.1, Q40.1]
+    members: [U41.1, Q40.1]
   internal_OPA1_out_to_PMOS_gate:
     type: internal
     # OPA2388 unit-2 OUT (pin 7) → PMOS Q41 gate (pin 1)
-    members: [U41:u2.7, Q41.1]
+    members: [U41.7, Q41.1]
   internal_PMOS0_source_feedback:
     type: internal
     # PMOS Q40 source ↔ R40 bot (sense R) ↔ OPA2388 unit-1 -IN (pin 2)
-    members: [Q40.2, R40.2, U41:u1.2]
+    members: [Q40.2, R40.2, U41.2]
   internal_PMOS1_source_feedback:
     type: internal
-    members: [Q41.2, R41.2, U41:u2.6]
+    members: [Q41.2, R41.2, U41.6]
   internal_BIAS0_drain_stub:
     type: internal
     # PMOS Q40 drain → Q42 NMOS drain, also bridged by R42 (0Ω parallel jumper).

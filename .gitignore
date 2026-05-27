@@ -36,3 +36,15 @@ test1/sim/results/
 
 # Review pipeline transient output
 test1/review/findings.json
+
+# Symbol upload/migration transient backups
+*.SchLib.bak
+
+# Ultra Librarian incoming scratch (vendor zips + one-off install script)
+/_ul_incoming/
+
+# GUI runtime chat state
+test1/gui/state/chats.json
+
+# Regenerated merged Altium symbol library (rebuilt by build_symbols)
+test1/altium/out/lib/

@@ -1,0 +1,321 @@
+% Compile with: pdflatex pipeline.tex  (uses tikz, booktabs, listings, hyperref)
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning, fit, backgrounds}
+\usepackage[hidelinks]{hyperref}
+\usepackage{enumitem}
+
+\definecolor{codebg}{HTML}{F5F4F0}
+\definecolor{accent}{HTML}{1F4E79}
+\definecolor{stage}{HTML}{D9EAD3}
+\definecolor{artifact}{HTML}{FCE5CD}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  backgroundcolor=\color{codebg},
+  breaklines=true,
+  frame=single,
+  rulecolor=\color{lightgray},
+  columns=fullflexible,
+  showstringspaces=false,
+}
+
+\newcommand{\file}[1]{\texttt{#1}}
+\newcommand{\mod}[1]{\texttt{#1}}
+
+\title{\textbf{HW/SW Co-Designer:\\ Schematic Generation Pipeline \& System Overview}}
+\author{Voltai --- \texttt{SymbolGenAI/test1}}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This document describes the end-to-end workflow by which the HW/SW Co-Designer
+turns declarative, machine-readable design intent (YAML netlists and per-part
+symbol libraries) into a complete, validated Altium schematic project. It covers
+the system-level architecture, the concrete file pipeline (what is read, written,
+and converted at each stage), the connectivity validator and layout linter that
+gate every build, and how the interactive GUI consumes the same artifacts. The
+Altium backend is the authoritative path; a legacy KiCad generator remains for
+reference only.
+\end{abstract}
+
+\tableofcontents
+\bigskip
+
+%==============================================================================
+\section{System overview}
+%==============================================================================
+
+The system is a \emph{deterministic compiler} for schematics. Design intent is
+expressed once, declaratively, and a chain of pure-Python builders renders it
+into Altium-native files. There is no manual drawing step: every wire, pin,
+label, and power symbol is emitted programmatically, and every build is checked
+by two independent gates --- a strict \textbf{connectivity validator} and an
+advisory \textbf{layout linter}.
+
+\begin{description}[leftmargin=1.4em]
+  \item[Source of truth (inputs).] Two kinds of input are committed to the repo:
+    (1)~\textbf{netlist YAML} (\file{test1/netlist/*.yaml}) describing parts, nets,
+    and per-part values; and (2)~\textbf{per-MPN Altium symbol libraries}
+    (\file{Parts Library/<MPN>/<MPN>.SchLib}), the committed graphical source of
+    truth for every component symbol.
+  \item[Builders (processing).] Per-sheet builder modules
+    (\mod{build\_power}, \mod{build\_bias}, \dots) place symbols and route nets
+    using a common emission API (\mod{shared.AltiumSheet}). A top-level
+    orchestrator (\mod{build\_project}) assembles all sheets plus a root sheet
+    into one project.
+  \item[Outputs (artifacts).] Altium \file{.SchLib} (merged library),
+    \file{.SchDoc} (one per sheet), \file{.PrjPcb} (project), and \file{.svg}
+    renders for the GUI. SVGs are further converted to PNG for in-agent preview.
+  \item[Gates.] \mod{gen.validator} (hard, fails the build on broken
+    connectivity) and \mod{altium.layout\_lint} (quality: overlaps, off-grid,
+    text globs, centering, \dots).
+\end{description}
+
+%==============================================================================
+\section{Pipeline diagram}
+%==============================================================================
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[
+  font=\small,
+  stagebox/.style={draw, rounded corners, fill=stage, align=center,
+                   minimum height=2.6em, text width=10.5em, inner sep=4pt},
+  artbox/.style={draw, fill=artifact, align=center, minimum height=2.4em,
+                 text width=9.5em, inner sep=3pt},
+  arr/.style={-{Stealth[length=2.2mm]}, thick},
+  node distance=5mm and 9mm,
+]
+% inputs
+\node[artbox] (yaml) {netlist YAML\\\scriptsize parts, nets, values};
+\node[artbox, below=of yaml] (schlib) {per-MPN \texttt{.SchLib}\\\scriptsize committed symbols};
+\node[artbox, below=of schlib] (pinspec) {pin-spec JSON\\\scriptsize (AI symbol gen)};
+
+% stages
+\node[stagebox, right=of yaml] (symbuild) {\mod{build\_symbols}\\\scriptsize merge per-MPN libs};
+\node[stagebox, right=of symbuild] (sheets) {per-sheet builders\\\scriptsize \mod{shared.AltiumSheet}};
+\node[stagebox, below=of sheets] (validate) {\mod{gen.validator}\\\scriptsize connectivity (hard gate)};
+\node[stagebox, below=of validate] (lint) {\mod{layout\_lint}\\\scriptsize quality (lint gate)};
+\node[stagebox, right=of sheets] (project) {\mod{build\_project}\\\scriptsize centre + assemble};
+
+% outputs
+\node[artbox, right=of project] (out) {\texttt{parts.SchLib}\\\texttt{*.SchDoc}, \texttt{.PrjPcb}};
+\node[artbox, below=of out] (svg) {\texttt{render/*.svg}};
+\node[artbox, below=of svg] (png) {PNG preview\\\scriptsize \mod{\_render} (dev)};
+
+% gui
+\node[stagebox, below=of png, fill=white] (gui) {GUI\\\scriptsize FastAPI 8765 / Vite 5173};
+
+% edges
+\draw[arr] (yaml) -- (symbuild);
+\draw[arr] (schlib) -| (symbuild);
+\draw[arr] (pinspec) -| ([xshift=-3mm]symbuild.south);
+\draw[arr] (symbuild) -- (sheets);
+\draw[arr] (sheets) -- (validate);
+\draw[arr] (validate) -- (lint);
+\draw[arr] (sheets) -- (project);
+\draw[arr] (lint.east) -- ++(0.5,0) |- (project.west);
+\draw[arr] (project) -- (out);
+\draw[arr] (out) -- (svg);
+\draw[arr] (svg) -- (png);
+\draw[arr] (svg.east) -- ++(0.4,0) |- (gui.east);
+\draw[arr] (lint.south) -- ++(0,-0.4) -| (gui.west);
+\end{tikzpicture}
+\caption{Data flow. Green = processing stage (Python module); orange = file
+artifact. Every sheet build is gated by the validator and the layout linter
+before the project is assembled and rendered.}
+\end{figure}
+
+%==============================================================================
+\section{The file pipeline: read / write / convert}
+%==============================================================================
+
+Table~\ref{tab:files} enumerates the concrete files touched at each stage. All
+coordinates are in mils on a 100-mil schematic grid; Altium $Y$ grows upward.
+
+\begin{longtable}{p{0.27\textwidth} p{0.12\textwidth} p{0.51\textwidth}}
+\caption{Files read, written, and converted by the pipeline.}\label{tab:files}\\
+\toprule
+\textbf{File / glob} & \textbf{I/O} & \textbf{Role}\\
+\midrule
+\endfirsthead
+\toprule
+\textbf{File / glob} & \textbf{I/O} & \textbf{Role}\\
+\midrule
+\endhead
+\file{test1/netlist/*.yaml} & read & Declarative parts/nets/values; loaded by \mod{gen.netlist.load\_netlist}.\\
+\file{Parts Library/<MPN>/<MPN>.SchLib} & read & Committed per-part Altium symbol (source of truth). Pins read via \mod{altium.symlib.read\_pins}.\\
+\file{<MPN>.pinspec.json} & read/write & Pin specification used to author a symbol with \mod{author\_symbol}; emitted by the GUI's AI symbol-gen flow.\\
+\file{out/lib/parts.SchLib} & write & Aggregated library: all per-MPN \file{.SchLib} merged by \mod{build\_symbols.build\_library}.\\
+\file{out/lib/\_passives.SchLib} & write & Auto-authored passives (R/C) merged into the library.\\
+\file{out/*.SchDoc} & write & One schematic sheet per builder (\texttt{power}, \texttt{bias}, \texttt{bobcat}, \texttt{fmc}, \texttt{connectors}, \texttt{eeprom}) plus \texttt{root}.\\
+\file{out/test1.PrjPcb} & write & Altium project referencing the root + 6 child sheets (cross-sheet nets resolve).\\
+\file{out/render/*.svg} & write & Per-sheet SVG, produced by \mod{AltiumSheet.render\_svg} (altium\_monkey \texttt{to\_svg}).\\
+\file{out/render/\_view\_*.png} & convert & Dev-only raster (\mod{\_render}: SVG\,$\to$\,reportlab PDF\,$\to$\,PyMuPDF PNG) so the agent can inspect layouts (cairo unavailable on Windows).\\
+\file{\_archive\_kicad/\dots} & write (once) & KiCad \file{.kicad\_sym} sources archived during migration; not on the build path.\\
+\bottomrule
+\end{longtable}
+
+\paragraph{Migration note.} Symbols originated as KiCad \file{.kicad\_sym}. A
+one-time pass (\mod{migrate\_symbols}, \mod{symbol\_props}) translated each into a
+per-MPN \file{.SchLib} and carried over properties; the KiCad files were archived.
+KiCad is no longer read on the build path.
+
+%==============================================================================
+\section{Stage detail}
+%==============================================================================
+
+\subsection{Stage 1 --- Symbol library build (\mod{build\_symbols})}
+\mod{get\_library()} resolves each part's library id to an authored symbol name
+and merges every per-MPN \file{.SchLib} (plus auto-authored passives) into
+\file{out/lib/parts.SchLib} via \texttt{AltiumSchLib.merge(\dots,
+handle\_conflicts="error")}. Coverage is verified by reading back pins
+(\mod{symlib.read\_pins}).
+
+\paragraph{Standard body glyphs.} Symbols are drawn with conventional schematic
+shapes, not generic boxes: \mod{glyphs.py} provides a device classifier and
+drawers for a capacitor (parallel plates), resistor (US zig-zag), inductor,
+diode, MOSFET, and op-amp (triangle); ICs and connectors keep a rectangle. Each
+drawer emits only body primitives (\texttt{add\_line/add\_polyline/add\_polygon/
+add\_arc}) relative to the pin \emph{hot-spots}; the pins themselves are never
+touched, so the electrical connection points --- and therefore every builder's
+routing, the validator, and the linter --- are unchanged, and the net always
+attaches at the pin end. For the active devices (MOSFET, op-amp, BJT, diode) the
+body is imported \emph{verbatim} from the archived KiCad symbol
+(\mod{kicad\_glyph}): it parses the \file{.kicad\_sym} graphic primitives and pin
+connection points and affine-maps them onto the Altium hot-spots (solved from the
+pin-number correspondences), so the symbol matches the original KiCad drawing
+exactly. \mod{glyphs}/\mod{kicad\_glyph} are wired into both new-symbol authoring
+(\mod{author\_symbol}, \mod{symbols.\_add\_passive}) and an idempotent in-place
+restyle of the committed libraries (\mod{restyle\_symbols}).
+
+\subsection{Stage 2 --- Sheet building (\mod{shared.AltiumSheet})}
+Each per-sheet builder receives the merged library and the parsed netlist and
+emits primitives through a single API that mirrors the KiCad generator verbs:
+\begin{lstlisting}[language=Python]
+s = AltiumSheet(name="power", title="...")
+U10 = s.place_from_netlist(lib, lmap, nl, "U10", x=5000, y=5000)  # -> {pin: (x,y)}
+s.wire(x1, y1, x2, y2)          # orthogonal net segment
+s.junction(x, y)                # T-tap dot (cosmetic; T-intersections connect)
+s.port(name, x, y, side="auto") # off-sheet port; body auto-placed clear of wire
+s.power_at("GND", x, y)         # power symbol (GND down 270deg, rails up 90deg)
+s.text("LDO VIN bypass", x, y)  # annotation
+\end{lstlisting}
+\mod{AltiumSheet} simultaneously accumulates structured records
+(\texttt{\_placed}, \texttt{\_wires}, \texttt{\_junctions}, \texttt{\_labels})
+that both gates walk without re-parsing the saved file. Every drawn label and
+component value carries a rendered \emph{bounding box} so the linter can reason
+about text geometry (see \S\ref{sec:lint}).
+
+\paragraph{Ports never impale their wire.} altium\_monkey always draws a port
+body extending $+x$ from its anchor. \texttt{port(side="auto")} inspects the wire
+already drawn to the connection point and anchors the body on the side
+\emph{away} from the net (e.g.\ \texttt{side="left"} puts the body in the left
+margin and connects at its right edge). The connectivity record stays at the
+exact connection point, so the validator binds the wire endpoint regardless of
+which side the body is drawn on. This is why callers draw the wire \emph{before}
+the port.
+
+\subsection{Stage 3 --- Connectivity validation (\mod{gen.validator})}
+A union-find graph is built from pins, wire endpoints/interiors (T-intersections
+auto-connect), and label anchors. Each YAML net is resolved to a connected
+component; mismatches (split nets, unknown refdes/pins, missing members) fail the
+build. This gate is shared verbatim with the KiCad path for true functional
+parity.
+
+\subsection{Stage 4 --- Layout lint (\mod{altium.layout\_lint})}\label{sec:lint}
+The linter is the quality gate. It operates on the same duck-typed records and
+treats drawn \textbf{text as 2-D boxes}, not points, so it can detect overlaps a
+point model misses. Two entry points run on every build:
+\mod{lint(sheet)} (per-\file{.SchDoc}) and \mod{lint\_library(path)}
+(per-symbol). Rules are declared once in the \texttt{RULES} registry, the single
+source of truth shared by the checks, the build report, and the GUI checklist.
+\texttt{ERROR} fails the build; \texttt{WARNING}/\texttt{INFO} are advisory.
+The full rule set is given in Table~\ref{tab:rules}.
+
+\subsection{Stage 5 --- Centering \& project assembly (\mod{build\_project})}
+Layout is offset-invariant for connectivity, so each sheet is built twice: once
+to measure its content bounding box, then again with a grid-snapped, clamped
+shift that centers the content on the auto-selected A-series page
+(\mod{\_build\_centered} / \mod{\_axis\_shift}). The orchestrator then writes
+each \file{.SchDoc}, the root sheet, and \file{test1.PrjPcb}, printing a
+per-sheet lint summary (\texttt{E/W/I}) plus every \texttt{ERROR}/\texttt{WARNING}
+detail line.
+
+\subsection{Stage 6 --- GUI consumption}
+The FastAPI backend (port 8765) serves \file{/api/sheets} (render metadata),
+\file{/api/png/<sheet>} (rasterized sheet, cache-busted by mtime), and
+\file{/api/lint} (parsed issues + the \texttt{RULES} registry imported directly
+from \mod{layout\_lint}). The React/Vite frontend (port 5173) "Schematic
+Generator" tab renders the schematic and a \emph{Linter checklist}; its
+\textbf{Refresh} button re-pulls renders, freshness, and the live rule list, so
+the checklist always reflects exactly what the build gates on.
+
+%==============================================================================
+\section{Layout linter rule set}
+%==============================================================================
+
+\begin{longtable}{p{0.21\textwidth} p{0.10\textwidth} p{0.10\textwidth} p{0.45\textwidth}}
+\caption{Rules in the \texttt{RULES} registry (\mod{layout\_lint}).}\label{tab:rules}\\
+\toprule
+\textbf{Rule} & \textbf{Severity} & \textbf{Scope} & \textbf{What it catches}\\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Rule} & \textbf{Severity} & \textbf{Scope} & \textbf{What it catches}\\
+\midrule
+\endhead
+\texttt{off\_grid} & ERROR & sheet & Pin/wire endpoint off the 100-mil grid.\\
+\texttt{diagonal\_wire} & ERROR & sheet & Non-orthogonal (diagonal) wire.\\
+\texttt{out\_of\_bounds} & ERROR & sheet & Content extends past the sheet border.\\
+\texttt{component\_overlap} & ERROR & sheet & Two component pin-boxes overlap.\\
+\texttt{power\_orientation} & WARN & sheet & Power port against convention (GND down, rails up).\\
+\texttt{visible\_param\_glob} & WARN & sheet & Visible metadata parameter stacks into a glob.\\
+\texttt{wire\_through\_label} & WARN & sheet & Port/power hot-spot sits mid-wire.\\
+\texttt{ground\_on\_top} & WARN & sheet & GND symbol above its net instead of at the bottom.\\
+\texttt{wire\_through\_body} & WARN & sheet & Net wire crosses a component body.\\
+\texttt{off\_center} & WARN & sheet & Content bunched against an edge.\\
+\texttt{cramped\_spacing} & WARN & sheet & Two components closer than the readable gap.\\
+\texttt{label\_overlap} & WARN & sheet & Two drawn text boxes overlap (glob).\\
+\texttt{label\_over\_symbol} & WARN & sheet & A label/port/value text box over a component body.\\
+\texttt{wire\_through\_port} & WARN & sheet & A net wire crosses a port \emph{body}.\\
+\texttt{offpage\_text} & WARN & sheet & A drawn box spills past the sheet border.\\
+\texttt{wire\_overlap} & WARN & sheet & Collinear same-axis wires overlap (silent short).\\
+\texttt{bridged\_drop} & WARN & sheet & Wire interior crosses a third part's pin.\\
+\texttt{duplicate\_wire} & INFO & sheet & Identical wire segment drawn twice.\\
+\texttt{redundant\_junction} & INFO & sheet & Junction with $<3$ segments / on a pin.\\
+\texttt{pin\_name\_overlap} & WARN & library & Symbol body too narrow; opposing pin names collide.\\
+\bottomrule
+\end{longtable}
+
+%==============================================================================
+\section{Reproducing a build}
+%==============================================================================
+
+\begin{lstlisting}[language=bash]
+# All Python runs through the Altium spike venv (Windows):
+PY=c:/Users/mking/Downloads/altium_spike/.venv/Scripts/python.exe
+
+# Full project: merge symbols, build+validate+lint 6 sheets, assemble .PrjPcb
+$PY -m test1.altium.build_project
+
+# Lint only, across all sheets:
+$PY -m test1.altium.layout_lint
+
+# Dev render a sheet to PNG (SVG -> PDF -> PNG):
+$PY -m test1.altium._render power
+\end{lstlisting}
+
+A clean run prints, per sheet, \texttt{E/W/I = 0/0/0} (only cosmetic
+\texttt{redundant\_junction} INFO is expected) and \texttt{FAILURES: none}.
+
+\end{document}

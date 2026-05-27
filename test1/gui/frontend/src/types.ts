@@ -11,6 +11,8 @@ export interface LintIssue {
 export interface LintRule {
   id: string;
   summary: string;
+  severity?: Severity;
+  scope?: "sheet" | "library";
 }
 
 export interface LintReport {

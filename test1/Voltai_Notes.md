@@ -14,7 +14,7 @@ Append new entries at the top. Date every entry.
 - **UL zip structure:** `KiCADv6/<timestamp>.kicad_sym` + `KiCADv6/footprints.pretty/*.kicad_mod` + boilerplate (`readme.txt`, `ImportGuides.html`). Symbol filename is auto-timestamped — rename to `<MPN>.kicad_sym` on extract. **No 3D STEP** in any default drop; STEP is a separate UL download selection.
 - **Vendor-mismatch risk:** UL serves multiple manufacturer entries for generic MPNs (2N7002 listed under onsemi, Nexperia, Diodes Inc, **Diotec**). The first 2N7002 zip pulled was Diotec and contained a `Diode-NC_pin` symbol, not a MOSFET. After every extract, verify with `grep -o '(symbol "[^"]*"' <MPN>.kicad_sym | head -1` — the symbol's internal name must plausibly match the device.
 - **Format validation:** run `kicad-cli sym upgrade --force <MPN>.kicad_sym` per drop to confirm KiCad 10 parse. UL ships KiCad v6 format; upgrade is a one-shot per drop and catches malformed files early.
-- **Status:** 16/18 catalog parts populated. Still pending UL drops: `PMZ1200UPEYL` (bias PMOS Q1/Q2) and `CC0805KFX7R6BB106` (10 µF bulk MLCC). `Bobcat` (DUT) is custom — no UL entry, will need a hand-built symbol.
+- **Status:** 16/18 catalog parts populated. The 10 µF bulk MLCC is now `GRM21BR71A106KA73L` (Murata 0805, replaced the earlier `CC0805KFX7R6BB106` placeholder — old part deleted from the library). Still pending UL drop: `PMZ1200UPEYL` (bias PMOS Q1/Q2). `Bobcat` (DUT) is custom — no UL entry, will need a hand-built symbol.
 
 ## 2026-05-24 — Parts selection workflow established
 - Copied the per-row prompts from the rightmost column of [test1_bom.xlsx](test1_bom.xlsx) into the Voltai parts-explorer AI.

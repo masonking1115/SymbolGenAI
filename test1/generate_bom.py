@@ -23,11 +23,7 @@ COLUMNS = [
     ("Description",          40),
     ("Value / Rating",       22),
     ("Package",              18),
-    ("Manufacturer",         18),
     ("MPN",                  22),
-    ("Distributor",          14),
-    ("Distributor P/N",      22),
-    ("Unit Price",           12),
     ("Datasheet URL",        30),
     ("voltai chat url",      30),
     ("Notes",                30),
@@ -358,11 +354,7 @@ def build_workbook(path: str) -> None:
             desc,           # Description
             value,          # Value / Rating
             pkg,            # Package
-            "",             # Manufacturer
             mpn,            # MPN
-            "",             # Distributor
-            "",             # Distributor P/N
-            "",             # Unit Price
             "",             # Datasheet URL
             "",             # voltai chat url
             "",             # Notes

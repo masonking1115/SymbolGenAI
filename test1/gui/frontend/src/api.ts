@@ -215,6 +215,19 @@ export const api = {
     j<SymbolInfo>(`/api/library/${encodeURIComponent(mpn)}/symbol`),
   symbolSvgUrl: (mpn: string, unit: string) =>
     `/api/library/${encodeURIComponent(mpn)}/symbol/svg/${encodeURIComponent(unit)}`,
+  uploadSymbol: (mpn: string, filename: string, contentB64: string) =>
+    j<{ ok: boolean; mpn: string; symbols: string[]; size: number }>(
+      `/api/library/${encodeURIComponent(mpn)}/symbol`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename, content_b64: contentB64 }),
+      },
+    ),
+  // Deep link to the matching part on Ultra Librarian (free symbol/footprint
+  // download in 30+ CAD formats incl. Altium). `queryText` is UL's search param.
+  ultraLibrarianUrl: (mpn: string) =>
+    `https://app.ultralibrarian.com/search?queryText=${encodeURIComponent(mpn)}`,
 };
 
 /** Subscribe to an agent run's SSE stream. */

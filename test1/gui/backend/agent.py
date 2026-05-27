@@ -35,6 +35,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import sys
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -652,27 +653,77 @@ async def start_apply_pass() -> AgentRun:
 
 
 async def start_symbol_gen(mpn: str, datasheet_rel: str) -> AgentRun:
-    """Generate a KiCad symbol for one MPN from its datasheet PDF."""
-    sym_lib = PROJECT_DIR / "Parts Library" / "Bobcat" / "Bobcat.kicad_sym"
-    datasheet_abs = PROJECT_DIR / "Parts Library" / mpn / datasheet_rel
+    """Generate a native Altium symbol for one MPN from its datasheet PDF.
+
+    The model extracts the pinout into a small JSON pin-spec
+    (`Parts Library/<MPN>/<MPN>.pinspec.json`), then authors the committed
+    `Parts Library/<MPN>/<MPN>.SchLib` deterministically via
+    `test1.altium.author_symbol`. No KiCad: the .SchLib is the GUI's source of
+    truth (_primary_symbol_for) and what the build pipeline merges into
+    parts.SchLib.
+    """
+    repo_root = PROJECT_DIR.parent
+    parts_lib = PROJECT_DIR / "Parts Library"
+    spec_file = parts_lib / mpn / f"{mpn}.pinspec.json"
+    schlib_file = parts_lib / mpn / f"{mpn}.SchLib"
+    datasheet_abs = parts_lib / mpn / datasheet_rel
+    author_cmd = f'"{sys.executable}" -m test1.altium.author_symbol "{mpn}"'
     instructions = f"""\
-Generate a KiCad symbol for {mpn} from the datasheet at:
+Generate a native Altium schematic symbol for {mpn} from the datasheet at:
   {datasheet_abs}
 
-Append the new symbol definition to the existing symbol library:
-  {sym_lib}
+Do it in two steps:
 
-Match the s-expression style of symbols already in that file. Pin types
-(input/output/passive/bidirectional/power_in/power_out) must match the
-datasheet's electrical characteristics, not just the pin name. Lay out
-pins by function: power on top/bottom, inputs on left, outputs on right.
+STEP 1 — Write a JSON pin-spec at:
+  {spec_file}
+(create the parent directory if needed). Schema:
 
-After writing, print a one-line summary of the symbol you added.
+  {{
+    "mpn": "{mpn}",
+    "description": "<short part description>",
+    "reference": "<designator prefix: U/R/C/J/Q/D/L/...>",
+    "properties": {{
+      "Value": "<orderable part value, e.g. the full MPN or 10uF/10k>",
+      "Footprint": "<package/footprint name from the datasheet, if known>",
+      "Datasheet": "<datasheet URL if known, else the PDF filename>",
+      "Manufacturer": "<manufacturer name>",
+      "MPN": "<manufacturer part number>"
+    }},
+    "units": [
+      {{ "unit": 1, "pins": [
+        {{ "number": "<pin number/designator>", "name": "<pin name>",
+           "type": "<electrical type>", "side": "<body side>" }},
+        ...
+      ]}}
+    ]
+  }}
+
+  - "type" is one of: input, output, bidirectional, passive, power_in,
+    power_out, tri_state, open_collector, open_emitter — chosen from the
+    datasheet's ELECTRICAL characteristics, not just the pin name.
+  - "side" is one of: left, right, top, bottom. Lay pins out by function:
+    power_in on top, power_out/ground on bottom, inputs on left, outputs on
+    right (match how the part is conventionally drawn).
+  - "reference" is the schematic designator PREFIX for this part class
+    (U for ICs, R resistors, C caps, J connectors, Q transistors, D diodes,
+    L inductors). "properties" become Altium component parameters — fill in
+    every field you can determine from the datasheet; omit a property only if
+    genuinely unknown.
+  - For a multi-unit part (e.g. a dual op-amp, or a multi-bank connector),
+    list multiple objects in "units" with the pins grouped per unit. For a
+    single-unit part, one unit with all pins is fine.
+  - Include EVERY pin in the datasheet's pinout exactly once.
+
+STEP 2 — Author the Altium library by running this command from {repo_root}:
+  {author_cmd}
+It reads the pin-spec and writes {schlib_file}. Confirm the command's printed
+pin/unit count matches the datasheet, then print a one-line summary.
 """
     proc, _cmd = await _spawn_claude(
         prompt=instructions,
         system_suffix="",  # symbol gen doesn't need the chat instructions
         permission_mode="acceptEdits",
+        add_dir=repo_root,  # let the agent write under Parts Library + run the build
     )
     run = _register("symbol-gen")
     asyncio.create_task(_run_subprocess(run, proc))

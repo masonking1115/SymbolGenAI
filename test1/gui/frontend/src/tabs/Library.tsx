@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, subscribeAgent } from "../api";
 import { I } from "../components/Icon";
 import type { LibraryPart, SymbolInfo, SymbolPin } from "../types";
@@ -10,6 +10,8 @@ export function Library() {
   const [filter, setFilter] = useState<"all" | "populated" | "missing">("all");
   const [genState, setGenState] = useState<"idle" | "running" | "ok" | "fail">("idle");
   const [genLog, setGenLog] = useState<string[]>([]);
+  const [upState, setUpState] = useState<"idle" | "uploading" | "ok" | "fail">("idle");
+  const [upMsg, setUpMsg] = useState<string>("");
 
   const refreshParts = () =>
     api
@@ -29,6 +31,8 @@ export function Library() {
     setSym(null);
     setGenState("idle");
     setGenLog([]);
+    setUpState("idle");
+    setUpMsg("");
     api.librarySymbol(sel)
       .then((d) => setSym(d))
       .catch(() => setSym({ present: false, mpn: sel }));
@@ -62,6 +66,24 @@ export function Library() {
     }
   };
 
+  const uploadSymbol = async (file: File) => {
+    if (!sel) return;
+    setUpState("uploading");
+    setUpMsg(`uploading ${file.name}…`);
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      const r = await api.uploadSymbol(sel, file.name, dataUrl);
+      setUpState("ok");
+      setUpMsg(`✓ ${file.name} → ${r.symbols.join(", ") || "imported"}`);
+      refreshParts();
+      const d = await api.librarySymbol(sel);
+      setSym(d);
+    } catch (e) {
+      setUpState("fail");
+      setUpMsg(`error: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+
   const filtered = parts.filter((p) => {
     if (filter === "populated") return p.has_symbol;
     if (filter === "missing") return !p.has_symbol;
@@ -84,9 +106,22 @@ export function Library() {
         genState={genState}
         genLog={genLog}
         onGenerate={generateSymbol}
+        onUpload={uploadSymbol}
+        upState={upState}
+        upMsg={upMsg}
       />
     </div>
   );
+}
+
+/** Read a File as a base64 data: URL (the backend strips the data: prefix). */
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result));
+    r.onerror = () => reject(r.error ?? new Error("read failed"));
+    r.readAsDataURL(file);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -192,12 +227,18 @@ function PartDetail({
   genState,
   genLog,
   onGenerate,
+  onUpload,
+  upState,
+  upMsg,
 }: {
   sel: string | null;
   sym: SymbolInfo | null;
   genState: "idle" | "running" | "ok" | "fail";
   genLog: string[];
   onGenerate: () => void;
+  onUpload: (file: File) => void;
+  upState: "idle" | "uploading" | "ok" | "fail";
+  upMsg: string;
 }) {
   if (!sel) {
     return (
@@ -245,12 +286,26 @@ function PartDetail({
                 <I.Datasheet size={13} /> Datasheet
               </a>
             )}
+            <a
+              href={api.ultraLibrarianUrl(sel)}
+              target="_blank"
+              rel="noreferrer"
+              className="h-7 px-2 text-xs rounded-md border border-edge text-ink-700 hover:border-ink-300 inline-flex items-center gap-1"
+              title="Open this part on Ultra Librarian to download an Altium .SchLib (free, 30+ CAD formats)"
+            >
+              <I.External size={13} /> Ultra Librarian
+            </a>
+            <UploadSchLibButton
+              onUpload={onUpload}
+              busy={upState === "uploading"}
+              label={sym.present ? "Replace .SchLib" : "Upload .SchLib"}
+            />
             {!sym.present && (
               <button
                 onClick={onGenerate}
                 disabled={genState === "running"}
                 className="h-7 px-2 text-xs rounded-md bg-ink-900 text-white inline-flex items-center gap-1 disabled:opacity-50"
-                title="Spawn a Claude subagent to read the datasheet PDF and emit a KiCad symbol"
+                title="Spawn a Claude subagent to read the datasheet PDF and author an Altium symbol"
               >
                 <I.Plus size={12} />
                 {genState === "running" ? "Generating…" : "Generate symbol"}
@@ -258,6 +313,21 @@ function PartDetail({
             )}
           </div>
         </div>
+
+        {upMsg && (
+          <div
+            className={
+              "mt-3 text-[12px] rounded-md px-3 py-2 border " +
+              (upState === "fail"
+                ? "border-warn/30 bg-warn/[0.06] text-warn"
+                : upState === "ok"
+                ? "border-ok/30 bg-ok/[0.06] text-ok"
+                : "border-edge bg-rail text-ink-700")
+            }
+          >
+            {upMsg}
+          </div>
+        )}
 
         {sym.render_error && (
           <div className="mt-3 text-[12px] rounded-md border border-warn/30 bg-warn/[0.06] text-warn px-3 py-2">
@@ -268,7 +338,13 @@ function PartDetail({
         {hasSymbol ? (
           <SymbolViewer mpn={sel} units={sym.svg_units!} />
         ) : sym.present ? null : (
-          <NoSymbolPlaceholder onGenerate={onGenerate} disabled={genState === "running"} />
+          <NoSymbolPlaceholder
+            mpn={sel}
+            onGenerate={onGenerate}
+            disabled={genState === "running"}
+            onUpload={onUpload}
+            uploading={upState === "uploading"}
+          />
         )}
 
         {sym.present && (
@@ -298,34 +374,90 @@ function PartDetail({
 }
 
 function NoSymbolPlaceholder({
+  mpn,
   onGenerate,
   disabled,
+  onUpload,
+  uploading,
 }: {
+  mpn: string;
   onGenerate: () => void;
   disabled: boolean;
+  onUpload: (file: File) => void;
+  uploading: boolean;
 }) {
   return (
     <div className="mt-4 rounded-md border border-dashed border-edge bg-rail px-4 py-8 grid place-items-center text-center">
       <div className="text-sm text-ink-700">
         No symbol generated for this part yet.
       </div>
-      <div className="text-xs text-ink-500 mt-1 max-w-[360px]">
-        A Claude subagent can read the datasheet PDF in this part's folder
-        and emit a KiCad <code>.kicad_sym</code> with the right pin types.
+      <div className="text-xs text-ink-500 mt-1 max-w-[420px]">
+        Generate one from the datasheet, or bring your own: upload an Altium
+        {" "}<code>.SchLib</code>, or download one from Ultra Librarian and
+        upload it here.
       </div>
-      <button
-        onClick={onGenerate}
-        disabled={disabled}
-        className="mt-3 h-8 px-3 text-xs rounded-md bg-ink-900 text-white inline-flex items-center gap-1 disabled:opacity-50"
-      >
-        <I.Plus size={12} /> Generate symbol from datasheet
-      </button>
+      <div className="mt-3 flex items-center gap-2">
+        <button
+          onClick={onGenerate}
+          disabled={disabled}
+          className="h-8 px-3 text-xs rounded-md bg-ink-900 text-white inline-flex items-center gap-1 disabled:opacity-50"
+        >
+          <I.Plus size={12} /> Generate from datasheet
+        </button>
+        <UploadSchLibButton onUpload={onUpload} busy={uploading} label="Upload .SchLib" />
+        <a
+          href={api.ultraLibrarianUrl(mpn)}
+          target="_blank"
+          rel="noreferrer"
+          className="h-8 px-3 text-xs rounded-md border border-edge text-ink-700 hover:border-ink-300 inline-flex items-center gap-1"
+        >
+          <I.External size={13} /> Ultra Librarian
+        </a>
+      </div>
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// SVG viewer — uses kicad-cli's exported SVG for each unit
+// Upload .SchLib — hidden file input fronted by a styled button
+// ---------------------------------------------------------------------------
+function UploadSchLibButton({
+  onUpload,
+  busy,
+  label,
+}: {
+  onUpload: (file: File) => void;
+  busy: boolean;
+  label: string;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  return (
+    <>
+      <input
+        ref={ref}
+        type="file"
+        accept=".SchLib,.schlib"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) onUpload(f);
+          e.target.value = ""; // allow re-selecting the same file
+        }}
+      />
+      <button
+        onClick={() => ref.current?.click()}
+        disabled={busy}
+        title="Upload an Altium .SchLib to use as this part's symbol"
+        className="h-7 px-2 text-xs rounded-md border border-edge text-ink-700 hover:border-ink-300 inline-flex items-center gap-1 disabled:opacity-50"
+      >
+        <I.Upload size={13} /> {busy ? "Uploading…" : label}
+      </button>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// SVG viewer — uses altium_monkey's exported SVG for each unit
 // ---------------------------------------------------------------------------
 function SymbolViewer({ mpn, units }: { mpn: string; units: string[] }) {
   const [active, setActive] = useState(0);
@@ -335,7 +467,7 @@ function SymbolViewer({ mpn, units }: { mpn: string; units: string[] }) {
       <div className="flex items-baseline gap-3 mb-2">
         <h3 className="text-sm font-semibold text-ink-900">Symbol</h3>
         <span className="text-[11px] text-ink-500">
-          rendered via <code>kicad-cli sym export svg</code>
+          rendered via <code>altium_monkey symbol_to_svg</code>
         </span>
         {units.length > 1 && (
           <div className="ml-auto flex items-center gap-1">

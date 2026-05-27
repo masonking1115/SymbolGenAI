@@ -60,8 +60,24 @@ import agent as agent_mod
 # ---------------------------------------------------------------------------
 HERE = Path(__file__).resolve().parent
 PROJECT_DIR = HERE.parent.parent  # test1/
+REPO_ROOT = PROJECT_DIR.parent    # SymbolGenAI/ — cwd for `-m test1.altium...`
+
+# Backend selector. The original GUI drove the KiCad pipeline (gen_schematic.py
+# + kicad-cli renders). On this machine we drive the Altium backend
+# (test1/altium/build_project.py), which renders SVGs and runs on Windows.
+# Override with SCHEMA_BACKEND=kicad to restore the original behaviour.
+BACKEND = os.environ.get("SCHEMA_BACKEND", "altium").lower()
+
 KICAD_DIR = PROJECT_DIR / "kicad"
-RENDER_DIR = KICAD_DIR / "render"
+ALTIUM_OUT = PROJECT_DIR / "altium" / "out"
+if BACKEND == "altium":
+    RENDER_DIR = ALTIUM_OUT / "render"
+    RENDER_EXT = "svg"
+    RENDER_MEDIA = "image/svg+xml"
+else:
+    RENDER_DIR = KICAD_DIR / "render"
+    RENDER_EXT = "png"
+    RENDER_MEDIA = "image/png"
 LIBRARY_DIR = PROJECT_DIR / "Parts Library"
 NETLIST_DIR = PROJECT_DIR / "netlist"
 GEN_SCRIPT = PROJECT_DIR / "gen_schematic.py"
@@ -78,6 +94,7 @@ SKILLS_DIR = RESOURCES_DIR / "skills"           # agent skills (md), used by cha
 sys.path.insert(0, str(PROJECT_DIR.parent))
 from test1.sim import service as sim_service  # noqa: E402
 from test1.sim import simconfig as sim_config  # noqa: E402
+from test1.altium import symlib as symlib  # noqa: E402  — native Altium symbols
 
 
 # ---------------------------------------------------------------------------
@@ -88,6 +105,7 @@ class Run:
     run_id: str
     kind: str                          # "generate" | "review" | "autofix"
     cmd: list[str]
+    cwd: str | None = None             # subprocess cwd (default PROJECT_DIR)
     status: str = "running"            # "running" | "ok" | "fail"
     returncode: int | None = None
     lines: deque[str] = field(default_factory=lambda: deque(maxlen=5000))
@@ -105,7 +123,7 @@ async def _stream_subprocess(run: Run) -> None:
     # eeschema on the host machine. Keep keystrokes scoped to the user.
     proc = await asyncio.create_subprocess_exec(
         *run.cmd,
-        cwd=str(PROJECT_DIR),
+        cwd=run.cwd or str(PROJECT_DIR),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
         env=env,
@@ -133,7 +151,7 @@ async def _stream_subprocess(run: Run) -> None:
             pass
 
 
-async def _start_run(kind: str, cmd: list[str]) -> str:
+async def _start_run(kind: str, cmd: list[str], cwd: str | None = None) -> str:
     """Register a run and kick off its subprocess on the current event loop.
 
     MUST be called from an async endpoint — `asyncio.create_task` requires a
@@ -141,7 +159,7 @@ async def _start_run(kind: str, cmd: list[str]) -> str:
     `async def`. Sync endpoints execute in a worker thread with no loop.
     """
     run_id = uuid.uuid4().hex[:12]
-    run = Run(run_id=run_id, kind=kind, cmd=cmd)
+    run = Run(run_id=run_id, kind=kind, cmd=cmd, cwd=cwd)
     _RUNS[run_id] = run
     asyncio.create_task(_stream_subprocess(run))
     return run_id
@@ -169,7 +187,7 @@ def health() -> dict:
 # ---- Snapshot ------------------------------------------------------------
 @app.get("/api/state")
 def state() -> dict:
-    sheets = sorted(p.stem for p in RENDER_DIR.glob("*.png")) if RENDER_DIR.exists() else []
+    sheets = sorted(p.stem for p in RENDER_DIR.glob(f"*.{RENDER_EXT}")) if RENDER_DIR.exists() else []
     return {
         "project_dir": str(PROJECT_DIR),
         "sheets": sheets,
@@ -220,7 +238,7 @@ def freshness() -> dict:
       - any expected output is missing, OR
       - any input file has mtime > min(output mtimes).
 
-    Inputs:  netlist/*.yaml, gen/*.py, Parts Library/**/*.kicad_sym
+    Inputs:  netlist/*.yaml, gen/*.py, Parts Library/**/*.SchLib
     Outputs: kicad/*.kicad_sch, kicad/render/*.png
 
     Returns: status (fresh|stale|never), reason, newest_input, oldest_output.
@@ -232,14 +250,23 @@ def freshness() -> dict:
     if gen_dir.exists():
         inputs.extend(sorted(gen_dir.glob("*.py")))
     if LIBRARY_DIR.exists():
-        inputs.extend(sorted(LIBRARY_DIR.glob("*/*.kicad_sym")))
-    inputs.append(PROJECT_DIR / "gen_schematic.py")
+        inputs.extend(sorted(LIBRARY_DIR.glob("*/*.SchLib")))
 
     outputs: list[Path] = []
-    if KICAD_DIR.exists():
-        outputs.extend(sorted(KICAD_DIR.glob("*.kicad_sch")))
-    if RENDER_DIR.exists():
-        outputs.extend(sorted(RENDER_DIR.glob("*.png")))
+    if BACKEND == "altium":
+        alt_dir = PROJECT_DIR / "altium"
+        if alt_dir.exists():
+            inputs.extend(sorted(alt_dir.glob("*.py")))
+        if ALTIUM_OUT.exists():
+            outputs.extend(sorted(ALTIUM_OUT.glob("*.SchDoc")))
+        if RENDER_DIR.exists():
+            outputs.extend(sorted(RENDER_DIR.glob(f"*.{RENDER_EXT}")))
+    else:
+        inputs.append(PROJECT_DIR / "gen_schematic.py")
+        if KICAD_DIR.exists():
+            outputs.extend(sorted(KICAD_DIR.glob("*.kicad_sch")))
+        if RENDER_DIR.exists():
+            outputs.extend(sorted(RENDER_DIR.glob("*.png")))
 
     if not outputs or not any(p.is_file() for p in outputs):
         return {
@@ -294,7 +321,7 @@ def sheets() -> dict:
     if not RENDER_DIR.exists():
         return {"sheets": []}
     out = []
-    for p in sorted(RENDER_DIR.glob("*.png")):
+    for p in sorted(RENDER_DIR.glob(f"*.{RENDER_EXT}")):
         st = p.stat()
         out.append({"name": p.stem, "size": st.st_size, "mtime": st.st_mtime})
     return {"sheets": out}
@@ -304,11 +331,13 @@ def sheets() -> dict:
 def png(name: str):
     if not re.fullmatch(r"[A-Za-z0-9_\-]+", name):
         raise HTTPException(400, "bad name")
-    p = RENDER_DIR / f"{name}.png"
+    # Serves the render in the active backend's format (PNG for KiCad, SVG for
+    # Altium). Browsers render SVG fine inside the frontend's <img>.
+    p = RENDER_DIR / f"{name}.{RENDER_EXT}"
     if not p.exists():
         raise HTTPException(404, "no such sheet")
     # No-cache so the frontend always sees the latest render after a regen.
-    return FileResponse(p, media_type="image/png",
+    return FileResponse(p, media_type=RENDER_MEDIA,
                         headers={"Cache-Control": "no-store"})
 
 
@@ -318,6 +347,14 @@ _LINT_LINE = re.compile(
     r"(?P<rule>\S+)\s+(?P<msg>.+?)(?:\s+\((?P<refs>[^)]*)\))?\s*$"
 )
 
+# Altium build_project format: a per-sheet table row sets the "current sheet",
+# then each issue is an indented detail line "- SEVERITY rule msg (refs)".
+_LINT_SHEET_ROW = re.compile(
+    r"^(?P<sheet>[A-Za-z]\w*)\s+(?:A\d|-)\s+\d+/\d+/\d+\s+\S")
+_LINT_DETAIL = re.compile(
+    r"^\s*(?:-\s+)?(?P<sev>ERROR|WARNING|INFO)\s+(?P<rule>\S+)\s+"
+    r"(?P<msg>.+?)(?:\s+\((?P<refs>[^)]*)\))?\s*$")
+
 
 def _parse_lint_from_lines(lines: list[str]) -> list[dict]:
     """Pull layout-lint rows out of a gen_schematic.py run.
@@ -326,17 +363,33 @@ def _parse_lint_from_lines(lines: list[str]) -> list[dict]:
     with the sheet name in brackets. Anything that doesn't match is dropped.
     """
     out = []
+    cur_sheet = "?"
     for line in lines:
+        # Legacy KiCad gen format: "[sheet] SEVERITY rule msg".
         m = _LINT_LINE.match(line)
-        if not m:
+        if m:
+            out.append({
+                "sheet": m.group("sheet"), "severity": m.group("sev"),
+                "rule": m.group("rule"), "message": m.group("msg").strip(),
+                "refs": [r.strip() for r in (m.group("refs") or "").split(",") if r.strip()],
+            })
             continue
-        out.append({
-            "sheet": m.group("sheet"),
-            "severity": m.group("sev"),
-            "rule": m.group("rule"),
-            "message": m.group("msg").strip(),
-            "refs": [r.strip() for r in (m.group("refs") or "").split(",") if r.strip()],
-        })
+        # Altium build_project format: track current sheet from the table row,
+        # attach each indented detail line to it.
+        if line.strip().lower().startswith("symbol library"):
+            cur_sheet = "library"
+            continue
+        row = _LINT_SHEET_ROW.match(line)
+        if row:
+            cur_sheet = row.group("sheet")
+            continue
+        d = _LINT_DETAIL.match(line)
+        if d:
+            out.append({
+                "sheet": cur_sheet, "severity": d.group("sev"),
+                "rule": d.group("rule"), "message": d.group("msg").strip(),
+                "refs": [r.strip() for r in (d.group("refs") or "").split(",") if r.strip()],
+            })
     return out
 
 
@@ -357,19 +410,19 @@ def lint(run_id: str | None = None) -> dict:
                 target = r
                 break
     issues = _parse_lint_from_lines(list(target.lines)) if target else []
-    # Authoritative list of rule IDs from gen/layout_lint.py. Keep in sync if
-    # new rules are added there. Source of truth is the linter module itself.
-    rules = [
-        {"id": "bbox_overlap", "summary": "Components overlap"},
-        {"id": "bbox_too_close", "summary": "Components closer than 2.54 mm"},
-        {"id": "refval_on_body", "summary": "Reference/value label collides with body"},
-        {"id": "label_on_body", "summary": "Net label sits on top of a component body"},
-        {"id": "diagonal_wire", "summary": "Wire is not strictly H or V"},
-        {"id": "wire_through_body", "summary": "Wire crosses a part body"},
-        {"id": "duplicate_wire", "summary": "Two wires occupy the same segment"},
-        {"id": "redundant_junction", "summary": "Junction marker is redundant"},
-        {"id": "dense_gnd_cluster", "summary": "GND symbols clustered tightly"},
-    ]
+    # Authoritative rule registry lives in the linter module itself, so the GUI
+    # always reflects exactly what the build gates on (Altium backend). Fall
+    # back to a minimal list if the legacy KiCad backend is selected.
+    try:
+        from test1.altium.layout_lint import RULES as _RULES
+        rules = [dict(r) for r in _RULES]
+    except Exception:
+        rules = [
+            {"id": "diagonal_wire", "severity": "ERROR", "scope": "sheet",
+             "summary": "Wire is not strictly H or V"},
+            {"id": "wire_through_body", "severity": "WARNING", "scope": "sheet",
+             "summary": "Wire crosses a part body"},
+        ]
     return {
         "run_id": target.run_id if target else None,
         "status": target.status if target else "unknown",
@@ -450,57 +503,27 @@ def library() -> dict:
 
 
 def _load_symbol_index() -> set[str]:
-    """Return the set of MPNs (directory names) that have at least one
-    top-level symbol defined in their per-MPN .kicad_sym file."""
+    """Return the set of MPNs (directory names) that have a native Altium
+    symbol library `<MPN>/<MPN>.SchLib`."""
     if not LIBRARY_DIR.exists():
         return set()
     out: set[str] = set()
     for d in LIBRARY_DIR.iterdir():
         if not d.is_dir() or d.name.startswith("."):
             continue
-        if _primary_symbol_for(d.name) is not None:
+        if symlib.has_symbol(d.name):
             out.add(d.name)
     return out
 
 
-def _top_level_symbol_names(text: str) -> list[str]:
-    """Return the symbol names declared in a .kicad_sym file, dropping
-    KiCad's internal `<name>_<unit>_<bodystyle>` aliases."""
-    out: list[str] = []
-    for name in re.findall(r'\(symbol\s+"([^"]+)"', text):
-        if re.search(r'_\d+_\d+$', name):
-            continue
-        out.append(name)
-    return out
-
-
 def _primary_symbol_for(mpn: str) -> tuple[Path, str] | None:
-    """Return (sym_file, actual_symbol_name) for an MPN, or None.
-
-    Convention: each MPN directory contains <MPN>/<MPN>.kicad_sym, but the
-    actual symbol *inside* the file is not guaranteed to be named exactly
-    <MPN> — vendors ship things like `OPA2388IDR` or `MCP4728-E_UN`. We
-    pick the first top-level symbol in the matching file.
-    """
-    direct = LIBRARY_DIR / mpn / f"{mpn}.kicad_sym"
-    candidates: list[Path] = []
-    if direct.exists():
-        candidates.append(direct)
-    # Fall back: any kicad_sym file in the MPN's directory.
-    candidates.extend(sorted((LIBRARY_DIR / mpn).glob("*.kicad_sym")))
-    seen: set[Path] = set()
-    for f in candidates:
-        if f in seen:
-            continue
-        seen.add(f)
-        try:
-            text = f.read_text(errors="replace")
-        except OSError:
-            continue
-        names = _top_level_symbol_names(text)
-        if names:
-            return f, names[0]
-    return None
+    """Return (schlib_file, symbol_name) for an MPN, or None. Symbols are
+    authored as `<MPN>` inside `<MPN>/<MPN>.SchLib`, but fall back to the first
+    symbol present so a hand-built library still resolves."""
+    name = symlib.symbol_name(mpn)
+    if name is None:
+        return None
+    return symlib.schlib_path(mpn), name
 
 
 def _symbol_file_for(mpn: str) -> Path | None:
@@ -533,94 +556,41 @@ def library_item(mpn: str) -> dict:
     }
 
 
-# --- Symbol parser + renderer ----------------------------------------------
-KICAD_CLI = "/Users/masonking/Downloads/kicad/build/kicad/KiCad.app/Contents/MacOS/kicad-cli"
+# --- Symbol parser + renderer (native Altium .SchLib) ----------------------
 SYM_CACHE = HERE.parent / "state" / "symbol-cache"
 
 
-_SYM_BLOCK_RE = re.compile(
-    r'\(symbol\s+"(?P<name>[^"]+)"(?P<body>.*?)(?=\n\s*\(symbol\s+"|\Z)',
-    re.S,
-)
-_PROP_RE = re.compile(
-    r'\(property\s+"(?P<key>[^"]+)"\s+"(?P<val>[^"]*)"', re.S
-)
-_PIN_RE = re.compile(
-    r'\(pin\s+(?P<etype>\S+)\s+\S+\s+\(at\s+(?P<x>[-\d\.]+)\s+(?P<y>[-\d\.]+)\s+(?P<rot>[\d\.]+)\)'
-    r'.*?\(name\s+"(?P<name>[^"]*)"'
-    r'.*?\(number\s+"(?P<num>[^"]*)"',
-    re.S,
-)
-_UNIT_NAME_RE = re.compile(r'"([^"]+_\d+_\d+)"')
-
-
-def _find_symbol_block(mpn: str) -> tuple[str, str] | None:
-    """Return (s-expr body, actual_symbol_name) for the symbol inside the
-    MPN's library file. The actual name may differ from the MPN."""
-    found = _primary_symbol_for(mpn)
-    if found is None:
-        return None
-    sym_file, actual_name = found
-    text = sym_file.read_text(errors="replace")
-    needle = f'(symbol "{actual_name}"'
-    i = text.find(needle)
-    if i < 0:
-        return None
-    # Find matching close paren for the (symbol ...) block.
-    depth = 0
-    end = i
-    while end < len(text):
-        c = text[end]
-        if c == "(":
-            depth += 1
-        elif c == ")":
-            depth -= 1
-            if depth == 0:
-                end += 1
-                break
-        end += 1
-    return text[i:end], actual_name
-
-
 def _parse_symbol(mpn: str) -> dict | None:
-    found = _find_symbol_block(mpn)
-    if found is None:
+    """GUI-shaped symbol info read straight from the committed `<MPN>.SchLib`
+    via altium_monkey. Returns {name, mpn, properties, pins[], pin_count,
+    unit_names[]} or None when the part has no symbol library yet."""
+    summary = symlib.symbol_summary(mpn)
+    if not summary:
         return None
-    block, actual_name = found
-    props: dict[str, str] = {}
-    for m in _PROP_RE.finditer(block):
-        props[m.group("key")] = m.group("val")
-    pins: list[dict] = []
-    for m in _PIN_RE.finditer(block):
-        pins.append({
-            "number": m.group("num"),
-            "name": m.group("name") or "~",
-            "etype": m.group("etype"),
-            "x": float(m.group("x")),
-            "y": float(m.group("y")),
-            "rotation": int(float(m.group("rot"))),
-        })
-    pins.sort(key=lambda p: (
-        0 if p["x"] < 0 else 1 if p["x"] > 0 else 2,
-        int(p["number"]) if p["number"].isdigit() else 9999,
-    ))
-    units = sorted(set(_UNIT_NAME_RE.findall(block)))
+    # Strip the per-pin `unit` helper field the frontend doesn't model. Surface
+    # the symbol's own parameters (Value/Footprint/Datasheet/MPN/...), falling
+    # back to a local PDF for Datasheet when the symbol carries none.
+    pins = [{k: v for k, v in p.items() if k != "unit"} for p in summary["pins"]]
+    props: dict[str, str] = dict(summary.get("properties") or {})
+    if "Datasheet" not in props:
+        pdfs = sorted((LIBRARY_DIR / mpn).glob("*.pdf"))
+        if pdfs:
+            props["Datasheet"] = pdfs[0].name
     return {
-        "name": actual_name,
+        "name": summary["name"],
         "mpn": mpn,
         "properties": props,
         "pins": pins,
-        "pin_count": len(pins),
-        "unit_names": units,
+        "pin_count": summary["pin_count"],
+        "unit_names": summary["unit_names"],
     }
 
 
 def _render_symbol_svg(mpn: str) -> tuple[Path, str]:
-    """Run kicad-cli to export the symbol as SVG. Cached on disk; cache is
-    invalidated whenever the source library file's mtime increases.
+    """Render the MPN's symbol to SVG (one file per unit) via altium_monkey,
+    cached on disk and invalidated when the source `<MPN>.SchLib` mtime grows.
 
-    Returns (cache_dir, actual_symbol_name). SVG files are named
-    <actual_symbol_name>_unitN.svg by kicad-cli, NOT the MPN.
+    Returns (cache_dir, symbol_name); SVGs are named <symbol_name>_unit<N>.svg.
     """
     found = _primary_symbol_for(mpn)
     if found is None:
@@ -634,15 +604,24 @@ def _render_symbol_svg(mpn: str) -> tuple[Path, str]:
     expected = cache_dir / f"{actual_name}_unit1.svg"
     if expected.exists() and cached_mtime >= src_mtime:
         return cache_dir, actual_name
-    proc = subprocess.run(
-        [KICAD_CLI, "sym", "export", "svg",
-         "--symbol", actual_name,
-         "--output", str(cache_dir),
-         str(sym_file)],
-        capture_output=True, text=True, timeout=20,
-    )
-    if proc.returncode != 0:
-        raise HTTPException(500, f"kicad-cli failed: {proc.stderr.strip() or proc.stdout.strip()}")
+
+    # Clear any stale unit SVGs so a re-render after an edit can't leave behind
+    # units that no longer exist.
+    for old in cache_dir.glob(f"{actual_name}_unit*.svg"):
+        old.unlink()
+
+    try:
+        from altium_monkey import AltiumSchLib
+        lib = AltiumSchLib(sym_file)
+        units = sorted({u for *_, u in symlib.read_pins(mpn).values()}) or [1]
+        multipart = len(units) > 1
+        for part_id in units:
+            svg = lib.symbol_to_svg(actual_name,
+                                    part_id=part_id if multipart else None)
+            (cache_dir / f"{actual_name}_unit{part_id}.svg").write_text(
+                svg, encoding="utf-8")
+    except Exception as e:
+        raise HTTPException(500, f"symbol render failed: {e}")
     stamp.write_text(str(src_mtime))
     return cache_dir, actual_name
 
@@ -675,6 +654,51 @@ def library_symbol_svg(mpn: str, unit: str):
         raise HTTPException(404, "no such unit svg")
     return FileResponse(p, media_type="image/svg+xml",
                         headers={"Cache-Control": "no-store"})
+
+
+class SymbolUpload(BaseModel):
+    filename: str
+    content_b64: str
+
+
+@app.post("/api/library/{mpn}/symbol")
+def library_symbol_upload(mpn: str, body: SymbolUpload) -> dict:
+    """Replace an MPN's symbol with a user-supplied Altium `.SchLib`.
+
+    The file is validated (it must parse via altium_monkey and contain at least
+    one symbol) before it overwrites `Parts Library/<MPN>/<MPN>.SchLib`. Any
+    previous symbol is kept as `<MPN>.SchLib.bak` (the repo is not under git).
+    Caches invalidate automatically: symlib's summary is keyed on file mtime and
+    the SVG cache re-renders when the source mtime grows.
+    """
+    from altium_monkey import AltiumSchLib
+
+    if not re.fullmatch(r"[A-Za-z0-9_\-\.]+", mpn):
+        raise HTTPException(400, "bad mpn")
+    d = LIBRARY_DIR / mpn
+    if not d.exists() or not d.is_dir():
+        raise HTTPException(404, "no such part")
+    _safe_upload_name(body.filename, ("schlib",))
+    raw = _decode_upload(body.content_b64)
+
+    dest = symlib.schlib_path(mpn)            # Parts Library/<MPN>/<MPN>.SchLib
+    tmp = dest.with_suffix(".SchLib.upload-tmp")
+    tmp.write_bytes(raw)
+    try:
+        names = AltiumSchLib.get_symbol_names(str(tmp))
+    except Exception as e:                    # noqa: BLE001 — surface parse error
+        tmp.unlink(missing_ok=True)
+        raise HTTPException(400, f"not a readable Altium .SchLib: {e}")
+    if not names:
+        tmp.unlink(missing_ok=True)
+        raise HTTPException(400, "no symbols found in the .SchLib")
+
+    if dest.exists():
+        bak = dest.with_suffix(".SchLib.bak")
+        bak.unlink(missing_ok=True)
+        dest.replace(bak)
+    tmp.replace(dest)
+    return {"ok": True, "mpn": mpn, "symbols": names, "size": len(raw)}
 
 
 @app.get("/api/library/{mpn}/datasheet")
@@ -760,6 +784,12 @@ class ReviewOpts(BaseModel):
 
 @app.post("/api/run/generate")
 async def run_generate(opts: GenerateOpts = GenerateOpts()) -> dict:
+    if BACKEND == "altium":
+        # Build every sheet + the project via the Altium backend. Run as a
+        # module from the repo root so `test1.altium...` imports resolve, using
+        # this server's interpreter (the venv that has altium_monkey + pyyaml).
+        cmd = [sys.executable, "-m", "test1.altium.build_project"]
+        return {"run_id": await _start_run("generate", cmd, cwd=str(REPO_ROOT))}
     if not GEN_SCRIPT.exists():
         raise HTTPException(500, "gen_schematic.py missing")
     cmd = [sys.executable, str(GEN_SCRIPT)]
@@ -1365,7 +1395,8 @@ async def run_apply_and_generate(opts: ApplyAndGenOpts = ApplyAndGenOpts()) -> d
     The frontend tracks stage 1 via /api/agent/{run_id}/stream and stage 3
     via /api/run/{run_id}/stream. Both ids are returned up front.
     """
-    if not GEN_SCRIPT.exists():
+    # KiCad backend needs gen_schematic.py; the Altium backend builds a module.
+    if BACKEND != "altium" and not GEN_SCRIPT.exists():
         raise HTTPException(500, "gen_schematic.py missing")
 
     items = agent_mod.load_changelog()
@@ -1381,7 +1412,12 @@ async def run_apply_and_generate(opts: ApplyAndGenOpts = ApplyAndGenOpts()) -> d
             assert ar is not None
             while ar.status == "running":
                 await asyncio.sleep(0.25)
-        # Now start the generate subprocess via the existing helper.
+        # Now start the generate subprocess — mirror run_generate's backend
+        # selection so this machine drives the Altium pipeline (build_project),
+        # not the KiCad gen_schematic.py which reads .kicad_sym files.
+        if BACKEND == "altium":
+            cmd = [sys.executable, "-m", "test1.altium.build_project"]
+            return await _start_run("generate", cmd, cwd=str(REPO_ROOT))
         cmd = [sys.executable, str(GEN_SCRIPT)]
         if opts.no_reopen:
             cmd.append("--no-reopen")

@@ -1,0 +1,369 @@
+"""Bobcat sheet — Altium port of gen/build_bobcat.py.
+
+Same declarative source (netlist/bobcat.yaml, loaded via the shared gen.netlist
+loader) and the SAME strict validator (gen.validator.validate). Only the layout
+backend changes from KiCad s-expr to Altium binary.
+
+Differences from the KiCad builder, all mechanical:
+  - coordinates are mils on a 100-mil grid (KiCad used mm),
+  - Altium Y grows UP, so "below the chip" = smaller y, "above" = larger y,
+  - wires route from placed-component pin hot-spots returned by place(),
+  - global_label/hier_label -> Altium Port,
+  - power_at(s, rail, x, y) -> s.power_at(rail, x, y),
+  - junction objects are cosmetic; connectivity rides T-intersections / pin
+    endpoints, which both Altium and the validator treat as connected.
+
+Bobcat (U20) is a QFN-40 placed at (5000, 5000). Measured pin geometry:
+  Left edge   (x=3600): pins 1..10, y = 5900 down to 4100 (step 200).
+  Bottom edge (y=3500): pins 11..20, x = 4100 .. 5900 (step 200).
+  Right edge  (x=6400): pins 21..30, y = 4000 .. 6000 (gap at EP), 41(EP)=5000.
+  Top edge    (y=6500): pins 31..40, x = 5900 down to 4100 (step 200).
+Passives (measured): R orient0 vertical pin1=+100y/pin2=-100y; R orient1
+  horizontal pin1=-100x/pin2=+100x; R orient3 horizontal pin1=+100x/pin2=-100x;
+  C orient0 vertical pin1=+100y/pin2=-100y; C orient1 horizontal pin1=-100x/pin2=+100x.
+
+Power nets (+VDDD/+VDDA1/+VDDA2/+VDDIO/GND) use LOCAL power symbols at each
+member — same-rail symbols share a name, so the validator unions each member's
+own component to the rail name (no global rail wire needed). The two INTERNAL
+nets (VDDA1_path, VDDA2_path) ARE physically wired into single components.
+"""
+
+from __future__ import annotations
+
+from altium_monkey import PortIOType, PortStyle
+
+from ..gen.netlist import load_netlist
+from ..gen.validator import validate
+from .build_symbols import get_library
+from .config import OUT_DIR, RENDER_DIR
+from .shared import AltiumSheet
+
+GRID = 100  # mil
+
+
+def build_bobcat() -> tuple[AltiumSheet, object]:
+    nl = load_netlist("bobcat")
+    lib, lmap = get_library()
+    s = AltiumSheet(name="bobcat", title="test1 — Bobcat DUT")
+
+    def place(ref, x, y, orientation=0, unit=1):
+        return s.place_from_netlist(lib, lmap, nl, ref, x, y,
+                                    orientation=orientation, unit=unit)
+
+    # =====================================================================
+    # Cluster A: Bobcat chip (U20) + GND exposed pad (pin 41)
+    # =====================================================================
+    # U20 sits high enough that the SPI cluster + pulls (which hang ~3000 mil
+    # below the chip bottom) stay at positive y, fully inside the sheet border.
+    # Every coordinate below derives from U20's pins except VDDIO_ROW_CY, which
+    # is raised by the same amount — so the whole layout is a uniform translate
+    # (routing/shorts unchanged), just lifted into the page.
+    U = place("U20", 5000, 7200)
+    CHIP_LEFT_X = U["1"][0]      # 3600
+    CHIP_RIGHT_X = U["21"][0]    # 6400
+    CHIP_BOT_Y = U["11"][1]      # 3500
+    CHIP_TOP_Y = U["31"][1]      # 6500
+
+    # Pin 41 (EP, right edge at y=5000) -> short stub right -> GND symbol.
+    ep_x, ep_y = U["41"]
+    s.wire(ep_x, ep_y, ep_x + 400, ep_y)
+    s.power_at("GND", ep_x + 400, ep_y)
+
+    # =====================================================================
+    # Cluster B: VDDD decoupling (pins 12, 20 — bottom edge)
+    #   per-pin local +VDDD symbol + cap to GND, no horizontal rail.
+    # =====================================================================
+    # Caps hang well BELOW the chip (smaller y). Each pin column:
+    #   pin -> down to +VDDD symbol -> down to cap pin1 -> cap pin2 -> GND.
+    VDDD_PSYM_Y = CHIP_BOT_Y - 600     # 2900 — local +VDDD symbol
+    VDDD_CAP_CY = CHIP_BOT_Y - 1500    # 2000 — cap centre (pin1=+100, pin2=-100)
+    VDDD_GND_Y = CHIP_BOT_Y - 2400     # 1100 — GND below cap
+    for ref, pn in [("C20", "12"), ("C21", "20")]:
+        px, py = U[pn]
+        s.wire(px, py, px, VDDD_PSYM_Y)             # pin down to +VDDD symbol
+        s.power_at("+VDDD", px, VDDD_PSYM_Y)
+        s.wire(px, VDDD_PSYM_Y, px, VDDD_CAP_CY + 100)  # down to cap pin1
+        place(ref, px, VDDD_CAP_CY)
+        s.wire(px, VDDD_CAP_CY - 100, px, VDDD_GND_Y)   # cap pin2 down to GND
+        s.power_at("GND", px, VDDD_GND_Y)
+    # Title BELOW the cap/GND column so it doesn't sit on top of C20.
+    s.text("VDDD core bypass", U["12"][0] - 400, VDDD_GND_Y - 400)
+
+    # =====================================================================
+    # Cluster D: VDDA1 path (pin 1, left edge) — series 0R R20 + C22 decouple
+    #   internal_VDDA1_path = {U20.1, R20.1, C22.1}; +VDDA1 = {R20.2}
+    # =====================================================================
+    p1x, p1y = U["1"]    # (3600, 5900)
+    # R20 horizontal to the LEFT of pin1. orient=3: pin1=+100x (right=chip side),
+    # pin2=-100x (left=rail side). Net: R20.1=chip-side (internal), R20.2=+VDDA1.
+    R20_CX = p1x - 700   # 2900
+    place("R20", R20_CX, p1y, orientation=3)
+    R20p = s.pins_of("R20", 1)   # 1=(3000,5900) chip; 2=(2800,5900) rail
+    s.wire(p1x, p1y, R20p["1"][0], p1y)                   # chip pin1 -> R20.1
+    s.wire(R20p["2"][0], p1y, R20_CX - 500, p1y)          # R20.2 -> +VDDA1
+    s.power_at("+VDDA1", R20_CX - 500, p1y)               # (2400, 5900)
+    # C22 decoupling: internal net wants C22.1 on the chip/R20.1 side. Pin1 (the
+    # VDDA1 top-left pin, y=5900) is ABOVE all SAMPLE_OUT left-exit lanes
+    # (y<=5700), so the C22 tap column at x=3000 is only safe ABOVE y=5900.
+    # Place C22 ABOVE pin1's row, orient=2 (pin1=bottom, pin2=top): pin1 routes
+    # DOWN to the R20.1 tap at (3000,5900), pin2 routes UP to GND. The pin1 wire
+    # stays at y>=5900, clear of every SAMPLE_OUT lane.
+    C22_TAP_X = R20p["1"][0]    # 3000 — the R20.1 column
+    C22_CY = p1y + 900          # 6800 — above pin1's row
+    place("C22", C22_TAP_X, C22_CY, orientation=2)
+    C22 = s.pins_of("C22", 1)   # 1=(3000,6700) bottom ; 2=(3000,6900) top
+    s.wire(C22["1"][0], C22["1"][1], C22_TAP_X, p1y)          # C22.1(bottom) -> R20.1 col (T at 3000,5900)
+    # C22.2(top) -> GND: jog right then drop so the GND symbol sits BELOW the
+    # wire (enters from above), not above its net.
+    C22_GX = C22_TAP_X + 400          # 3400
+    C22_GY = C22["2"][1] - 400        # 6500
+    s.wire(C22["2"][0], C22["2"][1], C22_GX, C22["2"][1])     # top pin -> right
+    s.wire(C22_GX, C22["2"][1], C22_GX, C22_GY)              # down to GND stub
+    s.power_at("GND", C22_GX, C22_GY)
+
+    # =====================================================================
+    # Cluster E: VDDA2 path (pins 26, 27 tied, right edge) — series R21 + C23
+    #   internal_VDDA2_path = {U20.26, U20.27, R21.2, C23.1}; +VDDA2 = {R21.1}
+    # =====================================================================
+    # Pins 26 (y=5200) and 27 (y=5400) sit in the clear band between the OWT
+    # lanes (y<=4800) and the BIAS lanes (y>=5600). The EP-GND stub spans
+    # x[6400,6800] at y=5000. BIAS exits are kept SHORT (end at x=6800, below).
+    # So the tie column at x=6900 is a CLEAN vertical corridor (no right-exit
+    # lane crosses x=6900 in the band y[5400,6700]).
+    p26x, p26y = U["26"]   # (6400, 5200)
+    p27x, p27y = U["27"]   # (6400, 5400)
+    TIE_X = p26x + 500     # 6900 — clean vertical tie corridor
+    s.wire(p26x, p26y, TIE_X, p26y)        # pin26 -> tie
+    s.wire(p27x, p27y, TIE_X, p27y)        # pin27 -> tie
+    s.wire(TIE_X, p26y, TIE_X, p27y)       # vertical tie 26<->27
+    # R21 series 0R, horizontal on the pin27 row (y=5400). orient=3: pin1=+100x
+    # (right=rail=+VDDA2), pin2=-100x (left=chip side). Net: R21.2 chip, R21.1 rail.
+    R21_CX = TIE_X + 800   # 7700
+    R21_y = p27y           # 5400 row (above the OWT lanes, below BIAS pin28 row 5600)
+    place("R21", R21_CX, R21_y, orientation=3)
+    R21p = s.pins_of("R21", 1)   # 1=(7800,5400) rail ; 2=(7600,5400) chip
+    s.wire(TIE_X, R21_y, R21p["2"][0], R21_y)              # tie -> R21.2 (chip side)
+    s.wire(R21p["1"][0], R21_y, R21_CX + 500, R21_y)       # R21.1 -> +VDDA2
+    s.power_at("+VDDA2", R21_CX + 500, R21_y)              # (8200, 5400)
+    # C23 decoupling: net wants C23.1 on the chip side (tie). Place C23 ABOVE the
+    # tie on the x=6900 corridor, orient=2 (pin1=bottom, pin2=top): pin1 down to
+    # the tie (T at (6900,5400)=pin27 tie endpoint); pin2 up to GND. The corridor
+    # above the tie (y 5400..6700) is clear since BIAS exits end at x=6800.
+    C23_CY = p27y + 900    # 6300 — above the tie, on the x=6900 corridor
+    place("C23", TIE_X, C23_CY, orientation=2)
+    C23 = s.pins_of("C23", 1)   # 1=(6900,6200) bottom ; 2=(6900,6400) top
+    s.wire(C23["1"][0], C23["1"][1], TIE_X, p27y)          # C23.1(bottom) -> tie col (T at 6900,5400)
+    # C23.2(top) -> GND: jog right then drop so the GND symbol sits BELOW the
+    # wire (enters from above), not above its net.
+    C23_GX = TIE_X + 400              # 7300
+    C23_GY = C23["2"][1] - 400        # 6000
+    s.wire(C23["2"][0], C23["2"][1], C23_GX, C23["2"][1])  # top pin -> right
+    s.wire(C23_GX, C23["2"][1], C23_GX, C23_GY)           # down to GND stub
+    s.power_at("GND", C23_GX, C23_GY)
+
+    # =====================================================================
+    # Cluster C: VDDIO decoupling — per-pin local +VDDIO symbols + cap row
+    # =====================================================================
+    # VDDIO chip pins: 7(left), 13(bottom), 22(right), 33+34(top). Each gets a
+    # local +VDDIO power symbol on a short stub away from the chip.
+    # pin 7 (left, x=3600,y=4700): stub left
+    px, py = U["7"]
+    s.wire(px, py, px - 600, py)
+    s.power_at("+VDDIO", px - 600, py)
+    # pin 13 (bottom): stub down — reach PAST the pin-12 +VDDD symbol row
+    # (both are bottom pins 200 mil apart; equal stubs would collide the rail
+    # names) so the +VDDIO symbol sits clear below the +VDDD one.
+    px, py = U["13"]
+    s.wire(px, py, px, py - 1000)
+    s.power_at("+VDDIO", px, py - 1000)
+    # pin 22 (right, x=6400,y=4200): stub right
+    px, py = U["22"]
+    s.wire(px, py, px + 600, py)
+    s.power_at("+VDDIO", px + 600, py)
+    # pins 33, 34 (top): stub up
+    for pn in ("33", "34"):
+        px, py = U[pn]
+        s.wire(px, py, px, py + 600)
+        s.power_at("+VDDIO", px, py + 600)
+
+    # VDDIO cap row (C24..C29) — the caps connect ONLY to local +VDDIO / GND
+    # power symbols (no wired rail), so they live in an empty band well clear of
+    # every signal lane: lower-right of the sheet, below the OWT cluster.
+    VDDIO_ROW_CY = 3700                # empty band, well below the chip (raised with U20)
+    VDDIO_ROW_X0 = CHIP_RIGHT_X + 2400 # 8800 leftmost cap
+    for i, ref in enumerate(["C24", "C25", "C26", "C27", "C28", "C29"]):
+        cx = VDDIO_ROW_X0 + i * 500
+        place(ref, cx, VDDIO_ROW_CY)
+        # pin1 (top) up to +VDDIO ; pin2 (bottom) down to GND.
+        s.wire(cx, VDDIO_ROW_CY + 100, cx, VDDIO_ROW_CY + 500)
+        s.power_at("+VDDIO", cx, VDDIO_ROW_CY + 500)
+        s.wire(cx, VDDIO_ROW_CY - 100, cx, VDDIO_ROW_CY - 500)
+        s.power_at("GND", cx, VDDIO_ROW_CY - 500)
+    s.text("VDDIO supply bypass", VDDIO_ROW_X0, VDDIO_ROW_CY + 800)
+
+    # =====================================================================
+    # Cluster F: SPI / control pull network (bottom-edge pins 14..19)
+    # =====================================================================
+    # Each SPI pin drops DOWN to its own horizontal label row (unique y), exits
+    # LEFT to a Port. Pull R taps the vertical drop in its own column.
+    SPI_PINS = [
+        # (pin, net, io, pull_type, pull_ref)
+        ("14", "MOSI",      PortIOType.INPUT,  "down", "R22"),
+        ("15", "MISO",      PortIOType.OUTPUT, None,   None),
+        ("16", "SCLK",      PortIOType.INPUT,  "down", "R23"),
+        ("17", "CS_L",      PortIOType.INPUT,  "up",   "R24"),
+        ("18", "SPI_DMODE", PortIOType.INPUT,  "down", "R25"),
+        ("19", "RESET_N",   PortIOType.INPUT,  "up",   "R26"),
+    ]
+    # Label rows sit well below the chip (below the VDDD cluster GND at y=1100).
+    SPI_ROW_Y0 = CHIP_BOT_Y - 3000   # 500 topmost SPI row (highest pin -> ... )
+    SPI_ROW_STEP = 400               # rows 200 apart minimum; use 400 for clarity
+    SPI_PORT_X = CHIP_LEFT_X - 2400  # 1200 — port column, left of everything
+    # Pull resistors live in a column to the RIGHT of the drop, so the pull stub
+    # doesn't share x with any neighbouring pin's drop column.
+    for i, (pn, net, io, pull_type, pull_ref) in enumerate(SPI_PINS):
+        px, py = U[pn]
+        row_y = SPI_ROW_Y0 - i * SPI_ROW_STEP
+        s.wire(px, py, px, row_y)               # drop from pin to its row
+        s.wire(px, row_y, SPI_PORT_X, row_y)    # horizontal LEFT to port
+        s.port(net, SPI_PORT_X, row_y, io=io, style=PortStyle.LEFT_RIGHT)
+        if pull_type is None:
+            continue
+        # Tap the drop at tap_y, route RIGHT into a pull column.
+        tap_y = row_y + 200
+        pull_x = px + 300 + i * 100   # unique per-pin pull column
+        s.wire(px, tap_y, pull_x, tap_y)        # tap -> pull column (T at (px,tap_y))
+        if pull_type == "down":
+            # R vertical, pin1 (top) at tap_y, pin2 (bottom) to GND.
+            place(pull_ref, pull_x, tap_y - 100)
+            s.wire(pull_x, tap_y - 200, pull_x, tap_y - 600)
+            s.power_at("GND", pull_x, tap_y - 600)
+        else:  # "up" — pull-up to +VDDIO
+            place(pull_ref, pull_x, tap_y + 100)
+            s.wire(pull_x, tap_y + 200, pull_x, tap_y + 600)
+            s.power_at("+VDDIO", pull_x, tap_y + 600)
+
+    # =====================================================================
+    # Cluster G1: SAMPLE_OUT* on left edge (pins 2-6, 8-11)
+    # =====================================================================
+    # Left-edge pins exit straight LEFT to ports. Pin 11 is on the BOTTOM edge
+    # (x=4100,y=3500); route it left at its own y.
+    SAMPLE_PORT_X = CHIP_LEFT_X - 2400   # 1200 (share column convention)
+    for pn, net in [("2", "SAMPLE_OUTV"), ("3", "SAMPLE_OUT0"), ("4", "SAMPLE_OUT1"),
+                    ("5", "SAMPLE_OUT2"), ("6", "SAMPLE_OUT3"), ("8", "SAMPLE_OUT4"),
+                    ("9", "SAMPLE_OUT5"), ("10", "SAMPLE_OUT6")]:
+        px, py = U[pn]
+        s.wire(px, py, SAMPLE_PORT_X, py)
+        s.port(net, SAMPLE_PORT_X, py, io=PortIOType.OUTPUT, style=PortStyle.LEFT_RIGHT)
+    # pin 11 (bottom edge) -> down a touch to a unique row then left.
+    p11x, p11y = U["11"]   # (4100, 3500)
+    S11_Y = CHIP_BOT_Y - 200   # 3300 — unique row, clear of SPI rows (<=500)
+    s.wire(p11x, p11y, p11x, S11_Y)
+    s.wire(p11x, S11_Y, SAMPLE_PORT_X, S11_Y)
+    s.port("SAMPLE_OUT7", SAMPLE_PORT_X, S11_Y, io=PortIOType.OUTPUT, style=PortStyle.LEFT_RIGHT)
+
+    # =====================================================================
+    # Cluster G2: OSC_EN / WEIGHT_EN / SAMPLE_TRIG (right edge 23,24,25) + pulls
+    # =====================================================================
+    OWT_PORT_X = CHIP_RIGHT_X + 2800   # 9200 past pull columns
+    OWT_PULL_ROW_Y = CHIP_BOT_Y - 700  # 2800 below chip body for the R bodies
+    OWT = [
+        ("23", "OSC_EN",      "R27", CHIP_RIGHT_X + 900),
+        ("24", "WEIGHT_EN",   "R28", CHIP_RIGHT_X + 1300),
+        ("25", "SAMPLE_TRIG", "R29", CHIP_RIGHT_X + 1700),
+    ]
+    for pn, net, pull_ref, pull_x in OWT:
+        px, py = U[pn]
+        s.wire(px, py, OWT_PORT_X, py)                 # chip pin -> port (horizontal)
+        s.port(net, OWT_PORT_X, py, io=PortIOType.OUTPUT, style=PortStyle.LEFT_RIGHT)
+        # Pull drops as a T-branch off this horizontal at pull_x.
+        place(pull_ref, pull_x, OWT_PULL_ROW_Y + 100)  # R vertical, pin1 top
+        s.wire(pull_x, py, pull_x, OWT_PULL_ROW_Y + 200)   # tap down to R pin1
+        s.wire(pull_x, OWT_PULL_ROW_Y, pull_x, OWT_PULL_ROW_Y - 400)  # R pin2 -> GND
+        s.power_at("GND", pull_x, OWT_PULL_ROW_Y - 400)
+
+    # =====================================================================
+    # Cluster G3: BIAS0/1 (right edge 28,29) — ports, no pull
+    # =====================================================================
+    # BIAS exits are kept SHORT (end at x=6800) so they do NOT span the VDDA2
+    # tie corridor at x=6900 (see Cluster E). Ports sized smaller to fit.
+    for pn, net in [("28", "BIAS0"), ("29", "BIAS1")]:
+        px, py = U[pn]
+        # End the exit at x=6500 so the port BODY (extends to 6800) stops short
+        # of the VDDA2 tie corridor at x=6900 (a body reaching into it would be
+        # impaled by the corridor wire — wire_through_port).
+        s.wire(px, py, px + 100, py)            # -> x=6500
+        s.port(net, px + 100, py, io=PortIOType.INPUT,
+               style=PortStyle.LEFT_RIGHT, width_mils=300)
+
+    # NC pins 21, 30 (right edge)
+    for pn in ("21", "30"):
+        px, py = U[pn]
+        s.wire(px, py, px + 300, py)
+        s.no_connect(px + 300, py)
+
+    # =====================================================================
+    # Cluster G4: CLK_OUT3/2/1/0 (top edge 31,32,35,36) — ports up
+    # =====================================================================
+    CLK = [
+        ("31", "CLK_OUT3", CHIP_TOP_Y + 2600),
+        ("32", "CLK_OUT2", CHIP_TOP_Y + 2200),
+        ("35", "CLK_OUT1", CHIP_TOP_Y + 1800),
+        ("36", "CLK_OUT0", CHIP_TOP_Y + 1400),
+    ]
+    CLK_PORT_X = CHIP_RIGHT_X + 1200   # 7600 right of chip body
+    for pn, net, target_y in CLK:
+        px, py = U[pn]
+        s.wire(px, py, px, target_y)                 # up from pin
+        s.wire(px, target_y, CLK_PORT_X, target_y)   # right to port
+        s.port(net, CLK_PORT_X, target_y, io=PortIOType.OUTPUT, style=PortStyle.LEFT_RIGHT)
+
+    # =====================================================================
+    # Cluster G5: GPIO0-3 (top edge 37,38,39,40) + 10k pull-downs
+    # =====================================================================
+    # Each pin drops UP to its OWN row, exits LEFT to a port. CRITICAL (mirrors
+    # the KiCad builder's anti-short rule): assign the LOWEST-x pin (40) to the
+    # row CLOSEST to the chip and the highest-x pin (37) to the farthest row, and
+    # make every GPIO horizontal span ONLY [port_x, pin_x]. Then a higher pin's
+    # vertical drop (at larger x) never lands on a lower row's horizontal
+    # (which ends at a smaller x). Pulls drop DOWN toward the chip in a column
+    # strictly between the pin's x and the next-lower pin's x, so the pull
+    # vertical clears every other GPIO row too.
+    GPIO = [   # (pin, net, pull_ref, pull_x) — ordered LOW x (closest row) -> HIGH x
+        ("40", "GPIO0", "R33", 4000),   # px=4100 -> closest row
+        ("39", "GPIO1", "R32", 4200),   # px=4300
+        ("38", "GPIO2", "R31", 4400),   # px=4500
+        ("37", "GPIO3", "R30", 4600),   # px=4700 -> farthest row
+    ]
+    GPIO_PORT_X = CHIP_LEFT_X - 2400   # 1200 (left side)
+    for i, (pn, net, pull_ref, pull_x) in enumerate(GPIO):
+        px, py = U[pn]
+        row_y = CHIP_TOP_Y + 1400 + i * 400   # 7900, 8300, 8700, 9100
+        s.wire(px, py, px, row_y)                   # up to own row
+        s.wire(px, row_y, GPIO_PORT_X, row_y)       # LEFT to port (span [1200, px])
+        s.port(net, GPIO_PORT_X, row_y, io=PortIOType.OUTPUT, style=PortStyle.LEFT_RIGHT)
+        # pull-down R30..R33: .1 on GPIO net (row side), .2 on GND. R orient0:
+        # pin1=top, pin2=bottom. Place R BELOW the row; pin1(top) taps the row,
+        # pin2(bottom) drops to GND. Tap stub from the horizontal at pull_x.
+        R_CY = row_y - 400                          # R centre below the row
+        place(pull_ref, pull_x, R_CY)
+        Rp = s.pins_of(pull_ref, 1)  # 1=(pull_x,R_CY+100) ; 2=(pull_x,R_CY-100)
+        s.wire(pull_x, row_y, pull_x, Rp["1"][1])           # row tap -> R.1(top)
+        s.wire(pull_x, Rp["2"][1], pull_x, R_CY - 500)      # R.2(bottom) -> GND
+        s.power_at("GND", pull_x, R_CY - 500)
+
+    # Same strict validator as the KiCad backend.
+    validate(s, nl)
+    return s, nl
+
+
+def main() -> int:
+    s, _nl = build_bobcat()
+    out = s.save(OUT_DIR / "bobcat.SchDoc")
+    svg = s.render_svg(RENDER_DIR / "bobcat.svg")
+    print(f"validated OK | wrote {out.name} + {svg.name}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
