@@ -44,7 +44,7 @@ export function Sidebar({
     <aside className="h-full w-full bg-rail border-r border-edge flex flex-col">
       <div className="h-12 px-3 flex items-center gap-2 border-b border-edge">
         <button className="flex items-center gap-2 hover:bg-white/60 rounded px-2 py-1 -ml-1 text-ink-900">
-          <I.Folder />
+          <img src="/logo.png" alt="logo" className="w-5 h-5 object-contain shrink-0" />
           <span className="text-sm font-medium truncate max-w-[140px]">
             {projectLabel}
           </span>
