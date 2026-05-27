@@ -7,7 +7,7 @@ those files back through altium_monkey — the Altium-native replacement for
 `gen.symbols.parse_pins` (which parsed `.kicad_sym` text).
 
 Nothing here writes symbols; authoring lives in `author_symbol.py` (from a
-pin-spec) and `migrate_symbols.py` (one-time, from the legacy `.kicad_sym`).
+JSON pin-spec), or a `.SchLib` is installed directly from Ultra Librarian.
 """
 
 from __future__ import annotations

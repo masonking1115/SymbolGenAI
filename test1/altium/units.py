@@ -46,9 +46,8 @@ def flip_y(y_mil: float, sheet_height_mil: float) -> float:
 # Pin names render INSIDE the body, growing inward from each side. If the body
 # is too narrow, a long left name and a long right name on the same row collide
 # into an unreadable overlap (the EEPROM "SER_DATA_I/O" over "VSS" case). These
-# helpers size the body so names fit, and are shared by the symbol authors
-# (author_symbol/translate), the existing-symbol fixer (symbol_props), and the
-# layout linter so all four agree on the same rule.
+# helpers size the body so names fit, and are shared by the symbol author
+# (author_symbol) and the layout linter so both agree on the same rule.
 PIN_NAME_FONT_MIL = 100.0   # FONT_DEFAULT size 10 ~= 100 mil rendered height
 PIN_NAME_GAP_MIL = 120.0    # min clear gap between opposing inward names
 

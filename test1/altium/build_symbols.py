@@ -85,7 +85,8 @@ def build_library(out_path: Path | None = None, force: bool = False
     if missing:
         raise FileNotFoundError(
             "missing per-MPN .SchLib for: " + ", ".join(missing)
-            + " — author them via test1.altium.author_symbol / migrate_symbols")
+            + " — author them via test1.altium.author_symbol, or install an"
+            + " Ultra Librarian .SchLib into Parts Library/<MPN>/")
     src_paths = [schlib_path(m) for m in src_mpns]
 
     # Reuse the merged library only when it is up to date: it must exist and be

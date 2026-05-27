@@ -53,16 +53,22 @@ C:\Users\mking\Downloads\altium_spike\.venv\Scripts\python.exe -m test1.altium.b
 This validates all 6 child sheets (reused `gen.validator`), builds the root,
 and writes `out/test1.PrjPcb` referencing root + children.
 
-### Symbol library — translated from KiCad
-`translate.py` converts each `Parts Library/<MPN>/<MPN>.kicad_sym` to a SchLib
-symbol via the shared `gen.symbols.parse_pins`: pin NUMBERS and SIDES are
-faithful; pins are auto-laid on a 100-mil grid (exact KiCad coords don't matter
-— builders route from hot-spots). `build_symbols.py` emits `out/lib/parts.SchLib`
-(15 symbols incl. multi-unit ASP-134606-01 = 4 units / 160 pins, OPA2388 = 2
-units) and `verify_coverage()` checks every netlist part + net-member pin.
+### Symbol library — native Altium `.SchLib`
+The source of truth is per-MPN `Parts Library/<MPN>/<MPN>.SchLib` (committed,
+the symbol named after the MPN), either downloaded from Ultra Librarian or
+authored from a JSON pin-spec via `author_symbol.py` (`python -m
+test1.altium.author_symbol <MPN>`). `build_symbols.py` MERGES the per-MPN
+`.SchLib` (+ stock R/C passives) into `out/lib/parts.SchLib` via
+`AltiumSchLib.merge`, rebuilding only when a source `.SchLib` is newer than the
+merged file; it resolves each symbol's real internal name via `symlib.symbol_name`
+(UL names parts after the orderable variant, not the MPN) and `verify_coverage()`
+checks every netlist part + net-member pin. Pins come back live from the placed
+component's hot-spots, so exact symbol coords don't matter — builders route from
+hot-spots. (The original KiCad `.kicad_sym` → SchLib `translate.py` and the
+`_archive_kicad/` source were removed once the library went Altium-native.)
 
 ### Per-sheet builders (`build_<sheet>.py`)
-Each mirrors `gen/build_<sheet>.py`, reuses the netlist loader + validator, and
+Each reuses the netlist loader + validator, and
 routes from pin hot-spots. `build_all.py` builds them all; `build_root.py`
 emits the hierarchical root; `build_project.py` ties it together.
 
