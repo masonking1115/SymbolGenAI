@@ -143,6 +143,10 @@ function parseVerdict(text: string): Partial<Interp> {
 
 interface Props {
   setHealth: (h: { text: string; tone: "ok" | "warn" | "err" | "neutral" } | undefined) => void;
+  /** Test-block catalog + selection are owned by App so the sidebar dropdown
+   *  and this detail pane stay in sync. */
+  blocks: SimBlock[];
+  selected: string;
 }
 
 const STATUS_BADGE: Record<string, string> = {
@@ -165,9 +169,7 @@ function loadLS<T>(key: string): T | null {
   }
 }
 
-export function Simulation({ setHealth }: Props) {
-  const [blocks, setBlocks] = useState<SimBlock[]>([]);
-  const [selected, setSelected] = useState<string>("");
+export function Simulation({ setHealth, blocks, selected }: Props) {
   // Rehydrate results + settled interpretations from localStorage so the tab
   // survives navigation away and full page refreshes.
   const [results, setResults] = useState<Record<string, SimResult>>(
@@ -180,16 +182,6 @@ export function Simulation({ setHealth }: Props) {
     for (const k in saved) { saved[k].running = false; saved[k].lines = []; saved[k].phase = "done"; }
     return saved;
   });
-
-  useEffect(() => {
-    api.simBlocks()
-      .then((r) => {
-        setBlocks(r.blocks);
-        const first = r.blocks.find((b) => b.status === "implemented") ?? r.blocks[0];
-        if (first) setSelected((s) => s || first.id);
-      })
-      .catch(() => {});
-  }, []);
 
   // Persist results + interpretations (without the transient stream lines).
   useEffect(() => {
@@ -322,49 +314,24 @@ export function Simulation({ setHealth }: Props) {
   );
 
   return (
-    <div className="h-full flex min-h-0">
-      {/* Block list */}
-      <div className="w-[244px] shrink-0 border-r border-edge bg-rail overflow-auto thin-scroll">
-        <div className="px-3 py-3 text-[11px] uppercase tracking-wide text-ink-500">
-          Test blocks
+    <div className="h-full overflow-auto thin-scroll min-h-0">
+      {!block ? (
+        <div className="px-6 py-5 text-sm text-ink-500">
+          {blocks.length ? "Select a test block from the sidebar." : "Loading blocks…"}
         </div>
-        <div className="px-2 pb-3 space-y-1">
-          {blocks.map((b) => (
-            <button
-              key={b.id}
-              onClick={() => setSelected(b.id)}
-              className={
-                "w-full text-left px-2.5 py-2 rounded-md border transition " +
-                (b.id === selected
-                  ? "bg-white border-edge shadow-[0_0_0_1px_rgb(230,232,236)]"
-                  : "border-transparent hover:bg-white/70")
-              }
-            >
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-ink-900 truncate">{b.title}</span>
-              </div>
-              <div className="flex items-center gap-1.5 mt-1">
-                <span className={"text-[10px] px-1.5 py-0.5 rounded border " + (STATUS_BADGE[b.status] ?? STATUS_BADGE.not_simulatable)}>
-                  {b.status}
-                </span>
-                <span className="text-[10px] text-ink-500 font-mono">{b.sheet}</span>
-              </div>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Detail */}
-      <div className="flex-1 min-w-0 overflow-auto thin-scroll">
-        {!block ? (
-          <div className="px-6 py-5 text-sm text-ink-500">Loading blocks…</div>
-        ) : (
-          <div className="px-6 py-5 max-w-[1100px]">
+      ) : (
+        <div className="px-6 py-5 max-w-[1100px]">
+          <div className="flex items-center gap-2">
             <div className="text-[11px] tracking-wide uppercase text-ink-500">
               Phase 4 · Simulation
             </div>
-            <h2 className="text-[18px] font-semibold text-ink-900 mt-0.5">{block.title}</h2>
-            <p className="text-sm text-ink-700 mt-1.5 leading-relaxed">{block.description}</p>
+            <span className={"text-[10px] px-1.5 py-0.5 rounded border " + (STATUS_BADGE[block.status] ?? STATUS_BADGE.not_simulatable)}>
+              {block.status}
+            </span>
+            <span className="text-[10px] text-ink-500 font-mono">{block.sheet}</span>
+          </div>
+          <h2 className="text-[18px] font-semibold text-ink-900 mt-0.5">{block.title}</h2>
+          <p className="text-sm text-ink-700 mt-1.5 leading-relaxed">{block.description}</p>
 
             {block.models_needed.length > 0 && (
               <div className="mt-2 text-[11px] text-ink-500">
@@ -501,7 +468,6 @@ export function Simulation({ setHealth }: Props) {
           </div>
         )}
       </div>
-    </div>
   );
 }
 

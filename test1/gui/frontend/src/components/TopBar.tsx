@@ -6,6 +6,8 @@ interface Props {
   health?: { text: string; tone: "ok" | "warn" | "err" | "neutral" };
   onTogglePng: () => void;
   pngOpen: boolean;
+  /** Hide the PNG toggle on tabs where the schematic inspector doesn't apply. */
+  canTogglePng?: boolean;
 }
 
 const TONE: Record<string, string> = {
@@ -15,7 +17,7 @@ const TONE: Record<string, string> = {
   neutral: "bg-edge text-ink-700 border-edge",
 };
 
-export function TopBar({ title, health, onTogglePng, pngOpen }: Props) {
+export function TopBar({ title, health, onTogglePng, pngOpen, canTogglePng = true }: Props) {
   return (
     <div className="h-12 border-b border-edge flex items-center gap-3 px-4 bg-white">
       <h1 className="text-sm font-medium text-ink-900">{title}</h1>
@@ -40,18 +42,20 @@ export function TopBar({ title, health, onTogglePng, pngOpen }: Props) {
             className="pl-7 pr-3 py-1.5 text-sm bg-rail border border-edge rounded-md w-[260px] focus:outline-none focus:border-ink-300"
           />
         </div>
-        <button
-          onClick={onTogglePng}
-          className={
-            "h-8 px-3 text-xs font-medium rounded-md border transition " +
-            (pngOpen
-              ? "bg-ink-900 text-white border-ink-900"
-              : "bg-white text-ink-700 border-edge hover:border-ink-300")
-          }
-          title="Toggle schematic PNG split view"
-        >
-          {pngOpen ? "Hide PNG" : "Show PNG"}
-        </button>
+        {canTogglePng && (
+          <button
+            onClick={onTogglePng}
+            className={
+              "h-8 px-3 text-xs font-medium rounded-md border transition " +
+              (pngOpen
+                ? "bg-ink-900 text-white border-ink-900"
+                : "bg-white text-ink-700 border-edge hover:border-ink-300")
+            }
+            title="Toggle schematic PNG split view"
+          >
+            {pngOpen ? "Hide PNG" : "Show PNG"}
+          </button>
+        )}
         <button className="p-1.5 rounded hover:bg-rail text-ink-500" title="History">
           <I.History />
         </button>
