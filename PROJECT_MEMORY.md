@@ -168,10 +168,32 @@ Full 9-stage flow (for larger projects):
 
 **Why this maps well to Claude Code**: each stage becomes a skill file with a clear input/output contract; per-IC symbol generation parallelizes via subagent dispatch; file-based artifacts persist across sessions so context never needs to reload the full datasheet stack.
 
-## Current state at handoff
+## Current state at handoff (updated 2026-05-27)
 
-- `test1/` (Bobcat carrier-board) is the active project. Per-sheet generator package at [test1/gen/](test1/gen/), seven sheets emit through `python3 test1/gen_schematic.py` with strict netlist validation and a layout linter ([test1/gen/layout_lint.py](test1/gen/layout_lint.py)). All coords on the 50-grid floor (1.27 mm) as of `995d1e2`.
-- **New parts going forward**: always create `<project>/datasheets/<MPN>/` inside the consuming project and place both the `.kicad_sym` and `.pdf` there. Never put a shared `datasheets/` at the repo root — each project owns its own copies.
+> ⚠️ There are ACTIVE THREADS + OPEN DECISIONS at the bottom of this file
+> (Altium migration, project rename). Read those before resuming work.
+
+`test1/` (Bobcat carrier board) is the active project and now has a full **GUI** on top of the generator/review/sim pipeline.
+
+**Generator core (unchanged):** per-sheet package at [test1/gen/](test1/gen/); seven sheets emit through `python3 test1/gen_schematic.py --no-reopen` with strict netlist validation + layout linter ([test1/gen/layout_lint.py](test1/gen/layout_lint.py)). `netlist/*.yaml` is the **declarative source of truth**; `gen/build_<sheet>.py` place parts; renders/parse-gates via `kicad-cli`. Coords on the 50-grid floor.
+
+**The GUI** — [test1/gui/](test1/gui/), built/expanded over recent sessions:
+- Backend: FastAPI ([gui/backend/app.py](test1/gui/backend/app.py)) runs `gen_schematic.py`/`run_review.py` as subprocesses, serves PNG renders + symbol SVGs, and drives `claude -p` for chat/apply/sim/compaction ([gui/backend/agent.py](test1/gui/backend/agent.py)). Port 8765.
+- Frontend: React+Vite+TS ([gui/frontend/](test1/gui/frontend/)); Vite dev on 5173 proxying `/api`→8765. **Build/verify with the LOCAL binaries**: `./node_modules/.bin/tsc --noEmit -p .` then `./node_modules/.bin/vite build` (`npx tsc` pulls a wrong global package).
+- Tabs (sidebar order): **Design Resources · Library · Schematic Generator · Simulation · Design Review**. Right-hand AgentRail = chat + changelog + pipeline status.
+- **Chat is now a general, multi-session context partner** (no longer changelog-only). Store `gui/state/chats.json` (migrated from legacy `chat.json`); per-session transcript + compaction + a default session that loads on startup; endpoints `/api/chat/sessions/*`. Changelog sits below the chat and is opt-in (only when a design change is explicitly requested).
+- **Design Resources tab** ([gui/frontend/src/tabs/Resources.tsx](test1/gui/frontend/src/tabs/Resources.tsx)): Datasheets (lists Parts Library PDFs + upload → `Parts Library/<MPN>/`), Design Requirements (upload pdf/docx/pptx → `test1/resources/requirements/`), Skills (markdown CRUD → `test1/resources/skills/`, meant to later steer chat sessions). Uploads are base64 JSON (no `python-multipart` dep); endpoints `/api/resources/*`.
+- **Simulation subsystem**: ngspice-backed, context-first ([test1/sim/](test1/sim/)); agent setup/interpret passes read datasheets+requirements+netlist, cache device/scenario params, interpret results vs spec.
+
+**Branding:** lightning-bolt logo (source `images.png` at repo root) processed to a transparent 256px square at `gui/frontend/public/logo.png`, wired as favicon (index.html) + sidebar brand mark (Sidebar.tsx). ⚠️ **UNCOMMITTED at handoff** (see git state).
+
+**Bobcat VDDIO caps:** a demo had removed C28+C29 from the builder's placement loop; **re-added** in [test1/gen/build_bobcat.py](test1/gen/build_bobcat.py) (loop back to C24–C29). The netlist always defined/wired them; C29 was regrouped next to C28 (committed `3390e41`). Regenerating returns `bobcat.kicad_sch`/PNG to committed state.
+
+**Recent commits (branch `main`, pushed):** `3390e41` C29 regroup · `33b2487` general chat + Design Resources + datasheet icons · `fac0397` GUI layout (proportional/collapse-safe splitters) · `2bc819b` sim subsystem.
+
+**Git state at handoff (uncommitted):** `M gui/frontend/index.html`, `M gui/frontend/src/components/Sidebar.tsx`, `?? gui/frontend/public/` (logo.png), `?? images.png` — i.e. the logo/favicon work is done but not yet committed.
+
+- **New parts going forward**: create `Parts Library/<MPN>/` (test1) or `<project>/datasheets/<MPN>/` and place both `.kicad_sym` and `.pdf`. Never a shared repo-root datasheets dir.
 - **Recovery references** (if previous artifacts are ever needed):
   - Phase 1 Electron MVP: commits `d070e42`–`234cd37`.
   - Earlier demo projects (TPS7E72_demo, LNA_LDO_chain, LDO_LNA_Demo) + their part libraries (TPS7E72, SKY67150-396LF, BFC237076104): up to commit `add3cd6`.
@@ -184,7 +206,28 @@ Full 9-stage flow (for larger projects):
 - `.env*`, `.claude/settings.local.json`, `.vscode/`, `.idea/`.
 - KiCad transient files: `.history/`, `*.kicad_prl`, `~*.lck`, `*/render/`, `fp-info-cache`.
 
+## Altium migration — ACTIVE THREAD (started 2026-05-27)
+
+Direction: replicate the test1 KiCad pipeline on **Altium**, enabled by **`github.com/wavenumber-eng/altium_monkey`** — a pure-Python toolkit that reads/writes Altium native binary files (`.SchDoc/.SchLib/.PcbDoc/.PcbLib/.IntLib`), renders SVG, and authors symbols/footprints **without Altium installed or its scripting API**. (Primarily Windows-validated; macOS "basic", Linux limited. Needs Python 3.11–3.12. `.IntLib` extraction-only; some PCB-edit gaps. Binary-format fidelity is the main risk since it's reverse-engineered.)
+
+**Strategy:** keep `netlist/*.yaml` canonical; swap only the KiCad backend. Mapping: KiCad text s-expr ↔ altium_monkey binary read/write; `kicad-cli` render ↔ altium_monkey SVG.
+- **Must replace (KiCad-coupled):** `gen/shared.py` (primitives — the core seam), `gen/symbols.py` (pin-coord extraction), `gen/validator.py`, `gen/config.py` (`KICAD_CLI`), `gen/layout_lint.py` (coords), `gen_schematic.py` (render), parts library (`.kicad_sym`→`.SchLib`, `.pretty`→`.PcbLib`, ~21 MPNs).
+- **Light touch:** `review/*`, GUI backend (kicad-cli paths, PNG endpoints, agent prompts), sim (net-name mapping).
+- **Format-agnostic (no change):** netlist YAML, design_requirements, the React frontend, the chat/Design-Resources work.
+
+**Gate 0 (de-risk before investing):** prove altium_monkey can (1) write a minimal `.SchDoc` (2 parts + wire + net label + power port), (2) **open it in REAL Altium uncorrupted**, (3) render SVG, (4) author a `.SchLib` symbol + `.PcbLib` footprint.
+
+**Hardware reality:** user's Mac is **M4 (Apple Silicon, arm64), macOS 26.3.1**. VMware Fusion/Parallels on Apple Silicon run only Windows 11 ARM, and Altium is x86 → emulated → unsupported/risky. **No good VM path for real Altium on this Mac.** User has a separate **Windows PC, but it's not yet available**.
+**Plan agreed:** run the altium_monkey smoke test **on the Mac** for the pure-Python steps (write `.SchDoc`, self round-trip write→read, render SVG, author symbol/footprint); **defer "open in real Altium" to the Windows machine**. The Mac env check (needs Python 3.11–3.12; clone into an isolated spike dir outside this repo + venv) was the immediate next step when this session ended. `gh` CLI is NOT installed.
+
+## OPEN DECISIONS at this handoff (resolve next session)
+
+1. **Project rename to "HW/SW Codesigner" — NOT YET DONE** (user requested, then moved sessions). Display-name strings to change: `gui/frontend/index.html` `<title>` ("test1 — Bobcat Carrier"); `App.tsx` `TAB_TITLES` ("… / test1") + `projectLabel` ("SCH-EVAL..."); `Sidebar.tsx` footer ("test1 · Bobcat carrier"); `gui/frontend/package.json` name ("test1-gui" → "hw-sw-codesigner", slash-free); `README.md` ("# Symbol Library AI"). **KEEP "Bobcat Carrier" as the board name.** Do NOT rename `test1/` paths or `test1.gui.*` localStorage keys (breaks paths / resets saved layouts). Scope still to confirm: UI-only vs full UI+README+package vs also renaming the GitHub repo.
+2. **Where Altium work lives:** integrate altium_monkey into this repo vs maintain a separate fork. Unresolved — when asked for an altium_monkey *fork* URL, user pasted their existing `SymbolGenAI` repo (possible conflation); confirm intent.
+3. **GitHub repo rename** (SymbolGenAI → hw-sw-codesigner?) is an account action the user does in repo Settings; can't be done from here (no `gh`, no GitHub auth). The git remote auto-redirects after a rename.
+
 ## Open suggestions never acted on
 
 - Scaffold the artifact-template files (`spec.yaml`, `parts/<MPN>.json`, `nets.yaml`, `bom.yaml`) and a per-stage skill file so each pipeline chunk has a clear contract. (test1 hard-codes its netlist YAML per sheet — the abstract template is still TBD.)
+- Wire the Skills (`test1/resources/skills/*.md`) into chat sessions to actually steer them (currently storage-only).
 - Integrate the symbol/schematic generation pipeline into the user's internal platform with its own chat front end (waiting on the user to share that platform).
