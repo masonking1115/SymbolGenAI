@@ -93,6 +93,13 @@ RULES: list[dict] = [
      "summary": "A drawn label/value/note/body box spills past the sheet border"},
     {"id": "wire_overlap", "severity": "WARNING", "scope": "sheet",
      "summary": "Collinear same-axis wires overlap (silent short)"},
+    {"id": "stub_t_short", "severity": "ERROR", "scope": "sheet",
+     "summary": "A power/port glyph SITS on the interior of an unrelated wire "
+                "— Altium auto-junctions the T and silently shorts the rail "
+                "to that wire. (Primary defense against the broader T-short "
+                "class is now the validator's cross-net-contamination check "
+                "in gen.validator._check_connectivity, added 2026-05-28; this "
+                "lint catches a narrower geometric case as a secondary gate.)"},
     {"id": "bridged_drop", "severity": "WARNING", "scope": "sheet",
      "summary": "Wire interior crosses a third part's pin (possible bridge)"},
     {"id": "duplicate_wire", "severity": "INFO", "scope": "sheet",
@@ -609,10 +616,59 @@ def _check_redundant_junction(s):
     return out
 
 
+def _check_stub_t_short(s):
+    """Catch the lane-vs-stub T-short class of bug. A power/port glyph's net
+    point at (x, y) is usually the end of a short stub coming out of a
+    horizontal or vertical lane. If that point lies on the INTERIOR of a
+    DIFFERENT wire (not the stub itself), Altium auto-junctions the T and
+    silently shorts the rail to that other wire. The connectivity validator
+    misses this because its union-find joins matching endpoints, not
+    endpoint-vs-interior contact.
+
+    Concretely: for each power/port label at (x, y), find every wire whose
+    interior (strictly between its two endpoints) passes through (x, y) on
+    the same axis. Any such wire shorts this rail to the wire's net.
+
+    Flagged the U41.OUTB→+3V3 short the Voltai review caught (2026-05-28)
+    where build_bias.py's OUT_lane at y=11000 landed on the +3V3 power-port
+    stub endpoints at (11200,11000) and (19200,11000)."""
+    out = []
+    for lb in s._labels:
+        if lb.kind not in ("power", "port"):
+            continue
+        x, y = lb.x, lb.y
+        for (a, b) in s._wires:
+            # The stub OUT of the power port has (x, y) as one of its
+            # endpoints — skip it. We only care about wires where (x, y) is
+            # in the INTERIOR (strictly between endpoints).
+            if (abs(a[0] - x) < _TOL and abs(a[1] - y) < _TOL) \
+               or (abs(b[0] - x) < _TOL and abs(b[1] - y) < _TOL):
+                continue
+            # Vertical wire interior at column x?
+            if abs(a[0] - b[0]) < _TOL and abs(a[0] - x) < _TOL:
+                lo, hi = min(a[1], b[1]), max(a[1], b[1])
+                if lo + _TOL < y < hi - _TOL:
+                    out.append(LintIssue("ERROR", "stub_t_short",
+                        f"{lb.kind} {lb.name!r} at ({x},{y}) T-shorts to a "
+                        f"vertical wire interior {((a[0],a[1]),(b[0],b[1]))} "
+                        f"— Altium auto-junctions this and bridges the nets",
+                        [lb.name]))
+            # Horizontal wire interior at row y?
+            if abs(a[1] - b[1]) < _TOL and abs(a[1] - y) < _TOL:
+                lo, hi = min(a[0], b[0]), max(a[0], b[0])
+                if lo + _TOL < x < hi - _TOL:
+                    out.append(LintIssue("ERROR", "stub_t_short",
+                        f"{lb.kind} {lb.name!r} at ({x},{y}) T-shorts to a "
+                        f"horizontal wire interior {((a[0],a[1]),(b[0],b[1]))} "
+                        f"— Altium auto-junctions this and bridges the nets",
+                        [lb.name]))
+    return out
+
+
 ALL_CHECKS = (_check_off_grid, _check_diagonal, _check_out_of_bounds,
               _check_component_overlap, _check_power_orientation,
               _check_visible_param_glob, _check_wire_through_label,
-              _check_power_straddles_net,
+              _check_power_straddles_net, _check_stub_t_short,
               _check_ground_on_top, _check_wire_through_body, _check_off_center,
               _check_cramped_spacing, _check_label_overlap,
               _check_label_over_symbol, _check_wire_through_port,

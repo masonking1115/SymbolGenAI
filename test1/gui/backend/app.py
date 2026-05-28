@@ -41,6 +41,7 @@ import base64
 import mimetypes
 import subprocess
 import sys
+import time
 import uuid
 from collections import deque
 from dataclasses import dataclass, field
@@ -85,6 +86,12 @@ REVIEW_SCRIPT = PROJECT_DIR / "run_review.py"
 ERROR_LOG = PROJECT_DIR / "error_log.md"
 FINDINGS_JSON = PROJECT_DIR / "review" / "findings.json"
 SEMANTIC_FINDINGS = PROJECT_DIR / "review" / "semantic_findings.json"
+# Fix queue: Apply-fix actions from the Review tab land here for the agent
+# (in chat) to pick up, sanity-check, and execute. Survives backend restarts.
+FIX_QUEUE_JSON = PROJECT_DIR / "review" / "fix_queue.json"
+# Drop folder for incoming review PDFs (parsed by install_review.py).
+REVIEW_INCOMING = PROJECT_DIR.parent / "_review_incoming"
+REVIEW_INSTALL_SCRIPT = REVIEW_INCOMING / "install_review.py"
 DESIGN_REQS = PROJECT_DIR / "design_requirements.md"
 RESOURCES_DIR = PROJECT_DIR / "resources"
 REQ_DOCS_DIR = RESOURCES_DIR / "requirements"   # uploaded requirement source docs
@@ -464,26 +471,43 @@ def lint(run_id: str | None = None) -> dict:
 # ---- Review findings -----------------------------------------------------
 @app.get("/api/findings")
 def findings() -> dict:
-    """Return review findings — preferring findings.json if present, falling
-    back to a parsed error_log.md summary."""
+    """Return review findings.
+
+    findings.json may be either (a) a bare list of Finding dicts (legacy
+    KiCad run_review.py path) or (b) a dict envelope produced by the
+    Voltai-PDF parser `_review_incoming/install_review.py`
+    ({ project, findings: [...], semantic: [...], summary: {...}, sources }).
+    Both shapes are accepted."""
+    data: list = []
+    envelope_summary: dict | None = None
+    envelope_semantic: list | None = None
     if FINDINGS_JSON.exists():
         try:
-            data = json.loads(FINDINGS_JSON.read_text())
+            raw = json.loads(FINDINGS_JSON.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
-            data = []
-    else:
-        data = []
-    semantic: list = []
-    if SEMANTIC_FINDINGS.exists():
+            raw = []
+        if isinstance(raw, dict):
+            data = raw.get("findings") or []
+            envelope_semantic = raw.get("semantic")
+            envelope_summary = raw.get("summary")
+        elif isinstance(raw, list):
+            data = raw
+    semantic: list = envelope_semantic if envelope_semantic is not None else []
+    if not semantic and SEMANTIC_FINDINGS.exists():
         try:
             semantic = json.loads(SEMANTIC_FINDINGS.read_text())
         except json.JSONDecodeError:
             semantic = []
-    summary = {"ERROR": 0, "WARNING": 0, "INFO": 0}
-    for f in data:
-        sev = (f.get("severity") or "").upper()
-        if sev in summary:
-            summary[sev] += 1
+    if envelope_summary is not None:
+        summary = {"ERROR": int(envelope_summary.get("ERROR", 0)),
+                   "WARNING": int(envelope_summary.get("WARNING", 0)),
+                   "INFO": int(envelope_summary.get("INFO", 0))}
+    else:
+        summary = {"ERROR": 0, "WARNING": 0, "INFO": 0}
+        for f in data:
+            sev = (f.get("severity") or "").upper()
+            if sev in summary:
+                summary[sev] += 1
     return {
         "findings": data,
         "semantic": semantic,
@@ -1469,6 +1493,145 @@ async def library_generate_symbol(mpn: str) -> dict:
         raise HTTPException(400, "no datasheet PDF in this part's folder")
     run = await agent_mod.start_symbol_gen(mpn, pdfs[0].name)
     return {"run_id": run.run_id, "datasheet": pdfs[0].name}
+
+
+# ---- Voltai PDF review ingest + Apply-fix queue --------------------------
+#
+# Two parts:
+#   1. Upload a PDF -> POST /api/review/upload, body { filename, content_b64 }.
+#      Backend writes the PDF into _review_incoming/ and runs install_review.py
+#      (in the same Python env this backend runs in — the spike venv that has
+#      fitz). After the script returns, GET /api/findings sees the new rows.
+#
+#   2. Per-row Apply -> POST /api/findings/{id}/apply, body
+#      { action_index, action_kind, action_text }. Backend writes a request
+#      into test1/review/fix_queue.json. The Claude agent reads that queue
+#      in chat ("apply pending fixes"), verifies each, applies, and updates
+#      the queue status. UI polls GET /api/fix-queue.
+#
+# Why a queue instead of synchronous LLM call: applying a review fix is
+# semantically complex (schematic topology + symbol + YAML edits + rebuild
+# verification) and needs the agent in the loop, not a one-shot prompt.
+
+class ReviewUploadBody(BaseModel):
+    filename: str
+    content_b64: str
+
+
+@app.post("/api/review/upload")
+async def review_upload(body: ReviewUploadBody) -> dict:
+    """Accept a review PDF from the GUI dropzone, write it into
+    _review_incoming/, then invoke install_review.py to parse it into
+    findings.json. Returns the new summary so the UI can refresh.
+    """
+    name = _safe_upload_name(body.filename, (".pdf",))
+    raw = _decode_upload(body.content_b64)
+    REVIEW_INCOMING.mkdir(parents=True, exist_ok=True)
+    dest = REVIEW_INCOMING / name
+    dest.write_bytes(raw)
+    # Run the parser in the SAME interpreter as this backend (so it picks up
+    # fitz from the spike venv automatically). The parser scans the folder
+    # for new PDFs and moves them to _processed/ on success.
+    proc = await asyncio.create_subprocess_exec(
+        sys.executable, str(REVIEW_INSTALL_SCRIPT),
+        cwd=str(REVIEW_INCOMING),
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+    )
+    out_b, _ = await proc.communicate()
+    parse_log = out_b.decode("utf-8", errors="replace")
+    if proc.returncode != 0:
+        raise HTTPException(500, f"install_review.py failed:\n{parse_log[-1000:]}")
+    return {
+        "ok": True,
+        "file": name,
+        "size": len(raw),
+        "parse_log": parse_log,
+        "findings_after": findings(),
+    }
+
+
+def _read_queue() -> list:
+    if not FIX_QUEUE_JSON.exists():
+        return []
+    try:
+        return json.loads(FIX_QUEUE_JSON.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return []
+
+
+def _write_queue(q: list) -> None:
+    FIX_QUEUE_JSON.parent.mkdir(parents=True, exist_ok=True)
+    FIX_QUEUE_JSON.write_text(json.dumps(q, indent=2), encoding="utf-8")
+
+
+class ApplyFindingBody(BaseModel):
+    action_index: int = 0   # which Fix/Alt/Verify in the action list
+    action_kind: str = ""   # "fix" | "alt" | "verify" (informational)
+    action_text: str = ""   # the chosen action body (informational, for queue
+                            # readability)
+
+
+@app.post("/api/findings/{finding_id}/apply")
+def apply_finding(finding_id: str, body: ApplyFindingBody) -> dict:
+    """Queue a finding's chosen fix for the chat agent to pick up. Idempotent
+    on (finding_id + action_index): re-queueing replaces the previous request.
+
+    Does NOT touch the design directly — the agent owns that step so it can
+    sanity-check the suggestion before editing."""
+    if not re.fullmatch(r"[A-Fa-f0-9]{4,32}", finding_id):
+        raise HTTPException(400, "bad finding id")
+    # Cross-check: the finding must exist in the current findings.json.
+    snap = findings()
+    f = next((x for x in snap["findings"] if x.get("id") == finding_id), None)
+    if f is None:
+        raise HTTPException(404, "finding not found in current findings.json")
+    actions = f.get("actions") or []
+    if not (0 <= body.action_index < len(actions)):
+        raise HTTPException(400, f"action_index out of range (0..{len(actions) - 1})")
+    chosen = actions[body.action_index]
+    q = _read_queue()
+    # Replace any existing entry for this (id, action_index).
+    q = [e for e in q if not (e.get("finding_id") == finding_id
+                              and e.get("action_index") == body.action_index)]
+    q.append({
+        "finding_id": finding_id,
+        "action_index": body.action_index,
+        "action_kind": chosen.get("kind", body.action_kind),
+        "action_text": chosen.get("text", body.action_text),
+        "component": f.get("component"),
+        "category": f.get("category"),
+        "rule": f.get("rule"),
+        "refs": f.get("refs"),
+        "status": "queued",
+        "queued_at": time.time(),
+    })
+    _write_queue(q)
+    return {"ok": True, "queued": len(q), "finding_id": finding_id}
+
+
+@app.get("/api/fix-queue")
+def fix_queue() -> dict:
+    """Surface the apply-fix queue so the GUI can show per-row status badges
+    and the chat agent can list what's pending."""
+    q = _read_queue()
+    return {"queue": q, "counts": {
+        "queued": sum(1 for e in q if e.get("status") == "queued"),
+        "applied": sum(1 for e in q if e.get("status") == "applied"),
+        "failed": sum(1 for e in q if e.get("status") == "failed"),
+        "dismissed": sum(1 for e in q if e.get("status") == "dismissed"),
+    }}
+
+
+@app.delete("/api/fix-queue/{finding_id}")
+def dismiss_fix(finding_id: str) -> dict:
+    """Remove all queue entries for a finding (cancel / dismiss)."""
+    if not re.fullmatch(r"[A-Fa-f0-9]{4,32}", finding_id):
+        raise HTTPException(400, "bad finding id")
+    q = _read_queue()
+    before = len(q)
+    q = [e for e in q if e.get("finding_id") != finding_id]
+    _write_queue(q)
+    return {"ok": True, "removed": before - len(q)}
 
 
 def main() -> None:

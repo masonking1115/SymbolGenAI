@@ -17,14 +17,14 @@ parts:
     footprint: Capacitor_SMD:C_0402_1005Metric
     notes: VCC decoupling per 24AA08 datasheet
   R60:
-    lib_id: Device:R
+    lib_id: Lib:CR0402-FX-2201GLF
     value: 2.2k
     footprint: Resistor_SMD:R_0402_1005Metric
     notes: >
       SCL pull-up. May need DNP if Genesys 2 carrier provides its own
       pull-ups on FMC D30 (W4 — TBD at bring-up; see design_requirements.md).
   R61:
-    lib_id: Device:R
+    lib_id: Lib:CR0402-FX-2201GLF
     value: 2.2k
     footprint: Resistor_SMD:R_0402_1005Metric
     notes: SDA pull-up (same DNP caveat as R60).

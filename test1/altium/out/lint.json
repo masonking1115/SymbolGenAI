@@ -1,5 +1,5 @@
 {
-  "generated_at": 1779931751.2240016,
+  "generated_at": 1779947812.7369108,
   "status": "pass",
   "counts": {
     "ERROR": 0,
@@ -53,42 +53,42 @@
       "sheet": "bias",
       "severity": "INFO",
       "rule": "redundant_junction",
-      "message": "junction (11900, 7000) on a pin (auto-connected)",
+      "message": "junction (11900, 6800) on a pin (auto-connected)",
       "refs": []
     },
     {
       "sheet": "bias",
       "severity": "INFO",
       "rule": "redundant_junction",
-      "message": "junction (11900, 6000) on a pin (auto-connected)",
+      "message": "junction (11900, 5800) on a pin (auto-connected)",
       "refs": []
     },
     {
       "sheet": "bias",
       "severity": "INFO",
       "rule": "redundant_junction",
-      "message": "junction (11400, 6500) on a pin (auto-connected)",
+      "message": "junction (11400, 6300) on a pin (auto-connected)",
       "refs": []
     },
     {
       "sheet": "bias",
       "severity": "INFO",
       "rule": "redundant_junction",
-      "message": "junction (19900, 7000) on a pin (auto-connected)",
+      "message": "junction (19900, 6800) on a pin (auto-connected)",
       "refs": []
     },
     {
       "sheet": "bias",
       "severity": "INFO",
       "rule": "redundant_junction",
-      "message": "junction (19900, 6000) on a pin (auto-connected)",
+      "message": "junction (19900, 5800) on a pin (auto-connected)",
       "refs": []
     },
     {
       "sheet": "bias",
       "severity": "INFO",
       "rule": "redundant_junction",
-      "message": "junction (19400, 6500) on a pin (auto-connected)",
+      "message": "junction (19400, 6300) on a pin (auto-connected)",
       "refs": []
     }
   ]

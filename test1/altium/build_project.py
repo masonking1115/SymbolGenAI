@@ -13,6 +13,7 @@ import time
 
 from altium_monkey.altium_prjpcb import AltiumPrjPcb
 
+from ..gen.validator import validate as _revalidate_post_autofix
 from .build_all import BUILDERS
 from .build_root import build_root
 from .build_symbols import get_library
@@ -88,11 +89,21 @@ def main() -> int:
     # quality (overlaps, shorts, off-grid, containment). ERROR fails the build.
     for name, fn in BUILDERS.items():
         try:
-            s, _nl = _build_centered(fn)
+            s, nl = _build_centered(fn)
             # Auto-correct cosmetic note overlaps before linting/saving (notes
             # carry no connectivity, so this never changes the netlist).
             autofixes = s.auto_fix_text()
+            # auto_fix_power emits new wires (relocation stubs) AFTER the
+            # in-builder validator has already run. Those stubs can create
+            # T-shorts that violate connectivity (a stub endpoint landing on
+            # an unrelated wire's interior auto-junctions in Altium). Re-run
+            # the connectivity validator against the post-autofix wire set to
+            # catch this — the U41.OUTB/+3V3 short Voltai flagged on
+            # 2026-05-28 was missed in the original build precisely because
+            # validation ran too early.
             powerfixes = s.auto_fix_power()
+            if powerfixes:
+                _revalidate_post_autofix(s, nl)
             s.save(OUT_DIR / f"{name}.SchDoc")
             s.render_svg(RENDER_DIR / f"{name}.svg")
             docs.append(f"{name}.SchDoc")

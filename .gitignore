@@ -37,6 +37,26 @@ test1/sim/results/
 # Review pipeline transient output
 test1/review/findings.json
 
+# Voltai review-PDF intake — keep the drop folder + tooling (README + the
+# install_review.py parser) but never commit user-uploaded PDFs or the
+# `_processed/` archive they get moved to after parsing (may contain
+# confidential design notes).
+/_review_incoming/*.pdf
+/_review_incoming/_processed/
+
+# Apply-fix queue — populated at runtime by Review-tab interactions; keep
+# the directory but the contents are session state.
+test1/review/fix_queue.json
+
+# Datasheet intake — track the README + install_datasheets.py only; the
+# datasheet PDFs are short-lived in the drop folder (the script moves them
+# into Parts Library/<MPN>/, which IS tracked).
+/_datasheet_incoming/*.pdf
+/_datasheet_incoming/_processed/
+
+# Distributable bundles regenerated on demand
+test1/altium/out/*.zip
+
 # Symbol upload/migration transient backups
 *.SchLib.bak
 

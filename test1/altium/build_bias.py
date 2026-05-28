@@ -279,9 +279,17 @@ def build_bias() -> tuple[AltiumSheet, object]:
     # Channel 0: amp A (pins +INA=3, -INA=2, OUTA=1), DAC VOUTA=pin6
     link_near(OPA["3"], OPA["2"], OPA["1"], "6", ch0["gate"], ch0["src_fb"],
               route_y=5000)
-    # Channel 1: amp B (pins +INB=5, -INB=6, OUTB=7), DAC VOUTB=pin7
+    # Channel 1: amp B (pins +INB=5, -INB=6, OUTB=7), DAC VOUTB=pin7.
+    # Lane Y values must NOT coincide with any +3V3 power-port stub endpoint:
+    # the previous values out_lane=7300, fb_lane=7100 landed exactly on the
+    # R40/R41 +3V3 stub endpoints, T-shorting OUTB and -INB to +3V3 — a
+    # defect the Voltai review caught (2026-05-28) that our connectivity
+    # validator missed (T-detection blind spot for lane-vs-stub crossings;
+    # also covered by layout_lint.stub_t_short going forward). Bumped 1500
+    # mil above the +3V3 stub region so collisions can't recur after small
+    # geometry tweaks.
     link_far(OPA["5"], OPA["6"], OPA["7"], "7", ch1["gate"], ch1["src_fb"],
-             route_y=4900, out_lane=7300, fb_lane=7100)
+             route_y=4900, out_lane=8800, fb_lane=8600)
 
     validate(s, nl)
     return s, nl

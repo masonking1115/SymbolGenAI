@@ -142,6 +142,10 @@ class AltiumSheet:
     _junctions: list[tuple[int, int]] = field(default_factory=list)
     _labels: list[LabelRec] = field(default_factory=list)
     _no_connects: list[tuple[int, int]] = field(default_factory=list)
+    # Embedded child sheet symbols (root sheet) — (minx, miny, maxx, maxy)
+    # of the symbol body PLUS the title label above and file-name label below,
+    # so content_bbox/_fit_paper see them and the auto-paper upgrades on overflow.
+    _sheet_symbol_boxes: list[tuple[int, int, int, int]] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         # Capture the active build offset at construction (see set_build_offset).
@@ -527,6 +531,11 @@ class AltiumSheet:
             location_mils=SchPointMils.from_mils(x, y - 160),
             font=FONT_NOTE, color=_BLACK))
         self.doc.add_object(sym)
+        # Record extent INCLUDING the title (y+h+60 + ~text height) and
+        # file-name label (y-160 - ~text height) so the auto-paper picker sees
+        # the whole footprint. Without this, root would think it's empty and
+        # stay on A4 even when the grid (3 cols × 4000 wide) overflows.
+        self._sheet_symbol_boxes.append((x, y - 260, x + w, y + h + 160))
 
     # A-series landscape usable sizes in mil (preferred order, smallest first).
     _PAPER_MIL = {"A4": (11690, 8270), "A3": (16535, 11690),
@@ -542,6 +551,8 @@ class AltiumSheet:
             xs += [a[0], b[0]]; ys += [a[1], b[1]]
         for lb in self._labels:
             xs.append(lb.x); ys.append(lb.y)
+        for (x0, y0, x1, y1) in self._sheet_symbol_boxes:
+            xs += [x0, x1]; ys += [y0, y1]
         if not xs:
             return (0, 0, 0, 0)
         return (min(xs), min(ys), max(xs), max(ys))

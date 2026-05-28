@@ -19,13 +19,13 @@ parts:
     footprint: Package_DFN_QFN:VQFN-20-1EP_3.5x3.5mm_P0.5mm_EP1.6x1.6mm
   C10: { lib_id: Lib:GRM21BR71A106KA73L, value: 10uF,   footprint: Capacitor_SMD:C_0805_2012Metric }
   C11: { lib_id: Lib:GRM155R71C104KA88D, value: 0.1uF,  footprint: Capacitor_SMD:C_0402_1005Metric }
-  C12: { lib_id: Device:C, value: 10nF,   footprint: Capacitor_SMD:C_0402_1005Metric, notes: "NR_SS to GND per TPS7A8401A datasheet" }
-  C13: { lib_id: Device:C, value: 22uF,   footprint: Capacitor_SMD:C_0805_2012Metric, notes: "OUT-side bulk" }
+  C12: { lib_id: Lib:GRM155R71H103KA88D, value: 10nF, footprint: Capacitor_SMD:C_0402_1005Metric, notes: "NR_SS to GND per TPS7A8401A datasheet (Murata X7R 50V 0402)" }
+  C13: { lib_id: Lib:GRM21BR61A226ME44L, value: 22uF, footprint: Capacitor_SMD:C_0805_2012Metric, notes: "OUT-side bulk (Murata X5R 10V 0805 — X5R required at 22µF/0805 density)" }
   C14: { lib_id: Lib:GRM155R71C104KA88D, value: 0.1uF,  footprint: Capacitor_SMD:C_0402_1005Metric, notes: "OUT-side HF decoupling" }
   C17: { lib_id: Lib:GRM155R70J105KA12D, value: 1uF,    footprint: Capacitor_SMD:C_0402_1005Metric, notes: "W3 — BIAS pin bypass per SBVS210 §8.2.2.1" }
   R10: { lib_id: Lib:CR0402-FX-1002GLF, value: 10k,    footprint: Resistor_SMD:R_0402_1005Metric, notes: "EN pull-down (FPGA drives high to enable)" }
   R12: { lib_id: Lib:CR0402-FX-1002GLF, value: 10k,    footprint: Resistor_SMD:R_0402_1005Metric, notes: "E6 — LDO_PG open-drain pull-up to +3V3" }
-  R13: { lib_id: Device:R, value: 1k,     footprint: Resistor_SMD:R_0402_1005Metric, notes: "W10 — LDO_PG series protection toward FMC C1" }
+  R13: { lib_id: Lib:CR0402-FX-1001GLF, value: 1k, footprint: Resistor_SMD:R_0402_1005Metric, notes: "W10 — LDO_PG series protection toward FMC C1 (Bourns 1% 0402)" }
   # ===== Output jumpers =====
   J10: { lib_id: Lib:TSW-102-05-G-S, value: 1x2 100mil, footprint: Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical, notes: "Select +VDDD" }
   J11: { lib_id: Lib:TSW-102-05-G-S, value: 1x2 100mil, footprint: Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical, notes: "Select +VDDA1" }

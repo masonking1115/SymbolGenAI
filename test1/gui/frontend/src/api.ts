@@ -4,6 +4,7 @@ import type {
   ChatSessionMeta,
   DatasheetItem,
   FindingsReport,
+  FixQueueEntry,
   Freshness,
   LibraryPart,
   LintReport,
@@ -70,6 +71,38 @@ export const api = {
     }),
   runAutofix: () =>
     j<RunHandle>("/api/run/autofix", { method: "POST" }),
+
+  // ---- Voltai PDF review ingest + Apply-fix queue --------------------
+  uploadReview: (filename: string, contentB64: string) =>
+    j<{ ok: boolean; file: string; size: number; parse_log: string;
+        findings_after: FindingsReport }>("/api/review/upload", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filename, content_b64: contentB64 }),
+    }),
+  applyFinding: (findingId: string, actionIndex: number,
+                 actionKind = "", actionText = "") =>
+    j<{ ok: boolean; queued: number; finding_id: string }>(
+      `/api/findings/${encodeURIComponent(findingId)}/apply`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action_index: actionIndex,
+          action_kind: actionKind,
+          action_text: actionText,
+        }),
+      },
+    ),
+  fixQueue: () =>
+    j<{ queue: FixQueueEntry[];
+        counts: { queued: number; applied: number; failed: number;
+                  dismissed: number } }>("/api/fix-queue"),
+  dismissFix: (findingId: string) =>
+    j<{ ok: boolean; removed: number }>(
+      `/api/fix-queue/${encodeURIComponent(findingId)}`,
+      { method: "DELETE" },
+    ),
   runStatus: (id: string) => j<RunStatus>(`/api/run/${id}`),
   runLatest: (kind: "generate" | "review" | "autofix" = "generate") =>
     j<RunSummary>(`/api/run/latest?kind=${kind}`),

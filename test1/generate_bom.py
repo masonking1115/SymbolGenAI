@@ -11,9 +11,94 @@ high-side transconductance loop. PMOS drain sources current INTO BIASx; loop
 shuts off cleanly at V_DAC=3.3V (MCP4728 EEPROM default 0xFFF).
 """
 
+import glob
+import os
+from pathlib import Path
+
+import yaml
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
+
+# Per-MPN one-line descriptions for the per-refdes BOM tab. Generic Device:R /
+# Device:C (no committed MPN) fall through to a value-only description.
+LIB_DESC = {
+    "Bobcat":                "Bobcat DUT — custom 40-QFN test chip (5×5 mm, 0.4 mm pitch, EP=GND)",
+    "TPS7A8401A":            "LDO, 3 A, ANY-OUT programmable output, VQFN-20",
+    "TPS22916CNYFPR":        "Load switch, 1-channel, 5.5 V / 2 A, WCSP",
+    "24AA08-I-SN":           "EEPROM, 8 Kbit I²C, SOIC-8",
+    "MCP4728":               "DAC, quad 12-bit voltage-output, I²C, MSOP-10",
+    "OPA2388":               "Op-amp, dual precision RRIO, zero-drift, MSOP-8",
+    "PMZ1200UPEYL":          "MOSFET, P-channel, 20 V, SOT-666",
+    "2N7002":                "MOSFET, N-channel, 60 V, SOT-23",
+    "ASP-134606-01":         "Connector, VITA 57.1 FMC LPC mezzanine, 160-pos SMT",
+    "HRM-G-300-467B-1":      "Connector, SMA jack, 50 Ω, edge-launch",
+    "TSW-102-05-G-S":        "Header, 1×2, 2.54 mm pitch, TH vertical",
+    "TSW-104-05-G-S":        "Header, 1×4, 2.54 mm pitch, TH vertical",
+    "Keystone-5011":         "Test point, GND test clip / loop, TH",
+    # Passives (per-MPN .SchLib in Parts Library/)
+    "GRM21BR71A106KA73L":    "MLCC, 10 µF, X7R, 10 V, 0805",
+    "GRM155R70J105KA12D":    "MLCC, 1 µF, X7R, 6.3 V, 0402",
+    "GRM155R71C104KA88D":    "MLCC, 100 nF, X7R, 16 V, 0402",
+    "CRCW04020000Z0ED":      "Resistor, 0 Ω jumper, 0402",
+    "CR0402-FX-1002GLF":     "Resistor, 10 kΩ, 1%, 1/16 W, 0402",
+    "TNPW06035K11BEEA":      "Resistor, 5.11 kΩ, 0.1%, 25 ppm/°C, thin-film, 0603",
+    "GRM155R71H103KA88D":    "MLCC, 10 nF, X7R, 50 V, 0402",
+    "GRM21BR61A226ME44L":    "MLCC, 22 µF, X5R, 10 V, 0805",
+    "CR0402-FX-1001GLF":     "Resistor, 1 kΩ, 1%, 1/16 W, 0402",
+    "CR0402-FX-2201GLF":     "Resistor, 2.2 kΩ, 1%, 1/16 W, 0402",
+}
+
+
+def _description_for(lib_id: str, value: str) -> str:
+    """One-line description for the per-refdes BOM tab.
+
+    lib_id is the netlist's `Lib:<MPN>` (or `Device:R`/`Device:C` for the
+    handful of generic passives that have no committed MPN yet)."""
+    if not lib_id:
+        return value or ""
+    prefix, _, body = lib_id.partition(":")
+    if prefix == "Lib" and body in LIB_DESC:
+        return LIB_DESC[body]
+    if lib_id == "Device:R":
+        return f"Resistor, {value} (no MPN assigned — Device:R)"
+    if lib_id == "Device:C":
+        return f"Capacitor, {value} (no MPN assigned — Device:C)"
+    # Unknown library id: surface what we know rather than dropping it.
+    return f"{body or lib_id} ({value})" if value else (body or lib_id)
+
+
+def _mpn_for(lib_id: str) -> str:
+    """MPN extracted from the netlist lib_id. `Lib:<MPN>` → `<MPN>`;
+    generic `Device:R`/`Device:C` (no committed MPN) → empty string."""
+    prefix, _, body = (lib_id or "").partition(":")
+    if prefix == "Lib":
+        return body
+    return ""  # Device:R, Device:C — no MPN assigned yet
+
+
+def _collect_per_refdes(netlist_dir: Path) -> list[tuple[str, str, str, str, str]]:
+    """Return [(refdes, value, mpn, description, sheet), ...] sorted across all
+    netlist YAML files. One row per placed part instance."""
+    rows: list[tuple[str, str, str, str, str]] = []
+    for p in sorted(netlist_dir.glob("*.yaml")):
+        sheet = p.stem
+        data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+        for ref, spec in (data.get("parts") or {}).items():
+            if not isinstance(spec, dict):
+                continue
+            value = str(spec.get("value", "") or "")
+            lib_id = str(spec.get("lib_id", "") or "")
+            mpn = _mpn_for(lib_id)
+            desc = _description_for(lib_id, value)
+            rows.append((ref, value, mpn, desc, sheet))
+    # Natural-ish sort: letter prefix then numeric suffix when present.
+    def key(r):
+        ref = r[0]
+        head = "".join(c for c in ref if c.isalpha())
+        tail = "".join(c for c in ref if c.isdigit())
+        return (head, int(tail) if tail.isdigit() else 0, ref)
+    return sorted(rows, key=key)
 
 COLUMNS = [
     ("Item",                 6),
@@ -368,10 +453,32 @@ def build_workbook(path: str) -> None:
 
     ws.freeze_panes = "B2"
 
+    # --- Tab 2: per-refdes BOM (Part ref | Value | Description) ----------
+    netlist_dir = Path(__file__).resolve().parent / "netlist"
+    per_ref = _collect_per_refdes(netlist_dir)
+    ws2 = wb.create_sheet("Per-Refdes")
+    cols2 = [("Part ref", 12), ("Value", 16), ("MPN", 24),
+             ("Description", 60), ("Sheet", 12)]
+    for col_idx, (name, width) in enumerate(cols2, start=1):
+        c = ws2.cell(row=1, column=col_idx, value=name)
+        c.font = header_font
+        c.fill = header_fill
+        c.alignment = header_align
+        c.border = border
+        ws2.column_dimensions[get_column_letter(col_idx)].width = width
+    ws2.row_dimensions[1].height = 22
+    for row_idx, (ref, value, mpn, desc, sheet) in enumerate(per_ref, start=2):
+        for col_idx, v in enumerate((ref, value, mpn, desc, sheet), start=1):
+            c = ws2.cell(row=row_idx, column=col_idx, value=v)
+            c.alignment = body_align
+            c.border = border
+    ws2.freeze_panes = "A2"
+
     wb.save(path)
+    return len(ROWS), len(per_ref)
 
 
 if __name__ == "__main__":
-    out = "test1_bom.xlsx"
-    build_workbook(out)
-    print(f"Wrote {out}")
+    out = str(Path(__file__).resolve().parent / "test1_bom.xlsx")
+    n_main, n_ref = build_workbook(out)
+    print(f"Wrote {out}  (BOM={n_main} rows, Per-Refdes={n_ref} rows)")

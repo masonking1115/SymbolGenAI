@@ -23,6 +23,11 @@ export interface LintReport {
   counts: Record<Severity, number>;
 }
 
+export interface FindingAction {
+  kind: "fix" | "alt" | "verify" | string;
+  text: string;
+}
+
 export interface Finding {
   severity?: string;
   category?: string;
@@ -31,7 +36,28 @@ export interface Finding {
   detail?: string;
   source?: string;
   fix_hint?: string;
+  // ---- Voltai-PDF parser extensions (_review_incoming/install_review.py)
+  id?: string;                  // stable hash of (component, category, rule)
+  component?: string;           // refdes, e.g. "U41"
+  rule?: string;                // full shall/imperative statement
+  actions?: FindingAction[];    // Fix/Alt/Verify suggestions
+  fired_count?: number;         // how many times the source tool emitted this
+  status?: "pending" | "queued" | "applied" | "failed" | "dismissed";
+  source_pdf?: string;
   [k: string]: unknown;
+}
+
+export interface FixQueueEntry {
+  finding_id: string;
+  action_index: number;
+  action_kind: string;
+  action_text: string;
+  component?: string;
+  category?: string;
+  rule?: string;
+  refs?: string[];
+  status: "queued" | "applied" | "failed" | "dismissed";
+  queued_at: number;
 }
 
 export interface FindingsReport {

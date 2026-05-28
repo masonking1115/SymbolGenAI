@@ -45,6 +45,10 @@ KNOWN: dict[str, str] = {
     "CRCW04020000Z0ED": "R",     # 0 ohm jumper
     "CR0402-FX-1002GLF": "R",    # 10 kohm pull
     "TNPW06035K11BEEA": "R",     # 5.11 kohm 0.1% sense
+    "GRM155R71H103KA88D": "C",   # 10 nF HF (C12 — TPS7A8401A NR_SS)
+    "GRM21BR61A226ME44L": "C",   # 22 uF bulk X5R 0805 (C13 — LDO OUT)
+    "CR0402-FX-1001GLF": "R",    # 1 kohm series (R13 — LDO_PG)
+    "CR0402-FX-2201GLF": "R",    # 2.2 kohm I2C pull-up (R60/R61)
 }
 
 

@@ -13,11 +13,13 @@ corrupt". It:
      genuinely Altium-valid; mismatch / no-result => corruption or parse fail.
 
 Altium is NOT truly headless: the GUI launches, runs the script, self-closes.
-Expect ~30-90s. Run on milestones, not every edit (Tier 0 smoke_test is the
-fast everyday gate).
+Expect ~30-90s. Run on milestones, not every edit — the fast everyday gate is
+`python -m test1.altium.build_project` (which round-trips every sheet through
+altium_monkey's parser and SVG renderer).
 
 Usage:
     python -m test1.altium.verify.run_altium_verify [path\\to\\file.SchDoc]
+    (default: out/power.SchDoc)
 """
 
 from __future__ import annotations
@@ -181,7 +183,7 @@ def parse_result(result: Path) -> dict[str, str]:
 
 
 def main() -> int:
-    schdoc = Path(sys.argv[1]) if len(sys.argv) > 1 else OUT_DIR / "smoke.SchDoc"
+    schdoc = Path(sys.argv[1]) if len(sys.argv) > 1 else OUT_DIR / "power.SchDoc"
     if not schdoc.exists():
         print(f"FAIL: schdoc not found: {schdoc}")
         return 2

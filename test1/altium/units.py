@@ -8,8 +8,8 @@ rest of the Altium backend never juggles raw unit math inline.
 Note on Y axis: KiCad world Y grows DOWN; Altium schematic Y grows UP (mils
 from the sheet's lower-left origin). Coordinate-producing code that ports a
 KiCad layout must flip Y about the sheet height — `flip_y()` does that. The
-Gate 0 smoke test authors directly in Altium-native coords, so it does not
-need the flip; it is provided for the later full port.
+current builders author directly in Altium-native coords, so they do not need
+the flip; it is provided in case a future port has to ingest KiCad coordinates.
 """
 
 from __future__ import annotations

@@ -218,6 +218,40 @@ def _check_connectivity(sheet: Sheet, netlist: Netlist) -> list[str]:
     comp_names = _name_components(sheet, uf)
 
     errors: list[str] = []
+
+    # ----- Cross-net contamination ------------------------------------------
+    # The per-net checks below only verify that each YAML net's members are
+    # unified. They do NOT detect the reverse problem: two distinct YAML nets
+    # whose members ended up unified together (i.e. an unintended short — a
+    # T-intersection, an overlapping wire, etc.). Build the inverse map
+    # root -> {net_names...} and flag any root that contains more than one.
+    #
+    # This caught the U41.OUTB↔+3V3 short the Voltai review flagged on
+    # 2026-05-28, where the channel-B OUT-lane T'd into the R40/R41 +3V3
+    # power-port stubs and the per-net validator missed it because each net's
+    # members happened to all be in the (shorted) same component.
+    root_to_nets: dict[object, set[str]] = {}
+    for net_name, net in netlist.nets.items():
+        for member in net.members:
+            try:
+                refdes, unit, pin_num = parse_member(member)
+            except ValueError:
+                continue
+            part = sheet._placed.get((refdes, unit))
+            if part is None or pin_num not in part.pins:
+                continue
+            (px, py) = part.pins[pin_num]
+            root = uf.find(_K(px, py))
+            root_to_nets.setdefault(root, set()).add(net_name)
+    for root, names in root_to_nets.items():
+        if len(names) > 1:
+            errors.append(
+                f"SHORT: nets {sorted(names)} are unified at coord "
+                f"{root} — two distinct YAML nets share the same connected "
+                f"component (T-intersection, wire overlap, or stub landing "
+                f"on an unrelated wire's interior)"
+            )
+
     for net_name, net in netlist.nets.items():
         # Resolve each member to its connected-component root. Collect errors
         # for unknown refdes/pins inline; everything else feeds the name &
