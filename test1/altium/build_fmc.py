@@ -125,24 +125,24 @@ def build_fmc() -> tuple[AltiumSheet, object]:
         base = POWER_REACH if n % 2 == 0 else POWER_REACH + 600
         return base + (300 if net == "GND" else 0)
 
-    # ===== +3V3 (C36, C38, C40, D39) — each pin a short stub LEFT to +3V3 =====
-    for r, n in [("C", 36), ("C", 38), ("C", 40), ("D", 39)]:
+    # ===== +3V3 (C39, D36, D38, D40 per VITA 57.1) — short stub LEFT to +3V3 ===
+    for r, n in [("C", 39), ("D", 36), ("D", 38), ("D", 40)]:
         px, py = pin(r, n)
         ex = px - power_reach(n, "+3V3")
         s.wire(px, py, ex, py)
         s.power_at("+3V3", ex, py)
         wired.add((r, n))
 
-    # ===== GND strapping (H2, C34, C35) =====
-    for r, n in [("H", 2), ("C", 34), ("C", 35)]:
+    # ===== GND strapping (PRSNT_M2C_L=H2, GA0=C34, GA1=D35 — tie to GND) =====
+    for r, n in [("H", 2), ("C", 34), ("D", 35)]:
         px, py = pin(r, n)
         ex = px - power_reach(n, "GND")
         s.wire(px, py, ex, py)
         s.power_at("GND", ex, py)
         wired.add((r, n))
 
-    # ===== VADJ (G40, H39) output port =====
-    for r, n in [("G", 40), ("H", 39)]:
+    # ===== VADJ (G39, H40 per VITA 57.1) output port =====
+    for r, n in [("G", 39), ("H", 40)]:
         px, py = pin(r, n)
         ex = px - SPECIAL_REACH
         s.wire(px, py, ex, py)
@@ -156,16 +156,17 @@ def build_fmc() -> tuple[AltiumSheet, object]:
     s.port("LDO_PG", ex, py, io=PortIOType.INPUT)
     wired.add(("C", 1))
 
-    # ===== I²C global ports (SCL=D30, SDA=D31) =====
-    for net, (r, n) in [("SCL", ("D", 30)), ("SDA", ("D", 31))]:
+    # ===== I²C global ports (SCL=C30, SDA=C31 per VITA 57.1) =====
+    for net, (r, n) in [("SCL", ("C", 30)), ("SDA", ("C", 31))]:
         px, py = pin(r, n)
         ex = px - SPECIAL_REACH
         s.wire(px, py, ex, py)
         s.port(net, ex, py, io=PortIOType.BIDIRECTIONAL)
         wired.add((r, n))
 
-    # ===== NC pins (12V, 3P3VAUX, VREF_A_M2C) =====
-    for r, n in [("C", 32), ("D", 35), ("D", 37), ("H", 1)]:
+    # ===== Intentional NC: 12P0V (C35, C37), 3P3VAUX (D32), VREF_A_M2C (H1) =====
+    # (12 V is available but unused; AUX and VREF not required — see PPT p.5.)
+    for r, n in [("C", 35), ("C", 37), ("D", 32), ("H", 1)]:
         s.no_connect(*pin(r, n))
         wired.add((r, n))
 

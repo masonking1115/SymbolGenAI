@@ -1,0 +1,95 @@
+{
+  "generated_at": 1779931751.2240016,
+  "status": "pass",
+  "counts": {
+    "ERROR": 0,
+    "WARNING": 0,
+    "INFO": 12
+  },
+  "issues": [
+    {
+      "sheet": "power",
+      "severity": "INFO",
+      "rule": "redundant_junction",
+      "message": "junction (4900, 6900) on a pin (auto-connected)",
+      "refs": []
+    },
+    {
+      "sheet": "power",
+      "severity": "INFO",
+      "rule": "redundant_junction",
+      "message": "junction (2500, 6600) on a pin (auto-connected)",
+      "refs": []
+    },
+    {
+      "sheet": "power",
+      "severity": "INFO",
+      "rule": "redundant_junction",
+      "message": "junction (7800, 6600) on a pin (auto-connected)",
+      "refs": []
+    },
+    {
+      "sheet": "power",
+      "severity": "INFO",
+      "rule": "redundant_junction",
+      "message": "junction (8400, 6600) on a pin (auto-connected)",
+      "refs": []
+    },
+    {
+      "sheet": "power",
+      "severity": "INFO",
+      "rule": "redundant_junction",
+      "message": "junction (6800, 7000) on a pin (auto-connected)",
+      "refs": []
+    },
+    {
+      "sheet": "power",
+      "severity": "INFO",
+      "rule": "redundant_junction",
+      "message": "junction (10900, 5600) on a pin (auto-connected)",
+      "refs": []
+    },
+    {
+      "sheet": "bias",
+      "severity": "INFO",
+      "rule": "redundant_junction",
+      "message": "junction (11900, 7000) on a pin (auto-connected)",
+      "refs": []
+    },
+    {
+      "sheet": "bias",
+      "severity": "INFO",
+      "rule": "redundant_junction",
+      "message": "junction (11900, 6000) on a pin (auto-connected)",
+      "refs": []
+    },
+    {
+      "sheet": "bias",
+      "severity": "INFO",
+      "rule": "redundant_junction",
+      "message": "junction (11400, 6500) on a pin (auto-connected)",
+      "refs": []
+    },
+    {
+      "sheet": "bias",
+      "severity": "INFO",
+      "rule": "redundant_junction",
+      "message": "junction (19900, 7000) on a pin (auto-connected)",
+      "refs": []
+    },
+    {
+      "sheet": "bias",
+      "severity": "INFO",
+      "rule": "redundant_junction",
+      "message": "junction (19900, 6000) on a pin (auto-connected)",
+      "refs": []
+    },
+    {
+      "sheet": "bias",
+      "severity": "INFO",
+      "rule": "redundant_junction",
+      "message": "junction (19400, 6500) on a pin (auto-connected)",
+      "refs": []
+    }
+  ]
+}

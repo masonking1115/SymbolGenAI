@@ -20,7 +20,7 @@ parts:
     footprint: Package_DFN_QFN:VQFN-10-1EP_3x3mm_P0.5mm_EP1.6x1.6mm
     notes: External VREF=VDD; EEPROM default code 0xFFF → bias OFF at POR
   C40:
-    lib_id: Device:C
+    lib_id: Lib:GRM155R71C104KA88D
     value: 0.1uF
     footprint: Capacitor_SMD:C_0402_1005Metric
     notes: VDD decoupling per 22187E Figure 2-1
@@ -40,7 +40,7 @@ parts:
     footprint: Package_DFN_QFN:DFN-3-1EP_1.0x1.0mm_P0.65mm_EP0.5x0.5mm
     notes: PMOS pass element for channel 0
   R40:
-    lib_id: Device:R
+    lib_id: Lib:TNPW06035K11BEEA
     value: 5.11k 0.1%
     footprint: Resistor_SMD:R_0402_1005Metric
     notes: Channel-0 sense R (sets 0–646 µA full-scale)
@@ -50,18 +50,18 @@ parts:
     footprint: Package_TO_SOT_SMD:SOT-23
     notes: "Series isolator — POPULATED by default. Default-off (R44 gate pull-down) so a virgin MCP4728 cannot push bias into Bobcat until FPGA asserts BIAS_ISO0 HIGH (W2 fail-safe)."
   R42:
-    lib_id: Device:R
+    lib_id: Lib:CRCW04020000Z0ED
     value: "0"
     footprint: Resistor_SMD:R_0402_1005Metric
     dnp: true
     notes: "Parallel 0Ω override across Q42 D-S — DNP by default. Populate ONLY to disable FPGA isolation and force the bias path closed (e.g. for benchtop standalone use without FPGA control)."
   R44:
-    lib_id: Device:R
+    lib_id: Lib:CR0402-FX-1002GLF
     value: 10k
     footprint: Resistor_SMD:R_0402_1005Metric
     notes: BIAS_ISO0 gate pull-down (FET OFF at POR when Q42 populated)
   C42:
-    lib_id: Device:C
+    lib_id: Lib:GRM155R71C104KA88D
     value: 0.1uF
     footprint: Capacitor_SMD:C_0402_1005Metric
     notes: Channel-0 +3V3 decoupling near opamp
@@ -72,7 +72,7 @@ parts:
     value: PMZ1200UPEYL
     footprint: Package_DFN_QFN:DFN-3-1EP_1.0x1.0mm_P0.65mm_EP0.5x0.5mm
   R41:
-    lib_id: Device:R
+    lib_id: Lib:TNPW06035K11BEEA
     value: 5.11k 0.1%
     footprint: Resistor_SMD:R_0402_1005Metric
   Q43:
@@ -81,18 +81,18 @@ parts:
     footprint: Package_TO_SOT_SMD:SOT-23
     notes: "Series isolator — POPULATED by default. Default-off (R45 gate pull-down) so a virgin MCP4728 cannot push bias into Bobcat until FPGA asserts BIAS_ISO1 HIGH (W2 fail-safe)."
   R43:
-    lib_id: Device:R
+    lib_id: Lib:CRCW04020000Z0ED
     value: "0"
     footprint: Resistor_SMD:R_0402_1005Metric
     dnp: true
     notes: "Parallel 0Ω override across Q43 D-S — DNP by default. Populate ONLY to disable FPGA isolation."
   R45:
-    lib_id: Device:R
+    lib_id: Lib:CR0402-FX-1002GLF
     value: 10k
     footprint: Resistor_SMD:R_0402_1005Metric
     notes: BIAS_ISO1 gate pull-down
   C43:
-    lib_id: Device:C
+    lib_id: Lib:GRM155R71C104KA88D
     value: 0.1uF
     footprint: Capacitor_SMD:C_0402_1005Metric
 

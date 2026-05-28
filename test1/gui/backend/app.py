@@ -395,24 +395,18 @@ def _parse_lint_from_lines(lines: list[str]) -> list[dict]:
 
 @app.get("/api/lint")
 def lint(run_id: str | None = None) -> dict:
-    """Return lint issues parsed from the most recent (or named) generate run.
+    """Return the lint report for the MOST RECENT build.
 
-    Also returns the static set of rule IDs the linter checks for, so the
-    frontend can render the full checklist (pass/fail per rule) even when
-    nothing fired.
+    Altium backend: `build_project` writes `out/lint.json` (every issue, all
+    severities, attributed per sheet) on each build. We serve that file so the
+    checklist reflects the current on-disk build and survives a backend restart
+    — independent of whether a generate run is still in this process's memory.
+    Falls back to parsing the last generate run's console output (and, for the
+    legacy KiCad backend, that is the only source).
+
+    Also returns the static rule registry so the frontend can render the full
+    checklist (pass/fail per rule) even when nothing fired.
     """
-    target: Run | None = None
-    if run_id and run_id in _RUNS:
-        target = _RUNS[run_id]
-    else:
-        for r in reversed(list(_RUNS.values())):
-            if r.kind == "generate":
-                target = r
-                break
-    issues = _parse_lint_from_lines(list(target.lines)) if target else []
-    # Authoritative rule registry lives in the linter module itself, so the GUI
-    # always reflects exactly what the build gates on (Altium backend). Fall
-    # back to a minimal list if the legacy KiCad backend is selected.
     try:
         from test1.altium.layout_lint import RULES as _RULES
         rules = [dict(r) for r in _RULES]
@@ -423,6 +417,37 @@ def lint(run_id: str | None = None) -> dict:
             {"id": "wire_through_body", "severity": "WARNING", "scope": "sheet",
              "summary": "Wire crosses a part body"},
         ]
+
+    # Preferred source: the structured report from the most recent build.
+    report_path = ALTIUM_OUT / "lint.json"
+    if BACKEND == "altium" and report_path.exists():
+        try:
+            data = json.loads(report_path.read_text())
+            issues = data.get("issues", [])
+            counts = data.get("counts") or {
+                s: sum(1 for i in issues if i["severity"] == s)
+                for s in ("ERROR", "WARNING", "INFO")
+            }
+            return {
+                "run_id": None,
+                "status": data.get("status", "unknown"),
+                "generated_at": data.get("generated_at"),
+                "issues": issues,
+                "rules": rules,
+                "counts": counts,
+            }
+        except (ValueError, OSError):
+            pass  # fall through to the console-parse path
+
+    target: Run | None = None
+    if run_id and run_id in _RUNS:
+        target = _RUNS[run_id]
+    else:
+        for r in reversed(list(_RUNS.values())):
+            if r.kind == "generate":
+                target = r
+                break
+    issues = _parse_lint_from_lines(list(target.lines)) if target else []
     return {
         "run_id": target.run_id if target else None,
         "status": target.status if target else "unknown",

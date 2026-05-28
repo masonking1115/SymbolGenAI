@@ -236,36 +236,116 @@ class AltiumSheet:
             return "left"
         return "right"
 
+    def _vwire_through(self, x: int, y: int, tol: float = 1.0) -> bool:
+        """True if a vertical wire at column x passes THROUGH row y (material both
+        above and below) — i.e. a glyph at (x,y) would straddle that net."""
+        up = down = False
+        for (a, b) in self._wires:
+            if abs(a[0] - x) < tol and abs(b[0] - x) < tol:
+                lo, hi = min(a[1], b[1]), max(a[1], b[1])
+                if lo - tol <= y <= hi + tol:
+                    up |= hi > y + tol
+                    down |= lo < y - tol
+        return up and down
+
+    def _power_stub(self, x: int, y: int, length: int = 200, tol: float = 1.0) -> int:
+        """Generation rule helper: if the net runs vertically THROUGH (x,y),
+        return a signed horizontal offset to a clear column so the power glyph
+        can sit beside the net and terminate a short stub instead of straddling.
+        A candidate column is clear only if (a) no vertical wire passes through it
+        at row y (else the glyph would just straddle THAT net) and (b) the stub
+        path along row y is free of an existing horizontal wire. Returns 0 when
+        the point already terminates the net or no clear column is found. Coords
+        are EMITTED (page) mils, matching self._wires."""
+        if not self._vwire_through(x, y, tol):
+            return 0
+
+        def stub_path_clear(nx: int) -> bool:
+            x0, x1 = min(x, nx), max(x, nx)
+            for (a, b) in self._wires:
+                if abs(a[1] - y) < tol and abs(b[1] - y) < tol:    # horizontal at row y
+                    lo, hi = min(a[0], b[0]), max(a[0], b[0])
+                    if lo < x1 - tol and hi > x0 + tol:
+                        return False
+            return True
+
+        for dx in (length, -length, 2 * length, -2 * length, 3 * length, -3 * length):
+            if not self._vwire_through(x + dx, y, tol) and stub_path_clear(x + dx):
+                return dx
+        return 0
+
     def power_at(self, rail: str, x: int, y: int,
-                 orientation: TextOrientation | None = None) -> tuple[int, int]:
-        """Place a power port for `rail` at (x,y). Returns the pin coord (==(x,y)).
+                 orientation: TextOrientation | None = None,
+                 stub: int = 0) -> tuple[int, int]:
+        """Place a power port for `rail` at (x,y). Returns the NET pin coord (==(x,y)).
 
         Orientation follows schematic convention so the glyph reads right in
         Altium: GROUND-family ports point DOWN (270°, bar hangs below the wire)
         and supply rails point UP (90°, arrow rises above the wire). Pass an
-        explicit `orientation` to override. The electrical hot-spot stays at
-        (x,y) regardless of orientation, so connectivity is unaffected."""
+        explicit `orientation` to override.
+
+        Generation rule (no-straddle): a power glyph must sit OFF TO THE SIDE of
+        the net and terminate it, never straddle a net that runs through it. Pass
+        a signed `stub` (mils) to branch a short horizontal stub and place the
+        glyph at its end; the electrical net point stays (x,y) so connectivity is
+        unaffected. Callers usually leave this 0 — straddles are auto-corrected
+        post-build by `auto_fix_power()` (which can see the FULL wire set, unlike
+        this call). Caught by layout_lint.power_straddles_net."""
         is_gnd = "GND" in rail.upper()
         if orientation is None:
             orientation = (TextOrientation.DEGREES_270 if is_gnd
                            else TextOrientation.DEGREES_90)
+        if stub:
+            self.wire(x, y, x + stub, y)        # stub ties the glyph to the net
+            x, y = x + stub, y                  # glyph sits at the stub end
         sx, sy = self._t(x, y)
-        self.doc.add_object(make_sch_power_port(
+        obj = make_sch_power_port(
             location_mils=SchPointMils.from_mils(sx, sy), text=rail,
             style=power_style_for(rail), font=FONT_DEFAULT, color=_PWR_RED,
             orientation=orientation, show_net_name=not is_gnd,
-        ))
+        )
+        self.doc.add_object(obj)
         # Power text renders alongside the glyph. GND (down) hangs its bar below
         # with no net name; rails (up) show the rail name above. Box the name's
         # extent above/below the hot-spot so the linter sees collisions.
         ori = int(getattr(orientation, "value", orientation))
-        if is_gnd:
-            pbox = (sx - 110, sy - 190, sx + 110, sy)        # glyph bar below
-        else:
-            pbox = _text_box(sx, sy + 140, rail, "center")   # rail name above
+        pbox = self._power_box(sx, sy, rail, is_gnd)
         self._labels.append(LabelRec("power", rail, sx, sy,
-                                     orientation=ori, box=pbox))
+                                     orientation=ori, box=pbox, obj=obj))
         return (x, y)
+
+    @staticmethod
+    def _power_box(sx: int, sy: int, rail: str, is_gnd: bool) -> tuple:
+        if is_gnd:
+            return (sx - 110, sy - 190, sx + 110, sy)        # glyph bar below
+        return _text_box(sx, sy + 140, rail, "center")       # rail name above
+
+    def auto_fix_power(self, length: int = 200) -> list[tuple[str, int]]:
+        """Auto-correct power/rail glyphs that STRADDLE a net (the net runs
+        vertically through the connection point) by branching a short horizontal
+        stub to a clear side and relocating the glyph to the stub end, so it
+        sits beside the net and terminates the stub. Runs post-build (full wire
+        set known), mirroring auto_fix_text. The electrical net point is
+        untouched (the stub re-ties the glyph), so connectivity is unchanged.
+        Returns (rail, dx) for each relocation. See layout_lint.power_straddles_net."""
+        changes: list[tuple[str, int]] = []
+        for lb in [l for l in self._labels if l.kind == "power" and l.obj is not None]:
+            dx = self._power_stub(lb.x, lb.y, length)
+            if not dx:
+                continue
+            nx = lb.x + dx
+            self.doc.add_object(make_sch_wire(
+                points_mils=[SchPointMils.from_mils(lb.x, lb.y),
+                             SchPointMils.from_mils(nx, lb.y)],
+                color=_NET_BLUE, line_width=LineWidth.SMALL))
+            self._wires.append(((lb.x, lb.y), (nx, lb.y)))
+            # power-port location is a CoordPoint (not SchPointMils) — rebuild it
+            # via the same type so to_geometry's .x/.y stay valid.
+            lb.obj.location = lb.obj.location.from_mils(nx, lb.y)
+            lb.box = self._power_box(nx, lb.y, lb.name, "GND" in lb.name.upper())
+            lb.x = nx
+            changes.append((lb.name, dx))
+        return changes
 
     def no_connect(self, x: int, y: int) -> None:
         x, y = self._t(x, y)

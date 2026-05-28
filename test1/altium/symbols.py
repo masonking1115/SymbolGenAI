@@ -94,17 +94,21 @@ def _add_passive(lib, name: str, designator_prefix: str) -> None:
     """Author a 2-pin vertical passive: pin 1 on top, pin 2 on bottom. The drawn
     body uses the conventional glyph for the device class (a capacitor renders as
     plates, a resistor as an IEC box) instead of a generic rectangle. Pin
-    hot-spots stay at (0, +/-100) so every builder's routing is unchanged."""
+    hot-spots stay at (0, +/-100) so every builder's routing is unchanged; the
+    pins point OUTWARD and start at the body edge (+/-70, the resistor zig-zag
+    extent — wider than the cap plates at +/-25) so their connection end IS the
+    outer tip and the pin line never runs THROUGH the body glyph (a pin starting
+    inside the zig-zag looks like a net crossing the resistor)."""
     from . import glyphs
     sym = lib.add_symbol(name, description=f"Generic {name}")
     sym.add_pin(make_sch_pin(
-        designator="1", name="", location_mils=SchPointMils.from_mils(0, 300),
-        orientation=Rotation90.DEG_270, length_mils=200,
+        designator="1", name="", location_mils=SchPointMils.from_mils(0, 70),
+        orientation=Rotation90.DEG_90, length_mils=30,
         electrical_type=PinElectrical.PASSIVE,
         name_font=FONT_DEFAULT, designator_font=FONT_DEFAULT))
     sym.add_pin(make_sch_pin(
-        designator="2", name="", location_mils=SchPointMils.from_mils(0, -300),
-        orientation=Rotation90.DEG_90, length_mils=200,
+        designator="2", name="", location_mils=SchPointMils.from_mils(0, -70),
+        orientation=Rotation90.DEG_270, length_mils=30,
         electrical_type=PinElectrical.PASSIVE,
         name_font=FONT_DEFAULT, designator_font=FONT_DEFAULT))
     hs = {str(p.designator): (int(round(p.get_hot_spot().x_mils)),

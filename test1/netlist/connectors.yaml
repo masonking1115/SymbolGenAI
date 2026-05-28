@@ -20,17 +20,17 @@ parts:
   J55: { lib_id: Lib:HRM-G-300-467B-1, value: SMA, footprint: Connector_Coaxial:SMA_Amphenol_HRM-G_Vertical }
   J56: { lib_id: Lib:HRM-G-300-467B-1, value: SMA, footprint: Connector_Coaxial:SMA_Amphenol_HRM-G_Vertical }
   R50:
-    lib_id: Device:R
+    lib_id: Lib:CRCW04020000Z0ED
     value: "0"
     footprint: Resistor_SMD:R_0402_1005Metric
     notes: SMA-side 0Ω for OSC_EN — depop to switch routing to FMC LA side
   R51:
-    lib_id: Device:R
+    lib_id: Lib:CRCW04020000Z0ED
     value: "0"
     footprint: Resistor_SMD:R_0402_1005Metric
     notes: SMA-side 0Ω for WEIGHT_EN
   R52:
-    lib_id: Device:R
+    lib_id: Lib:CRCW04020000Z0ED
     value: "0"
     footprint: Resistor_SMD:R_0402_1005Metric
     notes: SMA-side 0Ω for SAMPLE_TRIG

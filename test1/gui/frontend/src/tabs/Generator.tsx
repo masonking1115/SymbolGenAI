@@ -50,6 +50,8 @@ export function Generator({
   const [netlistFiles, setNetlistFiles] = useState<string[]>([]);
   const [fresh, setFresh] = useState<Freshness | null>(null);
   const [queuedCount, setQueuedCount] = useState(0);
+  // Which severity's detail list is expanded under the count cards (click to open).
+  const [openSev, setOpenSev] = useState<Severity | null>(null);
 
   // Refresh lint report whenever artifacts change.
   const refreshLint = useCallback(async () => {
@@ -197,10 +199,36 @@ export function Generator({
         />
 
         <div className="mt-4 grid grid-cols-3 gap-3">
-          <StatCard label="ERRORs" value={counts.ERROR} tone={counts.ERROR ? "err" : "ok"} />
-          <StatCard label="WARNINGs" value={counts.WARNING} tone={counts.WARNING ? "warn" : "ok"} />
-          <StatCard label="INFOs" value={counts.INFO} tone="neutral" />
+          <StatCard
+            label="ERRORs"
+            value={counts.ERROR}
+            tone={counts.ERROR ? "err" : "ok"}
+            active={openSev === "ERROR"}
+            onClick={() => setOpenSev((s) => (s === "ERROR" ? null : "ERROR"))}
+          />
+          <StatCard
+            label="WARNINGs"
+            value={counts.WARNING}
+            tone={counts.WARNING ? "warn" : "ok"}
+            active={openSev === "WARNING"}
+            onClick={() => setOpenSev((s) => (s === "WARNING" ? null : "WARNING"))}
+          />
+          <StatCard
+            label="INFOs"
+            value={counts.INFO}
+            tone="neutral"
+            active={openSev === "INFO"}
+            onClick={() => setOpenSev((s) => (s === "INFO" ? null : "INFO"))}
+          />
         </div>
+
+        {openSev && (
+          <SeverityDetail
+            severity={openSev}
+            issues={(lint?.issues ?? []).filter((i) => i.severity === openSev)}
+            onClose={() => setOpenSev(null)}
+          />
+        )}
 
         <div className="mt-4">
           <FreshnessBar fresh={fresh} />
@@ -294,9 +322,20 @@ export function Generator({
                       <span>{r.id}</span>
                       {r.severity && (
                         <span
+                          title={
+                            tone === "ok"
+                              ? `Severity if this rule fires: ${r.severity} (currently passing)`
+                              : `${r.severity} — this rule fired`
+                          }
                           className={
                             "px-1 rounded text-[9.5px] font-semibold uppercase tracking-wide " +
-                            (r.severity === "ERROR"
+                            // Color the severity chip ONLY when the rule actually
+                            // fired. When passing (tone "ok") it's just labeling
+                            // the rule's class, so keep it muted — a red ERROR
+                            // chip on a passing row reads as a live error.
+                            (tone === "ok"
+                              ? "bg-edge text-ink-400"
+                              : r.severity === "ERROR"
                               ? "bg-err/10 text-err"
                               : r.severity === "WARNING"
                               ? "bg-warn/10 text-warn"
@@ -448,10 +487,14 @@ function StatCard({
   label,
   value,
   tone,
+  onClick,
+  active,
 }: {
   label: string;
   value: number;
   tone: "ok" | "warn" | "err" | "neutral";
+  onClick?: () => void;
+  active?: boolean;
 }) {
   const ring =
     tone === "ok"
@@ -470,9 +513,95 @@ function StatCard({
       ? "text-err"
       : "text-ink-900";
   return (
-    <div className={"rounded-md border px-3 py-2 " + ring}>
-      <div className="text-[11px] uppercase tracking-wide text-ink-500">{label}</div>
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={
+        "text-left rounded-md border px-3 py-2 transition-shadow " +
+        ring +
+        (onClick ? " cursor-pointer hover:shadow-sm" : "") +
+        (active ? " ring-2 ring-ink-300" : "")
+      }
+    >
+      <div className="text-[11px] uppercase tracking-wide text-ink-500 flex items-center justify-between">
+        <span>{label}</span>
+        <I.Caret
+          size={12}
+          className={"transition-transform " + (active ? "rotate-180" : "opacity-40")}
+        />
+      </div>
       <div className={"text-2xl font-semibold mt-0.5 " + num}>{value}</div>
+    </button>
+  );
+}
+
+function SeverityDetail({
+  severity,
+  issues,
+  onClose,
+}: {
+  severity: Severity;
+  issues: LintReport["issues"];
+  onClose: () => void;
+}) {
+  const accent =
+    severity === "ERROR" ? "text-err" : severity === "WARNING" ? "text-warn" : "text-ink-700";
+  // Group by sheet so the list reads like the build report.
+  const bySheet = new Map<string, LintReport["issues"]>();
+  for (const i of issues) {
+    const arr = bySheet.get(i.sheet) ?? [];
+    arr.push(i);
+    bySheet.set(i.sheet, arr);
+  }
+  return (
+    <div className="mt-2 rounded-md border border-edge bg-white">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-edge">
+        <div className="text-sm font-medium">
+          <span className={accent}>{severity}</span>{" "}
+          <span className="text-ink-500">
+            — {issues.length} issue{issues.length === 1 ? "" : "s"}
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="text-ink-500 hover:text-ink-900 inline-flex items-center gap-1 text-xs"
+        >
+          <I.X size={12} /> close
+        </button>
+      </div>
+      {issues.length === 0 ? (
+        <div className="px-3 py-3 text-sm text-ink-500">
+          No {severity.toLowerCase()} issues in the most recent build.
+        </div>
+      ) : (
+        <div className="px-3 py-2 space-y-2 max-h-72 overflow-auto thin-scroll">
+          {[...bySheet.entries()].map(([sheet, items]) => (
+            <div key={sheet}>
+              <div className="text-[11px] uppercase tracking-wide text-ink-500 mb-1">
+                {sheet}
+              </div>
+              <div className="space-y-1">
+                {items.map((h, i) => (
+                  <div key={i} className="text-[12.5px] text-ink-800 flex items-start gap-1.5">
+                    <span
+                      className={"inline-block w-1.5 h-1.5 rounded-full mt-1.5 " + SEV_DOT[h.severity]}
+                    />
+                    <span className="min-w-0">
+                      <span className="font-mono text-[11px] text-ink-500">{h.rule}</span>{" "}
+                      {h.message}
+                      {h.refs.length > 0 && (
+                        <span className="text-ink-500"> ({h.refs.join(", ")})</span>
+                      )}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

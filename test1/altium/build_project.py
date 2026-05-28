@@ -8,6 +8,9 @@ the Altium backend (the analogue of running gen_schematic.py for KiCad).
 
 from __future__ import annotations
 
+import json
+import time
+
 from altium_monkey.altium_prjpcb import AltiumPrjPcb
 
 from .build_all import BUILDERS
@@ -55,9 +58,20 @@ def _build_centered(fn):
 
 def main() -> int:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
+    # Every lint issue from THIS build, attributed to its sheet, so the GUI can
+    # render a checklist that reflects the most recent build (see _write_report).
+    report: list[dict] = []
+
+    def _record(sheet: str, issues) -> None:
+        for i in issues:
+            report.append({"sheet": sheet, "severity": i.severity,
+                           "rule": i.rule, "message": i.message,
+                           "refs": list(i.refs)})
+
     # Symbol-library quality gate (pin-name fit, etc.) before placing.
     lib_path, _ = get_library()
     lib_issues = lint_library(lib_path)
+    _record("library", lib_issues)
     if lib_issues:
         print("symbol library:")
         for i in lib_issues:
@@ -78,20 +92,24 @@ def main() -> int:
             # Auto-correct cosmetic note overlaps before linting/saving (notes
             # carry no connectivity, so this never changes the netlist).
             autofixes = s.auto_fix_text()
+            powerfixes = s.auto_fix_power()
             s.save(OUT_DIR / f"{name}.SchDoc")
             s.render_svg(RENDER_DIR / f"{name}.svg")
             docs.append(f"{name}.SchDoc")
             issues = lint(s)
+            _record(name, issues)
             c = lint_counts(issues)
             lint_str = f"{c['ERROR']}/{c['WARNING']}/{c['INFO']}"
             status = "OK" if c["ERROR"] == 0 else "LINT ERROR"
             if c["ERROR"]:
                 fails += 1
             print(f"{name:12} {getattr(s, '_chosen_paper', '?'):6} {lint_str:14} {status}")
-            # Show what the auto-fixer corrected this run.
+            # Show what the auto-fixers corrected this run.
             for note, dy in autofixes:
                 short = note if len(note) <= 40 else note[:37] + "..."
                 print(f"             ~ auto-fixed note {short!r} (moved {dy:+d} mil)")
+            for rail, dx in powerfixes:
+                print(f"             ~ off-set power {rail!r} beside the net (moved {dx:+d} mil)")
             # Surface ERROR/WARNING detail so every generation shows what to fix.
             order = {"ERROR": 0, "WARNING": 1}
             for i in sorted((x for x in issues if x.severity in order),
@@ -99,6 +117,9 @@ def main() -> int:
                 print(f"             - {i}")
         except Exception as e:
             fails += 1
+            report.append({"sheet": name, "severity": "ERROR",
+                           "rule": "build_failed", "message": f"{type(e).__name__}: {e}",
+                           "refs": []})
             print(f"{name:12} {'-':6} {'-':14} FAIL: {type(e).__name__}: {e}")
 
     # Root sheet (hierarchy only — no netlist to validate).
@@ -114,6 +135,19 @@ def main() -> int:
         prj.add_document(d)
     prj_path = OUT_DIR / f"{PROJECT}.PrjPcb"
     prj.save(prj_path)
+
+    # Persist the structured lint report so the GUI checklist reflects THIS
+    # build (survives a backend restart; includes INFO, which the console table
+    # only counts). Read by GET /api/lint.
+    sev = {"ERROR": 0, "WARNING": 0, "INFO": 0}
+    for r in report:
+        sev[r["severity"]] = sev.get(r["severity"], 0) + 1
+    (OUT_DIR / "lint.json").write_text(json.dumps({
+        "generated_at": time.time(),
+        "status": "fail" if fails else "pass",
+        "counts": sev,
+        "issues": report,
+    }, indent=2))
 
     print("-" * 36)
     print(f"wrote {prj_path.name} referencing root + {len(docs)} child sheets")

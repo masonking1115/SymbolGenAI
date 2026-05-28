@@ -23,39 +23,39 @@ parts:
     notes: 40-QFN DUT, 5×5 mm, 0.4 mm pitch, EP=GND
 
   # VDDD decoupling (pins 12 and 20)
-  C20: { lib_id: Device:C, value: 0.1uF, footprint: Capacitor_SMD:C_0402_1005Metric, notes: VDDD pin 12 per-pin cap }
-  C21: { lib_id: Device:C, value: 1uF,   footprint: Capacitor_SMD:C_0402_1005Metric, notes: VDDD pin 20 per-pin cap }
+  C20: { lib_id: Lib:GRM155R71C104KA88D, value: 0.1uF, footprint: Capacitor_SMD:C_0402_1005Metric, notes: VDDD pin 12 per-pin cap }
+  C21: { lib_id: Lib:GRM155R70J105KA12D, value: 1uF,   footprint: Capacitor_SMD:C_0402_1005Metric, notes: VDDD pin 20 per-pin cap }
 
   # VDDA1 path (pin 1)
-  R20: { lib_id: Device:R, value: "0",   footprint: Resistor_SMD:R_0402_1005Metric, notes: Series 0Ω on VDDA1 }
-  C22: { lib_id: Device:C, value: 0.1uF, footprint: Capacitor_SMD:C_0402_1005Metric, notes: VDDA1 decoupling }
+  R20: { lib_id: Lib:CRCW04020000Z0ED, value: "0",   footprint: Resistor_SMD:R_0402_1005Metric, notes: Series 0Ω on VDDA1 }
+  C22: { lib_id: Lib:GRM155R71C104KA88D, value: 0.1uF, footprint: Capacitor_SMD:C_0402_1005Metric, notes: VDDA1 decoupling }
 
   # VDDA2 path (pins 26+27 tied)
-  R21: { lib_id: Device:R, value: "0",   footprint: Resistor_SMD:R_0402_1005Metric, notes: Series 0Ω on VDDA2 }
-  C23: { lib_id: Device:C, value: 0.1uF, footprint: Capacitor_SMD:C_0402_1005Metric, notes: VDDA2 decoupling }
+  R21: { lib_id: Lib:CRCW04020000Z0ED, value: "0",   footprint: Resistor_SMD:R_0402_1005Metric, notes: Series 0Ω on VDDA2 }
+  C23: { lib_id: Lib:GRM155R71C104KA88D, value: 0.1uF, footprint: Capacitor_SMD:C_0402_1005Metric, notes: VDDA2 decoupling }
 
   # VDDIO bulk + per-pin decoupling row (W2 — 5×0.1µF + 1×1µF on +VDDIO)
-  C24: { lib_id: Device:C, value: 0.1uF, footprint: Capacitor_SMD:C_0402_1005Metric }
-  C25: { lib_id: Device:C, value: 1uF,   footprint: Capacitor_SMD:C_0402_1005Metric, notes: VDDIO bulk cap }
-  C26: { lib_id: Device:C, value: 0.1uF, footprint: Capacitor_SMD:C_0402_1005Metric }
-  C27: { lib_id: Device:C, value: 0.1uF, footprint: Capacitor_SMD:C_0402_1005Metric }
-  C28: { lib_id: Device:C, value: 0.1uF, footprint: Capacitor_SMD:C_0402_1005Metric }
+  C24: { lib_id: Lib:GRM155R71C104KA88D, value: 0.1uF, footprint: Capacitor_SMD:C_0402_1005Metric }
+  C25: { lib_id: Lib:GRM155R70J105KA12D, value: 1uF,   footprint: Capacitor_SMD:C_0402_1005Metric, notes: VDDIO bulk cap }
+  C26: { lib_id: Lib:GRM155R71C104KA88D, value: 0.1uF, footprint: Capacitor_SMD:C_0402_1005Metric }
+  C27: { lib_id: Lib:GRM155R71C104KA88D, value: 0.1uF, footprint: Capacitor_SMD:C_0402_1005Metric }
+  C28: { lib_id: Lib:GRM155R71C104KA88D, value: 0.1uF, footprint: Capacitor_SMD:C_0402_1005Metric }
 
-  C29: { lib_id: Device:C, value: "0.1uF", footprint: Capacitor_SMD:C_0402_1005Metric, notes: "autofix: decoupling on +VDDIO" }
+  C29: { lib_id: Lib:GRM155R71C104KA88D, value: "0.1uF", footprint: Capacitor_SMD:C_0402_1005Metric, notes: "autofix: decoupling on +VDDIO" }
 
   # SPI / control pulls (E3, E4)
-  R22: { lib_id: Device:R, value: 10k, footprint: Resistor_SMD:R_0402_1005Metric, notes: MOSI pull-down }
-  R23: { lib_id: Device:R, value: 10k, footprint: Resistor_SMD:R_0402_1005Metric, notes: SCLK pull-down }
-  R24: { lib_id: Device:R, value: 10k, footprint: Resistor_SMD:R_0402_1005Metric, notes: CS_L pull-up to +VDDIO }
-  R25: { lib_id: Device:R, value: 10k, footprint: Resistor_SMD:R_0402_1005Metric, notes: SPI_DMODE pull-down }
-  R26: { lib_id: Device:R, value: 10k, footprint: Resistor_SMD:R_0402_1005Metric, notes: RESET_N pull-up to +VDDIO }
-  R27: { lib_id: Device:R, value: 10k, footprint: Resistor_SMD:R_0402_1005Metric, notes: OSC_EN pull-down }
-  R28: { lib_id: Device:R, value: 10k, footprint: Resistor_SMD:R_0402_1005Metric, notes: WEIGHT_EN pull-down }
-  R29: { lib_id: Device:R, value: 10k, footprint: Resistor_SMD:R_0402_1005Metric, notes: SAMPLE_TRIG pull-down }
-  R30: { lib_id: Device:R, value: 10k, footprint: Resistor_SMD:R_0402_1005Metric, notes: GPIO3 pull-down }
-  R31: { lib_id: Device:R, value: 10k, footprint: Resistor_SMD:R_0402_1005Metric, notes: GPIO2 pull-down }
-  R32: { lib_id: Device:R, value: 10k, footprint: Resistor_SMD:R_0402_1005Metric, notes: GPIO1 pull-down }
-  R33: { lib_id: Device:R, value: 10k, footprint: Resistor_SMD:R_0402_1005Metric, notes: GPIO0 pull-down }
+  R22: { lib_id: Lib:CR0402-FX-1002GLF, value: 10k, footprint: Resistor_SMD:R_0402_1005Metric, notes: MOSI pull-down }
+  R23: { lib_id: Lib:CR0402-FX-1002GLF, value: 10k, footprint: Resistor_SMD:R_0402_1005Metric, notes: SCLK pull-down }
+  R24: { lib_id: Lib:CR0402-FX-1002GLF, value: 10k, footprint: Resistor_SMD:R_0402_1005Metric, notes: CS_L pull-up to +VDDIO }
+  R25: { lib_id: Lib:CR0402-FX-1002GLF, value: 10k, footprint: Resistor_SMD:R_0402_1005Metric, notes: SPI_DMODE pull-down }
+  R26: { lib_id: Lib:CR0402-FX-1002GLF, value: 10k, footprint: Resistor_SMD:R_0402_1005Metric, notes: RESET_N pull-up to +VDDIO }
+  R27: { lib_id: Lib:CR0402-FX-1002GLF, value: 10k, footprint: Resistor_SMD:R_0402_1005Metric, notes: OSC_EN pull-down }
+  R28: { lib_id: Lib:CR0402-FX-1002GLF, value: 10k, footprint: Resistor_SMD:R_0402_1005Metric, notes: WEIGHT_EN pull-down }
+  R29: { lib_id: Lib:CR0402-FX-1002GLF, value: 10k, footprint: Resistor_SMD:R_0402_1005Metric, notes: SAMPLE_TRIG pull-down }
+  R30: { lib_id: Lib:CR0402-FX-1002GLF, value: 10k, footprint: Resistor_SMD:R_0402_1005Metric, notes: GPIO3 pull-down }
+  R31: { lib_id: Lib:CR0402-FX-1002GLF, value: 10k, footprint: Resistor_SMD:R_0402_1005Metric, notes: GPIO2 pull-down }
+  R32: { lib_id: Lib:CR0402-FX-1002GLF, value: 10k, footprint: Resistor_SMD:R_0402_1005Metric, notes: GPIO1 pull-down }
+  R33: { lib_id: Lib:CR0402-FX-1002GLF, value: 10k, footprint: Resistor_SMD:R_0402_1005Metric, notes: GPIO0 pull-down }
 
 nets:
   # ===== Power-symbol nets =====

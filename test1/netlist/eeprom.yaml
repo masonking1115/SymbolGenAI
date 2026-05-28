@@ -12,7 +12,7 @@ parts:
     value: 24AA08
     footprint: Package_SO:SOIC-8_3.9x4.9mm_P1.27mm
   C30:
-    lib_id: Device:C
+    lib_id: Lib:GRM155R71C104KA88D
     value: 0.1uF
     footprint: Capacitor_SMD:C_0402_1005Metric
     notes: VCC decoupling per 24AA08 datasheet

@@ -72,6 +72,9 @@ RULES: list[dict] = [
      "summary": "Visible metadata parameter stacks into a text glob"},
     {"id": "wire_through_label", "severity": "WARNING", "scope": "sheet",
      "summary": "Port/power hot-spot sits mid-wire instead of terminating it"},
+    {"id": "power_straddles_net", "severity": "WARNING", "scope": "sheet",
+     "summary": "Power/port glyph straddles the net (net runs through it) instead "
+                "of sitting off to the side and terminating a stub"},
     {"id": "ground_on_top", "severity": "WARNING", "scope": "sheet",
      "summary": "GND symbol sits above its net (should hang at the bottom)"},
     {"id": "wire_through_body", "severity": "WARNING", "scope": "sheet",
@@ -366,6 +369,40 @@ def _check_wire_through_label(s):
     return out
 
 
+def _check_power_straddles_net(s):
+    """A power/port glyph must sit OFF TO THE SIDE of the net and terminate it,
+    not straddle it. Flag a power/port whose connection point has the net
+    continuing past it on BOTH sides of an axis (vertical wire above AND below,
+    or horizontal wire left AND right) — i.e. the net runs THROUGH the glyph.
+    The fix is to feed the port from one side via a short stub (see
+    shared.power_at(stub=...)). Broader than wire_through_label, which only sees
+    a point in the interior of a single segment; this also catches a point where
+    two collinear segments meet."""
+    out = []
+    for lb in s._labels:
+        if lb.kind not in ("power", "port"):
+            continue
+        x, y = lb.x, lb.y
+        up = down = left = right = False
+        for (a, b) in s._wires:
+            if abs(a[0] - x) < _TOL and abs(b[0] - x) < _TOL:        # vertical at column x
+                lo, hi = min(a[1], b[1]), max(a[1], b[1])
+                if lo - _TOL <= y <= hi + _TOL:
+                    up |= hi > y + _TOL
+                    down |= lo < y - _TOL
+            if abs(a[1] - y) < _TOL and abs(b[1] - y) < _TOL:        # horizontal at row y
+                lo, hi = min(a[0], b[0]), max(a[0], b[0])
+                if lo - _TOL <= x <= hi + _TOL:
+                    right |= hi > x + _TOL
+                    left |= lo < x - _TOL
+        if (up and down) or (left and right):
+            out.append(LintIssue("WARNING", "power_straddles_net",
+                f"{lb.kind} {lb.name!r} at ({x},{y}) straddles the net (it runs "
+                f"through the glyph); feed it from one side so it terminates a stub",
+                [lb.name]))
+    return out
+
+
 def _check_ground_on_top(s):
     """A GND symbol should sit at the BOTTOM of its connection (wire enters from
     above). Flag a GND power port whose every attached wire drops downward."""
@@ -575,6 +612,7 @@ def _check_redundant_junction(s):
 ALL_CHECKS = (_check_off_grid, _check_diagonal, _check_out_of_bounds,
               _check_component_overlap, _check_power_orientation,
               _check_visible_param_glob, _check_wire_through_label,
+              _check_power_straddles_net,
               _check_ground_on_top, _check_wire_through_body, _check_off_center,
               _check_cramped_spacing, _check_label_overlap,
               _check_label_over_symbol, _check_wire_through_port,

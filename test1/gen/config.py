@@ -73,42 +73,49 @@ for _i, _n in enumerate(SHEET_NAMES, start=2):
 # FMC LA-bank pin assignments
 # ---------------------------------------------------------------------------
 # Sequential assignment from LA00..LA27 (P pin of each pair, single-ended use).
-# Cross-reference design_requirements.md FMC LA-pair table for the pin-to-LA
-# mapping. Each entry: net_name -> (row_letter, pin_number).
+# Each entry: net_name -> (row_letter, pin_number) = the P pin of LA<nn> at its
+# ACTUAL VITA 57.1 LPC connector position.
+#   Authoritative pinout: fmchub.github.io/appendix/
+#     VITA57_FMC_HPC_LPC_SIGNALS_AND_PINOUT.html (LPC table, rows C/D/G/H).
+# NOTE (2026-05-27): a prior version of this table (and the design_requirements
+# FMC table) had rows C<->D and G<->H TRANSPOSED — a mirrored/bottom-view read of
+# the connector. VITA 57.1 pin NAMES mate 1:1 (mezzanine Cn <-> carrier Cn); the
+# footprint handles the physical mirror, NOT the netlist. The values below are
+# the un-swapped, correct LA_P positions; cross-checked pin-by-pin vs the spec.
 LA_ASSIGN: dict[str, tuple[str, int]] = {
     # E1 — Bobcat ↔ FMC SPI / sample-out routing (via 0Ω on FMC sheet)
-    "SAMPLE_OUTV":   ("H",  6),   # LA00_CC
-    "SAMPLE_OUT0":   ("C",  8),   # LA01_CC
-    "SAMPLE_OUT1":   ("G",  7),   # LA02
-    "SAMPLE_OUT2":   ("H",  9),   # LA03
-    "SAMPLE_OUT3":   ("G", 10),   # LA04
-    "SAMPLE_OUT4":   ("C", 11),   # LA05
-    "SAMPLE_OUT5":   ("D", 10),   # LA06
-    "SAMPLE_OUT6":   ("G", 13),   # LA07
-    "SAMPLE_OUT7":   ("H", 12),   # LA08
-    "CS_L":          ("C", 14),   # LA09
-    "SCLK":          ("D", 14),   # LA10
-    "MOSI":          ("G", 16),   # LA11
-    "MISO":          ("H", 15),   # LA12
-    "SPI_DMODE":     ("C", 17),   # LA13
-    "RESET_N":       ("D", 18),   # LA14
+    "SAMPLE_OUTV":   ("G",  6),   # LA00_P_CC
+    "SAMPLE_OUT0":   ("D",  8),   # LA01_P_CC
+    "SAMPLE_OUT1":   ("H",  7),   # LA02_P
+    "SAMPLE_OUT2":   ("G",  9),   # LA03_P
+    "SAMPLE_OUT3":   ("H", 10),   # LA04_P
+    "SAMPLE_OUT4":   ("D", 11),   # LA05_P
+    "SAMPLE_OUT5":   ("C", 10),   # LA06_P
+    "SAMPLE_OUT6":   ("H", 13),   # LA07_P
+    "SAMPLE_OUT7":   ("G", 12),   # LA08_P
+    "CS_L":          ("D", 14),   # LA09_P
+    "SCLK":          ("C", 14),   # LA10_P
+    "MOSI":          ("H", 16),   # LA11_P
+    "MISO":          ("G", 15),   # LA12_P
+    "SPI_DMODE":     ("D", 17),   # LA13_P
+    "RESET_N":       ("C", 18),   # LA14_P
     # E2 — OSC_EN / WEIGHT_EN / SAMPLE_TRIG (also SMA-routable on connectors)
-    "OSC_EN":        ("G", 19),   # LA15
-    "WEIGHT_EN":     ("H", 18),   # LA16
-    "SAMPLE_TRIG":   ("C", 20),   # LA17_CC
+    "OSC_EN":        ("H", 19),   # LA15_P
+    "WEIGHT_EN":     ("G", 18),   # LA16_P
+    "SAMPLE_TRIG":   ("D", 20),   # LA17_P_CC
     # W1 — Power EN signals from FPGA
-    "LDO_EN":        ("D", 22),   # LA18_CC
-    "LSW_EN":        ("G", 22),   # LA19
+    "LDO_EN":        ("C", 22),   # LA18_P_CC
+    "LSW_EN":        ("H", 22),   # LA19_P
     # E7 — Bias isolation FET enables (gates Q42/Q43 when populated)
-    "BIAS_ISO0":     ("H", 21),   # LA20
-    "BIAS_ISO1":     ("G", 25),   # LA21
+    "BIAS_ISO0":     ("G", 21),   # LA20_P
+    "BIAS_ISO1":     ("H", 25),   # LA21_P
     # E5 — TPS7A8401A ANY-OUT setpoint pins
-    "LDO_SET_50mV":  ("H", 24),   # LA22
-    "LDO_SET_100mV": ("C", 23),   # LA23
-    "LDO_SET_200mV": ("G", 28),   # LA24
-    "LDO_SET_400mV": ("H", 27),   # LA25
-    "LDO_SET_800mV": ("C", 26),   # LA26
-    "LDO_SET_1V6":   ("D", 26),   # LA27
+    "LDO_SET_50mV":  ("G", 24),   # LA22_P
+    "LDO_SET_100mV": ("D", 23),   # LA23_P
+    "LDO_SET_200mV": ("H", 28),   # LA24_P
+    "LDO_SET_400mV": ("G", 27),   # LA25_P
+    "LDO_SET_800mV": ("D", 26),   # LA26_P
+    "LDO_SET_1V6":   ("C", 26),   # LA27_P
 }
 
 

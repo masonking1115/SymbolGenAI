@@ -28,52 +28,58 @@ Bobcat test chip carrier board. Plugs into the FMC connector of a Genesys 2 plat
 - **GND test clips.**
 
 ## FMC LPC pinout (VITA 57.1, Genesys 2 host side)
-The LPC connector populates rows **C, D, G, H** (pins 1–40 each). Source: <https://fmchub.github.io/appendix/VITA57_FMC_HPC_LPC_SIGNALS_AND_PINOUT.html>.
+The LPC connector populates rows **C, D, G, H** (pins 1–40 each). Source: <https://fmchub.github.io/appendix/VITA57_FMC_HPC_LPC_SIGNALS_AND_PINOUT.html> (LPC pinout table).
+
+> **Corrected 2026-05-27.** A prior version of every table in this section had
+> rows **C↔D and G↔H transposed** (a mirrored / bottom-side read of the
+> connector). VITA 57.1 pin *names* mate 1:1 (mezzanine C*n* ↔ carrier C*n*); the
+> footprint implements the physical mirror, NOT the netlist. The pins below are
+> the un-swapped, spec-correct positions, verified pin-by-pin against the source.
 
 ### Power & management pins (must connect)
 | Pin(s) | Net | Use on this board |
 |---|---|---|
-| C36, C38, C40, D39 | **3P3V** | Supplies EEPROM, LDO Vin, Bias block |
-| G40, H39 | **VADJ** (1.2–3.3V) | Through load switch → Bobcat VDDIO |
-| C32 | 3P3VAUX | Leave NC (not required) |
-| D35, D37 | 12P0V | Leave NC (unused) |
+| C39, D36, D38, D40 | **3P3V** | Supplies EEPROM, LDO Vin, Bias block |
+| G39, H40 | **VADJ** (1.2–3.3V) | Through load switch → Bobcat VDDIO |
+| D32 | 3P3VAUX | Leave NC (not required) |
+| C35, C37 | 12P0V | Leave NC (unused) |
 | H1 | VREF_A_M2C | Leave NC (LPC, no analog reference used) |
 | H2 | PRSNT_M2C_L | **Tie to GND on mezzanine** (presence detect) |
-| C34, C35 | GA0, GA1 | Geographical address — tie per FMC carrier slot (typically GND) |
+| C34, D35 | GA0, GA1 | Geographical address — tie per FMC carrier slot (typically GND) |
 | C1 | PG_C2M | Power-good back to carrier — drive from LDO PG / tie HIGH via pull-up if unused |
 
 ### Control / sideband
 | Pin | Net | Use |
 |---|---|---|
-| D30 | **SCL** | I²C clock → EEPROM + Bias DAC |
-| D31 | **SDA** | I²C data → EEPROM + Bias DAC |
-| C29 | TCK | JTAG — leave NC unless chained |
-| C30 | TDI | JTAG — leave NC |
-| C31 | TDO | JTAG — leave NC |
-| C33 | TMS | JTAG — leave NC |
-| C34 | TRST_L | JTAG — leave NC |
+| C30 | **SCL** | I²C clock → EEPROM + Bias DAC |
+| C31 | **SDA** | I²C data → EEPROM + Bias DAC |
+| D29 | TCK | JTAG — leave NC unless chained |
+| D30 | TDI | JTAG — leave NC |
+| D31 | TDO | JTAG — leave NC |
+| D33 | TMS | JTAG — leave NC |
+| D34 | TRST_L | JTAG — leave NC |
 
 ### Clocks (LVDS, M2C = mezzanine→carrier, available but unused unless noted)
 | Pair | Net |
 |---|---|
-| G4/G5 | CLK0_M2C_P/N |
-| H2/H3 | CLK1_M2C_P/N |
+| H4/H5 | CLK0_M2C_P/N |
+| G2/G3 | CLK1_M2C_P/N |
 | C4/C5 | GBTCLK0_M2C_P/N |
 | D2/D3 | DP0_C2M_P/N (gigabit, unused) |
 | D6/D7 | DP0_M2C_P/N (gigabit, unused) |
 
 ### LA single-ended/diff bank (LA00–LA33, 34 pairs total)
-The mezzanine signals listed below route from Bobcat (or its bias/control circuitry) to FMC LA pins through series 0Ω resistors. Specific LA-pin assignments are TBD during pinning — to be picked from the LA-bank table below to minimize crossings.
+The mezzanine signals below route from Bobcat (or its bias/control circuitry) to FMC LA pins through series 0Ω resistors. The *signal → LA-index* assignment is ours (chosen to minimize crossings); the *LA-index → connector pin* is fixed by VITA 57.1. The design uses the P pin of each pair, single-ended (see `gen/config.py` `LA_ASSIGN`).
 
 **Bobcat → FMC LA bank (via 0Ω):** SAMPLE_OUTV, SAMPLE_OUT0–7, CS_L, SCLK, MOSI, MISO, SPI_DMODE, RESET_N (14 nets, all single-ended).
 **FMC LA → Bobcat (via 0Ω, also SMA-routable):** OSC_EN, WEIGHT_EN, SAMPLE_TRIG (3 nets).
-**FMC LA → control:** LDO EN, LDO ADJ setpoint (if DAC-driven, see open questions), Load-switch EN, optional Bias-DAC interrupts.
+**FMC LA → control:** LDO EN, ANY-OUT setpoints (LDO_SET_*), Load-switch EN, Bias-isolation enables.
 
-LA-pair locations (CC = clock-capable):
-- Row C: C8/C9 LA01_CC, C11/C12 LA05, C14/C15 LA09, C17/C18 LA13, C20/C21 LA17_CC, C23/C24 LA23, C26/C27 LA26
-- Row D: D10/D11 LA06, D14/D15 LA10, D18/D19 LA14, D22/D23 LA18_CC, D26/D27 LA27
-- Row G: G7/G8 LA02, G10/G11 LA04, G13/G14 LA07, G16/G17 LA11, G19/G20 LA15, G22/G23 LA19, G25/G26 LA21, G28/G29 LA24, G31/G32 LA28, G34/G35 LA30, G37/G38 LA32
-- Row H: H6/H7 LA00_CC, H9/H10 LA03, H12/H13 LA08, H15/H16 LA12, H18/H19 LA16, H21/H22 LA20, H24/H25 LA22, H27/H28 LA25, H30/H31 LA29, H33/H34 LA31, H36/H37 LA33
+LA-pair locations P/N (CC = clock-capable), per VITA 57.1 LPC:
+- Row C: C10/C11 LA06, C14/C15 LA10, C18/C19 LA14, C22/C23 LA18_CC, C26/C27 LA27
+- Row D: D8/D9 LA01_CC, D11/D12 LA05, D14/D15 LA09, D17/D18 LA13, D20/D21 LA17_CC, D23/D24 LA23, D26/D27 LA26
+- Row G: G6/G7 LA00_CC, G9/G10 LA03, G12/G13 LA08, G15/G16 LA12, G18/G19 LA16, G21/G22 LA20, G24/G25 LA22, G27/G28 LA25, G30/G31 LA29, G33/G34 LA31, G36/G37 LA33
+- Row H: H7/H8 LA02, H10/H11 LA04, H13/H14 LA07, H16/H17 LA11, H19/H20 LA15, H22/H23 LA19, H25/H26 LA21, H28/H29 LA24, H31/H32 LA28, H34/H35 LA30, H37/H38 LA32
 
 All other unlabeled pins on rows C/D/G/H are **GND** per the standard.
 
@@ -85,7 +91,7 @@ FMC (bottom) supplies 3.3V and VADJ. 3.3V feeds EEPROM, LDO, and Bias block. VAD
 - Confirm PG_C2M and GA0/GA1 strapping requirements for the Genesys 2 carrier.
 - ~~**Bias polarity:**~~ **Resolved 2026-05-24** — confirmed against Bobcat PDF page 7 that current must be sourced INTO BIASx; reverted to PMOS high-side topology.
 - ~~**Shared-rail LDO:**~~ **Resolved 2026-05-25 (E8)** — the design intentionally uses one TPS7A8401A feeding VDDD, VDDA1, VDDA2 through 3×1×2 jumpers (all three jumpers tap the same LDO output bus, so installing more than one shorts the rails to a single voltage). This is the design intent (all three rails track together during sweep). If independent per-rail setpoints become required later, replicate the LDO block 3× rather than adding more jumpers.
-- ~~**FMC LA-bank pinning:**~~ **Resolved 2026-05-25 (E1, E2, E5, E7, W1)** — LA pins assigned sequentially LA00..LA27. See `LA_ASSIGN` in `gen_schematic.py`. Reassignment will require updating that table and re-running the generator.
+- ~~**FMC LA-bank pinning:**~~ **Resolved 2026-05-25 (E1, E2, E5, E7, W1); pinout corrected 2026-05-27** — LA pins assigned sequentially LA00..LA27. See `LA_ASSIGN` in `gen/config.py`. The original assignment had rows C↔D / G↔H swapped vs VITA 57.1 (signals on GND pins, +3V3/VADJ shorted to GND); corrected to the real LPC P-pin positions. Reassignment will require updating that table and re-running the generator.
 
 ## Assembly / provisioning notes
 - **MCP4728 EEPROM (W8):** Virgin MCP4728 ships with VREF = internal 2.048 V and DAC code = 0x000 — without intervention, V_DAC = 0 V at POR would drive the PMOS fully on (~646 µA full-scale bias). This is mitigated **at the schematic level** by the Q42/Q43 isolation NMOSes (populated default, default-OFF — see Bias circuit topology above), so an unprogrammed MCP4728 cannot reach Bobcat. The FPGA boot sequence is expected to: (1) read MCP4728 EEPROM, (2) program VREF = VDD and codes = 0xFFF if not already set, (3) drive DAC to the desired bias values, and (4) only then assert `BIAS_ISO0/1` HIGH. The Q42/Q43 isolation makes the EEPROM-provisioning step recoverable rather than DUT-fatal, but provisioning is still required for the bias circuit to behave correctly once enabled.
