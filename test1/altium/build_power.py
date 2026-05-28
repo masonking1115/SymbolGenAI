@@ -48,7 +48,7 @@ GRID = 100  # mil
 def build_power() -> tuple[AltiumSheet, object]:
     nl = load_netlist("power")
     lib, lmap = get_library()
-    s = AltiumSheet(name="power", title="test1 — Power (LDO + Load Switch)")
+    s = AltiumSheet(name="power", title="test1 — Power (LDO + Load Switch)", paper="A3")
 
     def place(ref, x, y, orientation=0, unit=1):
         return s.place_from_netlist(lib, lmap, nl, ref, x, y,
@@ -93,7 +93,8 @@ def build_power() -> tuple[AltiumSheet, object]:
     # ---- IN pins 15/16/17 (left, 5600-5800): vertical bus → riser to +3V3 ---
     IN_X = U10["15"][0]                  # 4200 (left pin column)
     s.wire(IN_X, U10["17"][1], IN_X, U10["15"][1])      # bus 5600..5800 (T's pin16)
-    s.junction(IN_X, U10["16"][1])
+    # pin16 sits mid-bus — the pin endpoint auto-connects to the collinear wire,
+    # so no junction dot is needed here.
     s.wire(IN_X, U10["15"][1], IN_X, RAIL_3V3_Y)        # riser up to the rail
 
     # ---- BIAS (pin12, 5200): west, then up to the +3V3 rail -----------------
@@ -127,7 +128,7 @@ def build_power() -> tuple[AltiumSheet, object]:
     setport("LDO_EN", EN_Y)
     R10_CY = EN_Y - 100                  # pin1 (top) on the EN wire
     place("R10", R10_X, R10_CY)
-    s.junction(R10_X, EN_Y)
+    # R10 pin1 sits on the EN wire — pin-on-wire auto-connects, no dot needed.
     s.wire(R10_X, R10_CY - 100, R10_X, GND_RAIL_Y)      # pin2 → GND rail
 
     # ---- NR_SS (pin13, 4900): C12 (10nF) to GND -----------------------------
@@ -214,9 +215,8 @@ def build_power() -> tuple[AltiumSheet, object]:
     s.power_at("GND", C14_X, GND_RAIL_Y)
 
     # OUT-row bus: from OUT_BUS_X to SNS_SENSE_X (C13/C14 tops tap as T-intersections)
+    # C13/C14 pin1 tops land on this bus — pin-on-wire auto-connects, no dots.
     s.wire(OUT_BUS_X, OUT_Y, SNS_SENSE_X, OUT_Y)
-    s.junction(C13_X, OUT_Y)
-    s.junction(C14_X, OUT_Y)
 
     s.text("LDO VOUT bypass", C13_X - 300, RAIL_3V3_Y + 300)
 
@@ -227,7 +227,8 @@ def build_power() -> tuple[AltiumSheet, object]:
     # PG tap stub to the right of chip
     PG_TAP_X = CHIP_RIGHT_X + 300   # 6000
     s.wire(U10["4"][0], PG_Y, PG_TAP_X, PG_Y)
-    s.junction(PG_TAP_X, PG_Y)
+    # This tap point coincides with R12 pin2 (placed below) — pin-on-wire
+    # auto-connects, so no junction dot is needed.
 
     # R12 (pull-up 10k): vertical, pin1 top → +3V3 rail, pin2 bottom at PG_Y.
     # pin2 = R12_CY - 100 = PG_Y → R12_CY = PG_Y + 100 = 5900
@@ -322,9 +323,11 @@ def build_power() -> tuple[AltiumSheet, object]:
         j2x, j2y = J["2"]
         # Pin1 → common drop column (horizontal wire, endpoint at COMMON_COL_X)
         s.wire(j1x, j1y, COMMON_COL_X, j1y)
-        # Pin2 → power rail symbol
-        s.wire(j2x, j2y, j2x + 500, j2y)
-        s.power_at(rail, j2x + 500, j2y)
+        # Pin2 → power rail symbol. The TSW-102 jumper's DRAWN body extends ~600
+        # mil right of pin2, so a 500-mil stub lands the rail glyph on the body
+        # (label_over_symbol). Use 800 so the rail clears the jumper rectangle.
+        s.wire(j2x, j2y, j2x + 800, j2y)
+        s.power_at(rail, j2x + 800, j2y)
 
     # Vertical drop column
     J10_p1y = s.pins_of("J10")["1"][1]   # 5600
@@ -344,7 +347,12 @@ def build_power() -> tuple[AltiumSheet, object]:
     # and C15) for their bodies. The ON net drops to its own low row so C15's
     # GND leg never lands on it. Sheet auto-upgrades to A3 to hold the width.
     # =========================================================================
-    U11 = place("U11", 12000, 5000)
+    # Placed at x=12600 (was 12000): the west-side VADJ/LSW_EN ports extend their
+    # 700-mil bodies LEFT toward the output jumpers, whose DRAWN bodies reach to
+    # x~9560. The +600 shift opens the west margin so those port bodies clear the
+    # jumpers (label_over_symbol) while keeping the whole cluster's relative
+    # geometry (VADJ_X, LSW_X, R11_X, C15_X all derive from U11.A2).
+    U11 = place("U11", 12600, 5000)
     # A2(VIN)=11500,5100  A1(VOUT)=12500,5100  B1(GND)=12500,4900  B2(ON)=11500,4900
     VIN_Y  = U11["A2"][1]   # 5100
     VOUT_Y = U11["A1"][1]   # 5100
@@ -366,14 +374,14 @@ def build_power() -> tuple[AltiumSheet, object]:
     # ---- ON (B2): drop to a LOW row, west to LSW_EN; R11 pull-down ----------
     ON_LOW_Y = ON_Y - 400                 # 4500 — ON bus runs below the VADJ row
     s.wire(U11["B2"][0], ON_Y, U11["B2"][0], ON_LOW_Y)
-    LSW_X = VADJ_X - 200                  # 10300 connection
+    LSW_X = VADJ_X - 200                  # left of R11, clear of J11 (see U11 +600 shift)
     s.wire(U11["B2"][0], ON_LOW_Y, LSW_X, ON_LOW_Y)
     s.port("LSW_EN", LSW_X, ON_LOW_Y, io=PortIOType.INPUT,
            style=PortStyle.LEFT_RIGHT, side="left")
     R11_X  = VADJ_X                       # 10500 — taps the ON bus, drops to GND
     R11_CY = ON_LOW_Y - 100               # pin1 (top) on the ON bus
     place("R11", R11_X, R11_CY)
-    s.junction(R11_X, ON_LOW_Y)
+    # R11 pin1 sits on the ON bus — pin-on-wire auto-connects, no dot needed.
     s.wire(R11_X, R11_CY - 100, R11_X, R11_CY - 300)
     s.power_at("GND", R11_X, R11_CY - 300)
 

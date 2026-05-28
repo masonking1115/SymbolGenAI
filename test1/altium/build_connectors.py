@@ -58,8 +58,12 @@ D_CLIP_X  = [1000, 3000, 5000]   # placement x; pin 1 at x+500
 def build_connectors() -> tuple[AltiumSheet, object]:
     nl = load_netlist("connectors")
     lib, lmap = get_library()
+    # A2: the breakout banks (CLK_OUT/SAMPLE_TRIG ports + J5x bodies) extend to
+    # X~17438 / Y~13595, ~900 / ~1900 mil past A3. A2 (23390x16535) frames it
+    # cleanly without repositioning dozens of placed parts.
     s = AltiumSheet(name="connectors",
-                    title="test1 — Connectors / Breakouts")
+                    title="test1 — Connectors / Breakouts",
+                    paper="A2")
 
     def place(ref, x, y, orientation=0):
         return s.place_from_netlist(lib, lmap, nl, ref, x, y,

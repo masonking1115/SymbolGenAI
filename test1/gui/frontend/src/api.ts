@@ -32,6 +32,7 @@ export const api = {
   state: () => j<{ sheets: string[]; runs: unknown[] }>("/api/state"),
   sheets: () => j<{ sheets: SheetMeta[] }>("/api/sheets"),
   freshness: () => j<Freshness>("/api/freshness"),
+  refresh: () => j<{ ok: boolean; lint: LintReport; sheets: { sheets: SheetMeta[] }; findings: FindingsReport; timestamp: number }>("/api/refresh", { method: "POST" }),
   lint: (runId?: string) =>
     j<LintReport>(`/api/lint${runId ? `?run_id=${runId}` : ""}`),
   findings: () => j<FindingsReport>("/api/findings"),

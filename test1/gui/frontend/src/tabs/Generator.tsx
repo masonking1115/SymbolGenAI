@@ -24,6 +24,8 @@ interface Props {
   setPhases: (p: PhaseEvent[]) => void;
   /** Called to update the live "sub-phase" hint next to the stepper. */
   setSubPhase: (s: string | undefined) => void;
+  /** Incremented when the user clicks the Refresh button; triggers lint/freshness update. */
+  refreshTrigger?: number;
 }
 
 type RunState = "idle" | "running" | "ok" | "fail";
@@ -42,6 +44,7 @@ export function Generator({
   clearActivity,
   setPhases,
   setSubPhase,
+  refreshTrigger,
 }: Props) {
   const [lines, setLines] = useState<string[]>([]);
   const [runId, setRunId] = useState<string | null>(null);
@@ -52,6 +55,13 @@ export function Generator({
   const [queuedCount, setQueuedCount] = useState(0);
   // Which severity's detail list is expanded under the count cards (click to open).
   const [openSev, setOpenSev] = useState<Severity | null>(null);
+  // Whether the linter checklist section is expanded.
+  const [linterOpen, setLinterOpen] = useState(false);
+  // Filter rules by severity ("all" | "ERROR" | "WARNING" | "INFO") or by rule ID
+  const [ruleFilter, setRuleFilter] = useState<string>("all");
+  // Track which lint issues are selected for adding to changelog
+  // Format: "rule_id:issue_index" (e.g., "offpage_text:0", "label_overlap:2")
+  const [selectedIssues, setSelectedIssues] = useState<Set<string>>(new Set());
 
   // Refresh lint report whenever artifacts change.
   const refreshLint = useCallback(async () => {
@@ -90,7 +100,7 @@ export function Generator({
     api.netlistList().then((r) => setNetlistFiles(r.files)).catch(() => {});
     const t = setInterval(refreshChangelogCount, 2500);
     return () => clearInterval(t);
-  }, [refreshLint, refreshFresh, refreshChangelogCount]);
+  }, [refreshLint, refreshFresh, refreshChangelogCount, refreshTrigger]);
 
   const startGenerate = async (opts: { force?: boolean } = {}) => {
     // If outputs are fresh AND nothing is queued, ask before regenerating.
@@ -106,74 +116,117 @@ export function Generator({
     setRunState("running");
     setHealth({ text: "running…", tone: "neutral" });
     clearActivity();
+    setStage("connecting");
 
-    // Stage 1+2: apply changelog (if any), then generate. Single backend
-    // call orchestrates both runs.
-    const { apply_run_id, generate_run_id } = await api.applyAndGenerate();
+    try {
+      // Stage 1+2: apply changelog (if any), then generate. Single backend
+      // call orchestrates both runs.
+      setLines((prev) => [...prev, "Contacting backend for build orchestration..."]);
+      const { apply_run_id, generate_run_id } = await api.applyAndGenerate();
+      setLines((prev) => [...prev, `Backend connected: apply_run_id=${apply_run_id || "none"} generate_run_id=${generate_run_id}`]);
 
-    if (apply_run_id) {
-      setStage("applying-changelog");
-      setSubPhase(`apply ${queuedCount} bullet${queuedCount === 1 ? "" : "s"}`);
-      pushActivity(`▶ apply pass (${queuedCount} item${queuedCount === 1 ? "" : "s"})`);
-      // Stream the agent's tool calls into the rail.
-      await new Promise<void>((resolve) => {
-        subscribeAgent(
-          apply_run_id,
-          (line) => {
-            pushActivity(line);
-            // Pull the trailing detail out of "tool: Edit file_path=…"
-            // so the topbar hint shows the file being touched.
-            const m = /^tool: (\w+)\s+(.*)$/.exec(line);
-            if (m) setSubPhase(`${m[1]} ${m[2]}`.slice(0, 80));
-          },
-          ({ status }) => {
-            pushActivity(`✓ apply ${status}`);
-            resolve();
-          },
-        );
-      });
-    }
+      if (apply_run_id) {
+        setStage("applying-changelog");
+        setSubPhase(`apply ${queuedCount} bullet${queuedCount === 1 ? "" : "s"}`);
+        setLines((prev) => [...prev, `[APPLY] Starting changelog apply pass for ${queuedCount} item(s)`]);
+        pushActivity(`▶ apply pass (${queuedCount} item${queuedCount === 1 ? "" : "s"})`);
+        // Stream the agent's tool calls into the rail.
+        await new Promise<void>((resolve) => {
+          subscribeAgent(
+            apply_run_id,
+            (line) => {
+              setLines((prev) => [...prev, `[APPLY] ${line}`]);
+              pushActivity(line);
+              // Pull the trailing detail out of "tool: Edit file_path=…"
+              // so the topbar hint shows the file being touched.
+              const m = /^tool: (\w+)\s+(.*)$/.exec(line);
+              if (m) setSubPhase(`${m[1]} ${m[2]}`.slice(0, 80));
+            },
+            ({ status }) => {
+              setLines((prev) => [...prev, `[APPLY] Finished with status: ${status}`]);
+              pushActivity(`✓ apply ${status}`);
+              resolve();
+            },
+          );
+        });
+      }
 
-    setStage("generating");
-    setSubPhase("starting gen_schematic.py");
-    pushActivity("▶ gen_schematic.py");
-    setRunId(generate_run_id);
-    subscribeRun(
-      generate_run_id,
-      (line) => {
-        setLines((prev) => [...prev, line]);
-        pushActivity(line);
-        // Surface "wrote <sheet>.kicad_sch" / "Phase N …" lines as the
-        // sub-phase hint so the user can see progress in real time.
-        const sheetM = /wrote\s+(\S+\.kicad_sch)/.exec(line);
-        if (sheetM) {
-          setSubPhase(`wrote ${sheetM[1]}`);
-        } else if (line.startsWith("Phase ")) {
-          setSubPhase(line.trim());
-        } else if (/kicad-cli|export svg|render/.test(line.toLowerCase())) {
-          setSubPhase("kicad-cli rendering PNGs");
+      // If there's no generate_run_id yet (still waiting for apply to complete),
+      // poll for it to appear before subscribing.
+      let genRunId = generate_run_id;
+      if (!genRunId) {
+        setLines((prev) => [...prev, `[GEN] Waiting for apply pass to complete before starting build...`]);
+        // Poll for the generate run to appear in the registry
+        let pollCount = 0;
+        while (!genRunId && pollCount < 120) {
+          // Max 60 seconds polling (500ms * 120)
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          pollCount++;
+          try {
+            const state = await api.state();
+            const genRun = (state.runs as any[]).find(
+              (r: any) => r.kind === "generate" && r.status === "running",
+            );
+            if (genRun) genRunId = genRun.id;
+          } catch {
+            // If the API call fails, keep polling
+          }
         }
-      },
-      ({ status }) => {
-        setRunState(status === "ok" ? "ok" : "fail");
-        onArtifactsChanged();
-        setStage("linting");
-        setSubPhase("parsing lint report");
-        pushActivity(`✓ generate ${status}`);
-        // Slight delay so the file system catches up before re-fetching.
-        setTimeout(() => {
-          refreshLint();
-          refreshFresh();
-          refreshChangelogCount();
-          // Pull the structured phases so the dropdown updates.
-          api.runPhases(generate_run_id)
-            .then((r) => setPhases(r.phases ?? []))
-            .catch(() => {});
-          setStage(status === "ok" ? "done" : "error");
-          setSubPhase(undefined);
-        }, 250);
-      },
-    );
+        if (!genRunId) {
+          throw new Error("Generate run failed to start after apply pass");
+        }
+      }
+
+      setStage("generating");
+      setSubPhase("starting build");
+      setLines((prev) => [...prev, `[GEN] Starting build process (run_id=${genRunId})...`]);
+      pushActivity("▶ build");
+      setRunId(genRunId);
+      subscribeRun(
+        genRunId,
+        (line) => {
+          setLines((prev) => [...prev, line]);
+          pushActivity(line);
+          // Surface "wrote <sheet>.kicad_sch" / "Phase N …" lines as the
+          // sub-phase hint so the user can see progress in real time.
+          const sheetM = /wrote\s+(\S+\.kicad_sch|.*\.SchDoc)/.exec(line);
+          if (sheetM) {
+            setSubPhase(`wrote ${sheetM[1]}`);
+          } else if (line.startsWith("Phase ")) {
+            setSubPhase(line.trim());
+          } else if (/kicad-cli|export svg|render/.test(line.toLowerCase())) {
+            setSubPhase("rendering");
+          }
+        },
+        ({ status }) => {
+          setRunState(status === "ok" ? "ok" : "fail");
+          setLines((prev) => [...prev, `[GEN] Build completed with status: ${status}`]);
+          onArtifactsChanged();
+          setStage("linting");
+          setSubPhase("parsing lint report");
+          pushActivity(`✓ generate ${status}`);
+          // Slight delay so the file system catches up before re-fetching.
+          setTimeout(() => {
+            refreshLint();
+            refreshFresh();
+            refreshChangelogCount();
+            // Pull the structured phases so the dropdown updates.
+            api.runPhases(genRunId)
+              .then((r) => setPhases(r.phases ?? []))
+              .catch(() => {});
+            setStage(status === "ok" ? "done" : "error");
+            setSubPhase(undefined);
+          }, 250);
+        },
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setLines((prev) => [...prev, `ERROR: ${msg}`]);
+      setRunState("fail");
+      setStage("error");
+      setHealth({ text: `error: ${msg}`, tone: "err" });
+      pushActivity(`✗ Failed: ${msg}`);
+    }
   };
 
   const byRule = useMemo(() => {
@@ -227,6 +280,7 @@ export function Generator({
             severity={openSev}
             issues={(lint?.issues ?? []).filter((i) => i.severity === openSev)}
             onClose={() => setOpenSev(null)}
+            onChangelogAdded={refreshChangelogCount}
           />
         )}
 
@@ -276,9 +330,76 @@ export function Generator({
           </span>
         </div>
 
-        <SubSection title="Linter checklist" hint="layout_lint.py rules — pass when no issue fired">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
-            {(lint?.rules ?? []).map((r) => {
+        <SubSection
+          title="Linter checklist"
+          hint="layout_lint.py rules — pass when no issue fired"
+          collapsible
+          open={linterOpen}
+          onToggle={() => setLinterOpen((o) => !o)}
+        >
+          <div className="space-y-2 mt-2 mb-3">
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-medium text-ink-600">Filter:</label>
+              <select
+                value={ruleFilter}
+                onChange={(e) => setRuleFilter(e.target.value)}
+                className="text-xs px-2 py-1 rounded border border-edge bg-white text-ink-900"
+              >
+                <option value="all">All rules</option>
+                <option value="ERROR">Errors only</option>
+                <option value="WARNING">Warnings only</option>
+                <option value="INFO">Info only</option>
+                <option value="fired">Fired only</option>
+                {(lint?.rules ?? []).map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.id}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {selectedIssues.size > 0 && (
+              <button
+                onClick={async () => {
+                  // Add each selected issue to changelog
+                  for (const issueKey of selectedIssues) {
+                    const [ruleId, idxStr] = issueKey.split(":");
+                    const idx = parseInt(idxStr);
+                    const rule = lint?.rules.find((r) => r.id === ruleId);
+                    const issues = (byRule[ruleId]?.issues ?? []) as any[];
+                    const issue = issues[idx];
+
+                    if (issue && rule) {
+                      const summary = `Fix ${rule.id}: [${issue.sheet}] ${issue.message.slice(0, 50)}`;
+                      try {
+                        await api.changelogAdd(summary);
+                      } catch {
+                        // ignore
+                      }
+                    }
+                  }
+                  setSelectedIssues(new Set());
+                  refreshChangelogCount();
+                }}
+                className="text-xs px-3 py-1.5 rounded bg-warn/10 text-warn border border-warn/30 font-medium hover:bg-warn/15 transition-colors"
+              >
+                Add {selectedIssues.size} fix{selectedIssues.size !== 1 ? "es" : ""} to changelog
+              </button>
+            )}
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {(lint?.rules ?? [])
+              .filter((r) => {
+                if (ruleFilter === "all") return true;
+                if (ruleFilter === "fired") {
+                  const hits = (byRule[r.id]?.issues ?? []) as LintReport["issues"];
+                  return hits.length > 0;
+                }
+                if (ruleFilter === "ERROR" || ruleFilter === "WARNING" || ruleFilter === "INFO") {
+                  return r.severity === ruleFilter;
+                }
+                return r.id === ruleFilter;
+              })
+              .map((r) => {
               const hits = (byRule[r.id]?.issues ?? []) as LintReport["issues"];
               const top = hits[0];
               const tone = top
@@ -350,22 +471,52 @@ export function Generator({
                       )}
                     </div>
                     {hits.length > 0 && (
-                      <div className="mt-1 space-y-0.5">
-                        {hits.slice(0, 4).map((h, i) => (
-                          <div key={i} className="text-[11.5px] text-ink-700">
-                            <span className={"inline-block w-1.5 h-1.5 rounded-full mr-1.5 align-middle " + SEV_DOT[h.severity]} />
-                            <span className="font-medium">[{h.sheet}]</span>{" "}
-                            {h.message}
-                            {h.refs.length > 0 && (
-                              <span className="text-ink-500"> ({h.refs.join(", ")})</span>
-                            )}
+                      <div className="mt-2 space-y-1">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={hits.every((_, i) => selectedIssues.has(`${r.id}:${i}`))}
+                            onChange={(e) => {
+                              const newSelected = new Set(selectedIssues);
+                              if (e.target.checked) {
+                                hits.forEach((_, i) => newSelected.add(`${r.id}:${i}`));
+                              } else {
+                                hits.forEach((_, i) => newSelected.delete(`${r.id}:${i}`));
+                              }
+                              setSelectedIssues(newSelected);
+                            }}
+                            className="w-3.5 h-3.5 cursor-pointer"
+                            title="Select all instances of this rule"
+                          />
+                          <span className="text-[10px] text-ink-500 font-medium">Select all {hits.length}</span>
+                        </div>
+                        {hits.map((h, i) => (
+                          <div key={i} className="flex items-start gap-2 text-[11.5px] text-ink-700">
+                            <input
+                              type="checkbox"
+                              checked={selectedIssues.has(`${r.id}:${i}`)}
+                              onChange={(e) => {
+                                const issueKey = `${r.id}:${i}`;
+                                const newSelected = new Set(selectedIssues);
+                                if (e.target.checked) {
+                                  newSelected.add(issueKey);
+                                } else {
+                                  newSelected.delete(issueKey);
+                                }
+                                setSelectedIssues(newSelected);
+                              }}
+                              className="w-3.5 h-3.5 mt-0.5 cursor-pointer flex-shrink-0"
+                            />
+                            <div className="min-w-0">
+                              <span className={"inline-block w-1.5 h-1.5 rounded-full mr-1.5 align-middle " + SEV_DOT[h.severity]} />
+                              <span className="font-medium">[{h.sheet}]</span>{" "}
+                              {h.message}
+                              {h.refs.length > 0 && (
+                                <span className="text-ink-500"> ({h.refs.join(", ")})</span>
+                              )}
+                            </div>
                           </div>
                         ))}
-                        {hits.length > 4 && (
-                          <div className="text-[11px] text-ink-500">
-                            +{hits.length - 4} more
-                          </div>
-                        )}
                       </div>
                     )}
                   </div>
@@ -405,18 +556,41 @@ function SubSection({
   title,
   hint,
   children,
+  collapsible,
+  open,
+  onToggle,
 }: {
   title: string;
   hint?: string;
   children: React.ReactNode;
+  collapsible?: boolean;
+  open?: boolean;
+  onToggle?: () => void;
 }) {
   return (
     <section className="mt-6">
       <div className="flex items-baseline gap-3 mb-2">
-        <h3 className="text-sm font-semibold text-ink-900">{title}</h3>
-        {hint && <span className="text-[11px] text-ink-500">{hint}</span>}
+        {collapsible && onToggle ? (
+          <button
+            type="button"
+            onClick={onToggle}
+            className="flex items-baseline gap-3 hover:opacity-80 transition-opacity"
+          >
+            <I.Caret
+              size={14}
+              className={"transition-transform text-ink-500 " + (open ? "rotate-180" : "")}
+            />
+            <h3 className="text-sm font-semibold text-ink-900">{title}</h3>
+            {hint && <span className="text-[11px] text-ink-500">{hint}</span>}
+          </button>
+        ) : (
+          <>
+            <h3 className="text-sm font-semibold text-ink-900">{title}</h3>
+            {hint && <span className="text-[11px] text-ink-500">{hint}</span>}
+          </>
+        )}
       </div>
-      {children}
+      {!collapsible || open ? children : null}
     </section>
   );
 }
@@ -540,11 +714,16 @@ function SeverityDetail({
   severity,
   issues,
   onClose,
+  onChangelogAdded,
 }: {
   severity: Severity;
   issues: LintReport["issues"];
   onClose: () => void;
+  onChangelogAdded?: () => void;
 }) {
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [isAdding, setIsAdding] = useState(false);
+
   const accent =
     severity === "ERROR" ? "text-err" : severity === "WARNING" ? "text-warn" : "text-ink-700";
   // Group by sheet so the list reads like the build report.
@@ -554,6 +733,33 @@ function SeverityDetail({
     arr.push(i);
     bySheet.set(i.sheet, arr);
   }
+
+  const toggleSelected = (index: number) => {
+    setSelected((s) => {
+      const ns = new Set(s);
+      if (ns.has(index)) ns.delete(index);
+      else ns.add(index);
+      return ns;
+    });
+  };
+
+  const addToChangelog = async () => {
+    setIsAdding(true);
+    try {
+      for (const idx of selected) {
+        const issue = issues[idx];
+        const summary = `Fix "${issue.rule}" on ${issue.sheet}: ${issue.message}`;
+        await api.changelogAdd(summary);
+      }
+      setSelected(new Set());
+      onChangelogAdded?.();
+    } catch (e) {
+      console.error("Failed to add to changelog:", e);
+    } finally {
+      setIsAdding(false);
+    }
+  };
+
   return (
     <div className="mt-2 rounded-md border border-edge bg-white">
       <div className="flex items-center justify-between px-3 py-2 border-b border-edge">
@@ -561,6 +767,7 @@ function SeverityDetail({
           <span className={accent}>{severity}</span>{" "}
           <span className="text-ink-500">
             — {issues.length} issue{issues.length === 1 ? "" : "s"}
+            {selected.size > 0 && <span> ({selected.size} selected)</span>}
           </span>
         </div>
         <button
@@ -576,31 +783,57 @@ function SeverityDetail({
           No {severity.toLowerCase()} issues in the most recent build.
         </div>
       ) : (
-        <div className="px-3 py-2 space-y-2 max-h-72 overflow-auto thin-scroll">
-          {[...bySheet.entries()].map(([sheet, items]) => (
-            <div key={sheet}>
-              <div className="text-[11px] uppercase tracking-wide text-ink-500 mb-1">
-                {sheet}
+        <>
+          <div className="px-3 py-2 space-y-2 max-h-72 overflow-auto thin-scroll">
+            {[...bySheet.entries()].map(([sheet, items]) => (
+              <div key={sheet}>
+                <div className="text-[11px] uppercase tracking-wide text-ink-500 mb-1">
+                  {sheet}
+                </div>
+                <div className="space-y-1">
+                  {items.map((h, i) => {
+                    const globalIdx = issues.indexOf(h);
+                    const isChecked = selected.has(globalIdx);
+                    return (
+                      <label
+                        key={i}
+                        className="text-[12.5px] text-ink-800 flex items-start gap-2 cursor-pointer hover:bg-ink-50 p-1 rounded -mx-1"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => toggleSelected(globalIdx)}
+                          className="mt-1 w-4 h-4"
+                        />
+                        <span
+                          className={"inline-block w-1.5 h-1.5 rounded-full mt-1.5 " + SEV_DOT[h.severity]}
+                        />
+                        <span className="min-w-0">
+                          <span className="font-mono text-[11px] text-ink-500">{h.rule}</span>{" "}
+                          {h.message}
+                          {h.refs.length > 0 && (
+                            <span className="text-ink-500"> ({h.refs.join(", ")})</span>
+                          )}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
               </div>
-              <div className="space-y-1">
-                {items.map((h, i) => (
-                  <div key={i} className="text-[12.5px] text-ink-800 flex items-start gap-1.5">
-                    <span
-                      className={"inline-block w-1.5 h-1.5 rounded-full mt-1.5 " + SEV_DOT[h.severity]}
-                    />
-                    <span className="min-w-0">
-                      <span className="font-mono text-[11px] text-ink-500">{h.rule}</span>{" "}
-                      {h.message}
-                      {h.refs.length > 0 && (
-                        <span className="text-ink-500"> ({h.refs.join(", ")})</span>
-                      )}
-                    </span>
-                  </div>
-                ))}
-              </div>
+            ))}
+          </div>
+          {selected.size > 0 && (
+            <div className="px-3 py-2 border-t border-edge bg-ink-50">
+              <button
+                onClick={addToChangelog}
+                disabled={isAdding}
+                className="text-xs px-3 py-1.5 bg-ink-900 text-white rounded hover:bg-black disabled:opacity-50"
+              >
+                {isAdding ? "Adding..." : `Add ${selected.size} to changelog`}
+              </button>
             </div>
-          ))}
-        </div>
+          )}
+        </>
       )}
     </div>
   );

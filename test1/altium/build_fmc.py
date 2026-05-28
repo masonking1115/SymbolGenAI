@@ -76,7 +76,7 @@ LA_ROUTING = [
 def build_fmc() -> tuple[AltiumSheet, object]:
     nl = load_netlist("fmc")
     lib, lmap = get_library()
-    s = AltiumSheet(name="fmc", title="test1 — FMC LPC Connector (VITA 57.1)")
+    s = AltiumSheet(name="fmc", title="test1 — FMC LPC Connector (VITA 57.1)", paper="A3")
 
     row_for_unit = {1: "C", 2: "D", 3: "G", 4: "H"}
     unit_for_row = {"C": 1, "D": 2, "G": 3, "H": 4}
@@ -90,16 +90,24 @@ def build_fmc() -> tuple[AltiumSheet, object]:
     CX1 = 3500
     COL_DX = 3500
     UNIT_CX = {u: CX1 + (u - 1) * COL_DX for u in (1, 2, 3, 4)}
-    UNIT_CY = 5000   # same vertical band; pins span y 1100..8900
+    # The connector symbol's top pin sits at UNIT_CY and pins run DOWN 3900 mil,
+    # so the content band is roughly [UNIT_CY-3900 .. UNIT_CY+400(title)]. Centre
+    # that ~4300-mil-tall band in the A3 usable height (200..10900, centre 5550):
+    # band centre = UNIT_CY - 1750, so UNIT_CY = 5550 + 1750 = 7300. Keeps the
+    # sheet vertically balanced instead of bottom-heavy.
+    UNIT_CY = 7300   # top pin at 7300; pins span y 3400..7300
 
     units: dict[int, dict[str, tuple[int, int]]] = {}
     for u in (1, 2, 3, 4):
         units[u] = s.place_from_netlist(lib, lmap, nl, f"J{u}",
                                         UNIT_CX[u], UNIT_CY, unit=u)
-        # Title sits well ABOVE the auto-placed "J{u}" value Comment (which
-        # renders ~150 mil above the top pin) so the two don't form a glob.
+        # The symbol's TOP pin sits at UNIT_CY (pins run downward to UNIT_CY-3900),
+        # and the auto-placed "J{u}" value Comment renders ~150 mil above that.
+        # Put the title just above the Comment (+400) so it caps the connector
+        # with a small gap — NOT 4600 mil up, which left a tall empty band above
+        # the pins and pushed content off-centre.
         s.text(f"J{u}  FMC LPC row {row_for_unit[u]}",
-               UNIT_CX[u] - 500, UNIT_CY + 4600)
+               UNIT_CX[u] - 500, UNIT_CY + 400)
 
     def pin(row: str, num: int) -> tuple[int, int]:
         return units[unit_for_row[row]][f"{row}{num}"]
@@ -111,7 +119,15 @@ def build_fmc() -> tuple[AltiumSheet, object]:
     POWER_REACH = 600      # pin -> power port stub
     SPECIAL_REACH = 900    # pin -> hier/global label
     R_GAP = 800            # pin -> resistor centre (R.2 lands at R_GAP-100)
-    LABEL_GAP = 2300       # pin -> port (beyond the resistor)
+    # pin -> port. The port body is 700 mil wide and (side="auto") extends toward
+    # the pin, so the body spans roughly [px-LABEL_GAP-700 .. px-LABEL_GAP]. With
+    # COL_DX=3500 the PREVIOUS connector's drawn body rectangle ends at px-3000
+    # (pin col -500 +500 body offset). LABEL_GAP=2300 put the port body's left
+    # edge at px-3000 — flush against that connector (the "label bumps the
+    # symbol" bug). 1700 centres the body in the ~2040-mil channel between the
+    # previous connector body (ends px-3000) and this resistor (starts ~px-960),
+    # leaving ~600 mil clearance on the connector side.
+    LABEL_GAP = 1700       # pin -> port (centred in the inter-column channel)
 
     # Power pins sit in a single column 200 mil apart; if every symbol used the
     # same stub length the adjacent GND/+3V3 glyphs would stack and collide.

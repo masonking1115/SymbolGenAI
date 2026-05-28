@@ -44,7 +44,10 @@ GRID = 100  # mil
 def build_bobcat() -> tuple[AltiumSheet, object]:
     nl = load_netlist("bobcat")
     lib, lmap = get_library()
-    s = AltiumSheet(name="bobcat", title="test1 — Bobcat DUT")
+    # A2: the CLK_OUT/GPIO port banks + R30-33 ladder extend to X~16885 /
+    # Y~13650, ~350 / ~1960 mil past A3. A2 (23390x16535) frames it without
+    # repositioning the placed DUT clusters.
+    s = AltiumSheet(name="bobcat", title="test1 — Bobcat DUT", paper="A2")
 
     def place(ref, x, y, orientation=0, unit=1):
         return s.place_from_netlist(lib, lmap, nl, ref, x, y,
@@ -78,10 +81,10 @@ def build_bobcat() -> tuple[AltiumSheet, object]:
     VDDD_PSYM_Y = CHIP_BOT_Y - 600     # 2900 — local +VDDD symbol
     VDDD_CAP_CY = CHIP_BOT_Y - 1500    # 2000 — cap centre (pin1=+100, pin2=-100)
     VDDD_GND_Y = CHIP_BOT_Y - 2400     # 1100 — GND below cap
-    for ref, pn in [("C20", "12"), ("C21", "20")]:
+    for i, (ref, pn) in enumerate([("C20", "12"), ("C21", "20")]):
         px, py = U[pn]
-        s.wire(px, py, px, VDDD_PSYM_Y)             # pin down to +VDDD symbol
-        s.power_at("+VDDD", px, VDDD_PSYM_Y)
+        s.wire(px, py, px, VDDD_PSYM_Y)             # pin down vertically
+        s.power_at("+VDDD", px, VDDD_PSYM_Y)        # place symbol on wire
         s.wire(px, VDDD_PSYM_Y, px, VDDD_CAP_CY + 100)  # down to cap pin1
         place(ref, px, VDDD_CAP_CY)
         s.wire(px, VDDD_CAP_CY - 100, px, VDDD_GND_Y)   # cap pin2 down to GND
@@ -349,8 +352,13 @@ def build_bobcat() -> tuple[AltiumSheet, object]:
         place(pull_ref, pull_x, R_CY)
         Rp = s.pins_of(pull_ref, 1)  # 1=(pull_x,R_CY+100) ; 2=(pull_x,R_CY-100)
         s.wire(pull_x, row_y, pull_x, Rp["1"][1])           # row tap -> R.1(top)
-        s.wire(pull_x, Rp["2"][1], pull_x, R_CY - 500)      # R.2(bottom) -> GND
-        s.power_at("GND", pull_x, R_CY - 500)
+        # Drop the GND to R_CY-700 (not -500): the columns are staggered only 200
+        # mil but the GND glyph is 220 wide, so a GND's TOP would clip the
+        # bottom-right corner of the previous column's resistor body. Hanging it
+        # 200 mil lower clears that neighbour without moving the columns (which
+        # are pinned to the GPIO row spans for connectivity).
+        s.wire(pull_x, Rp["2"][1], pull_x, R_CY - 700)      # R.2(bottom) -> GND
+        s.power_at("GND", pull_x, R_CY - 700)
 
     # Same strict validator as the KiCad backend.
     validate(s, nl)

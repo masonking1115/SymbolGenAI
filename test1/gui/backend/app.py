@@ -126,6 +126,12 @@ async def _stream_subprocess(run: Run) -> None:
     """Spawn the subprocess and fan out its output lines."""
     env = os.environ.copy()
     env["PYTHONUNBUFFERED"] = "1"
+    # Force UTF-8 for the child's stdout/stderr. Without this, Windows defaults
+    # to cp1252 and the build crashes with UnicodeEncodeError the moment it
+    # prints a non-ASCII glyph (e.g. the '->' arrows / 'Ω' / '²' in sheet
+    # annotations), surfacing as a spurious build_failed ERROR in the lint.
+    env["PYTHONUTF8"] = "1"
+    env["PYTHONIOENCODING"] = "utf-8"
     # Force --no-reopen by default so the server doesn't try to script
     # eeschema on the host machine. Keep keystrokes scoped to the user.
     proc = await asyncio.create_subprocess_exec(
@@ -193,9 +199,9 @@ def health() -> dict:
 
 # ---- Snapshot ------------------------------------------------------------
 @app.get("/api/state")
-def state() -> dict:
+def state() -> JSONResponse:
     sheets = sorted(p.stem for p in RENDER_DIR.glob(f"*.{RENDER_EXT}")) if RENDER_DIR.exists() else []
-    return {
+    body = {
         "project_dir": str(PROJECT_DIR),
         "sheets": sheets,
         "has_error_log": ERROR_LOG.exists(),
@@ -206,7 +212,9 @@ def state() -> dict:
              "returncode": r.returncode, "lines": len(r.lines)}
             for r in _RUNS.values()
         ],
+        "timestamp": time.time(),
     }
+    return JSONResponse(body, headers={"Cache-Control": "no-store"})
 
 
 # ---- Freshness -----------------------------------------------------------
@@ -322,16 +330,47 @@ def _stamp(p: Path | None, mtime: float) -> dict | None:
     }
 
 
+# ---- Refresh/Cache-Bust --------------------------------------------------
+@app.post("/api/refresh")
+def refresh() -> JSONResponse:
+    """Explicitly refresh all cached data from disk (schematic, lint, sheets, findings).
+
+    The frontend calls this when the user clicks a refresh button or when
+    switching back to the GUI after making changes in this chat. Returns
+    the fresh state so the frontend doesn't need to poll multiple endpoints.
+    """
+    # Force re-read of all data from disk
+    lint_resp = lint()
+    sheets_resp = sheets()
+    findings_resp = findings()
+
+    # Extract bodies from JSONResponse objects and parse them
+    lint_body = json.loads(lint_resp.body) if hasattr(lint_resp, 'body') else {}
+    sheets_body = json.loads(sheets_resp.body) if hasattr(sheets_resp, 'body') else {}
+    findings_body = json.loads(findings_resp.body) if hasattr(findings_resp, 'body') else {}
+
+    # Return combined state so frontend gets everything in one call
+    return JSONResponse({
+        "ok": True,
+        "timestamp": time.time(),
+        "lint": lint_body,
+        "sheets": sheets_body,
+        "findings": findings_body,
+    }, headers={"Cache-Control": "no-store"})
+
+
 # ---- Sheet PNGs ----------------------------------------------------------
 @app.get("/api/sheets")
-def sheets() -> dict:
+def sheets() -> JSONResponse:
     if not RENDER_DIR.exists():
-        return {"sheets": []}
+        body = {"sheets": [], "timestamp": time.time()}
+        return JSONResponse(body, headers={"Cache-Control": "no-store"})
     out = []
     for p in sorted(RENDER_DIR.glob(f"*.{RENDER_EXT}")):
         st = p.stat()
         out.append({"name": p.stem, "size": st.st_size, "mtime": st.st_mtime})
-    return {"sheets": out}
+    body = {"sheets": out, "timestamp": time.time()}
+    return JSONResponse(body, headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/png/{name}")
@@ -401,7 +440,7 @@ def _parse_lint_from_lines(lines: list[str]) -> list[dict]:
 
 
 @app.get("/api/lint")
-def lint(run_id: str | None = None) -> dict:
+def lint(run_id: str | None = None) -> JSONResponse:
     """Return the lint report for the MOST RECENT build.
 
     Altium backend: `build_project` writes `out/lint.json` (every issue, all
@@ -413,6 +452,8 @@ def lint(run_id: str | None = None) -> dict:
 
     Also returns the static rule registry so the frontend can render the full
     checklist (pass/fail per rule) even when nothing fired.
+
+    Response includes cache-busting headers and timestamp so every fetch is fresh.
     """
     try:
         from test1.altium.layout_lint import RULES as _RULES
@@ -435,14 +476,16 @@ def lint(run_id: str | None = None) -> dict:
                 s: sum(1 for i in issues if i["severity"] == s)
                 for s in ("ERROR", "WARNING", "INFO")
             }
-            return {
+            body = {
                 "run_id": None,
                 "status": data.get("status", "unknown"),
                 "generated_at": data.get("generated_at"),
                 "issues": issues,
                 "rules": rules,
                 "counts": counts,
+                "timestamp": time.time(),
             }
+            return JSONResponse(body, headers={"Cache-Control": "no-store"})
         except (ValueError, OSError):
             pass  # fall through to the console-parse path
 
@@ -455,7 +498,7 @@ def lint(run_id: str | None = None) -> dict:
                 target = r
                 break
     issues = _parse_lint_from_lines(list(target.lines)) if target else []
-    return {
+    body = {
         "run_id": target.run_id if target else None,
         "status": target.status if target else "unknown",
         "issues": issues,
@@ -465,19 +508,24 @@ def lint(run_id: str | None = None) -> dict:
             "WARNING": sum(1 for i in issues if i["severity"] == "WARNING"),
             "INFO": sum(1 for i in issues if i["severity"] == "INFO"),
         },
+        "timestamp": time.time(),
     }
+    return JSONResponse(body, headers={"Cache-Control": "no-store"})
 
 
 # ---- Review findings -----------------------------------------------------
 @app.get("/api/findings")
-def findings() -> dict:
+def findings() -> JSONResponse:
     """Return review findings.
 
     findings.json may be either (a) a bare list of Finding dicts (legacy
     KiCad run_review.py path) or (b) a dict envelope produced by the
     Voltai-PDF parser `_review_incoming/install_review.py`
     ({ project, findings: [...], semantic: [...], summary: {...}, sources }).
-    Both shapes are accepted."""
+    Both shapes are accepted.
+
+    Response includes cache-busting headers so every fetch is fresh.
+    """
     data: list = []
     envelope_summary: dict | None = None
     envelope_semantic: list | None = None
@@ -508,12 +556,14 @@ def findings() -> dict:
             sev = (f.get("severity") or "").upper()
             if sev in summary:
                 summary[sev] += 1
-    return {
+    body = {
         "findings": data,
         "semantic": semantic,
         "summary": summary,
         "error_log_exists": ERROR_LOG.exists(),
+        "timestamp": time.time(),
     }
+    return JSONResponse(body, headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/error-log")
@@ -907,6 +957,13 @@ async def run_stream(run_id: str) -> StreamingResponse:
         # First, replay anything already buffered.
         for line in list(r.lines):
             yield f"data: {json.dumps({'line': line})}\n\n".encode()
+        # If the run has already finished, send the final status immediately
+        # (handles the race where subscriber joins after process completes).
+        if r.status != "running":
+            yield (f"event: done\ndata: "
+                   f"{json.dumps({'status': r.status, 'rc': r.returncode})}"
+                   f"\n\n").encode()
+            return
         # Then attach a subscriber queue for new lines.
         q: asyncio.Queue = asyncio.Queue(maxsize=1000)
         r.subscribers.append(q)
@@ -1438,11 +1495,12 @@ async def run_apply_and_generate(opts: ApplyAndGenOpts = ApplyAndGenOpts()) -> d
     """Three-stage pipeline:
 
       1. Spawn the agent in apply mode to implement queued changelog items.
-      2. Wait for it to finish.
+      2. Wait for it to finish in the background.
       3. Spawn gen_schematic.py via the existing run-registry path.
 
     The frontend tracks stage 1 via /api/agent/{run_id}/stream and stage 3
-    via /api/run/{run_id}/stream. Both ids are returned up front.
+    via /api/run/{run_id}/stream. Both ids are returned up front (generate
+    may still be pending if apply is still running).
     """
     # KiCad backend needs gen_schematic.py; the Altium backend builds a module.
     if BACKEND != "altium" and not GEN_SCRIPT.exists():
@@ -1454,28 +1512,45 @@ async def run_apply_and_generate(opts: ApplyAndGenOpts = ApplyAndGenOpts()) -> d
         apply_run = await agent_mod.start_apply_pass()
         apply_run_id = apply_run.run_id
 
-    async def chained() -> str:
-        # If there's an apply run in flight, wait for it.
-        if apply_run_id:
-            ar = agent_mod.get_run(apply_run_id)
-            assert ar is not None
-            while ar.status == "running":
-                await asyncio.sleep(0.25)
-        # Now start the generate subprocess — mirror run_generate's backend
-        # selection so this machine drives the Altium pipeline (build_project),
-        # not the KiCad gen_schematic.py which reads .kicad_sym files.
+    # If there are no apply items, start generate immediately and return its ID.
+    # If there are apply items, start the apply pass and chain to generate in the background.
+    if not apply_run_id:
+        # No apply pass needed: start generate directly
         if BACKEND == "altium":
             cmd = [sys.executable, "-m", "test1.altium.build_project"]
-            return await _start_run("generate", cmd, cwd=str(REPO_ROOT))
-        cmd = [sys.executable, str(GEN_SCRIPT)]
-        if opts.no_reopen:
-            cmd.append("--no-reopen")
-        return await _start_run("generate", cmd)
+            generate_run_id = await _start_run("generate", cmd, cwd=str(REPO_ROOT))
+        else:
+            cmd = [sys.executable, str(GEN_SCRIPT)]
+            if opts.no_reopen:
+                cmd.append("--no-reopen")
+            generate_run_id = await _start_run("generate", cmd)
+        return {
+            "apply_run_id": None,
+            "generate_run_id": generate_run_id,
+            "queued_items": 0,
+        }
 
-    generate_run_id = await chained()
+    # Apply items exist: start generate after apply completes, in the background.
+    async def chain_to_generate() -> None:
+        """Wait for apply to complete, then start generate."""
+        ar = agent_mod.get_run(apply_run_id)
+        assert ar is not None
+        while ar.status == "running":
+            await asyncio.sleep(0.25)
+        # Now start the generate subprocess
+        if BACKEND == "altium":
+            cmd = [sys.executable, "-m", "test1.altium.build_project"]
+            await _start_run("generate", cmd, cwd=str(REPO_ROOT))
+        else:
+            cmd = [sys.executable, str(GEN_SCRIPT)]
+            if opts.no_reopen:
+                cmd.append("--no-reopen")
+            await _start_run("generate", cmd)
+
+    asyncio.create_task(chain_to_generate())
     return {
         "apply_run_id": apply_run_id,
-        "generate_run_id": generate_run_id,
+        "generate_run_id": None,  # Will be available via /api/run stream once apply finishes
         "queued_items": len(items),
     }
 

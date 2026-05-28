@@ -24,6 +24,7 @@ export default function App() {
   const [tab, setTab] = useState<TabKey>("generator");
   const [pngOpen, setPngOpen] = useState(true);
   const [bust, setBust] = useState(0);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [health, setHealth] = useState<
     { text: string; tone: "ok" | "warn" | "err" | "neutral" } | undefined
   >(undefined);
@@ -77,6 +78,16 @@ export default function App() {
   }, []);
 
   const onArtifactsChanged = useCallback(() => setBust((b) => b + 1), []);
+  const onRefresh = useCallback(() => {
+    // Increment bust to force re-fetch of sheets/PNG in PngViewer
+    setBust((b) => b + 1);
+    // Increment refreshTrigger to trigger lint/freshness refresh in Generator
+    setRefreshTrigger((t) => t + 1);
+    // Call the backend refresh endpoint to get fresh lint/sheets/findings
+    api.refresh().catch(() => {
+      // Silently ignore errors; the data will be stale but not crash
+    });
+  }, []);
 
   useEffect(() => {
     api.health()
@@ -114,6 +125,7 @@ export default function App() {
         clearActivity={clearActivity}
         setPhases={setPhases}
         setSubPhase={setSubPhase}
+        refreshTrigger={refreshTrigger}
       />
     );
 
@@ -193,6 +205,7 @@ export default function App() {
         onTogglePng={() => setPngOpen((v) => !v)}
         pngOpen={pngOpen}
         canTogglePng={tab !== "library" && tab !== "resources"}
+        onRefresh={onRefresh}
       />
       <div className="flex-1 min-h-0">{body}</div>
     </div>

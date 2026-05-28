@@ -41,7 +41,12 @@ GRID = 100   # mil
 def build_bias() -> tuple[AltiumSheet, object]:
     nl = load_netlist("bias")
     lib, lmap = get_library()
-    s = AltiumSheet(name="bias", title="test1 — Bias Generators (MCP4728 + OPA2388)")
+    # A2: the two bias channels span to BIAS1's port at x~15300, which is flush
+    # against Altium's A3 drawable frame (15500 wide, usable to 15300) — the port
+    # body renders on the border/reference-zone. A2 (22300 wide) gives ~6700 mil
+    # of right clearance. The content was laid out for ISO-A3 width (16535) but
+    # Altium's A3 sheet style is only 15500; see _PAPER_MIL in shared.py.
+    s = AltiumSheet(name="bias", title="test1 — Bias Generators (MCP4728 + OPA2388)", paper="A2")
 
     def place(ref, x, y, orientation=0, unit=1):
         return s.place_from_netlist(lib, lmap, nl, ref, x, y,
@@ -162,26 +167,31 @@ def build_bias() -> tuple[AltiumSheet, object]:
         PAR = place(par_ref, PAR_CX, nmos_cy)
         par_top_x, par_top_y = PAR["1"]   # (PAR_CX, nmos_cy+100)
         par_bot_x, par_bot_y = PAR["2"]   # (PAR_CX, nmos_cy-100)
-        s.junction(nm_d_x, nm_d_y)
+        # No junction on the NMOS drain/source pins: a wire ending on a pin
+        # auto-connects in Altium, so a dot there is redundant.
         s.wire(nm_d_x, nm_d_y, par_top_x, nm_d_y)
         s.wire(par_top_x, nm_d_y, par_top_x, par_top_y)
-        s.junction(nm_s_x, nm_s_y)
         s.wire(nm_s_x, nm_s_y, par_bot_x, nm_s_y)
         s.wire(par_bot_x, nm_s_y, par_bot_x, par_bot_y)
 
-        # BIASx port right of jumper column
-        BIAS_PORT_X = PAR_CX + 700
+        # BIASx port right of jumper column — +200 keeps body clear of the
+        # adjacent ch1 NMOS body and the ch1 pull-down vertical wire.
+        BIAS_PORT_X = PAR_CX + 200
         s.junction(PAR_CX, nm_s_y)
         s.wire(PAR_CX, nm_s_y, BIAS_PORT_X, nm_s_y)
         s.port(f"BIAS{ch_idx}", BIAS_PORT_X, nm_s_y, io=PortIOType.OUTPUT)
 
-        # BIAS_ISOx port + pull-down on NMOS gate
-        ISO_PORT_X = nm_g_x - 700
+        # BIAS_ISOx port + pull-down on NMOS gate. Offset -200 (was -300): the
+        # port body extends LEFT from the connection, and at -300 ch1's body left
+        # edge clipped the adjacent ch0 parallel-jumper R42 by ~5 mil (caught once
+        # the linter used the true drawn body). -200 shifts the body right, clear
+        # of R42, while staying left of the gate pin.
+        ISO_PORT_X = nm_g_x - 200
         s.wire(nm_g_x, nm_g_y, ISO_PORT_X, nm_g_y)
         s.port(f"BIAS_ISO{ch_idx}", ISO_PORT_X, nm_g_y, io=PortIOType.INPUT)
         PD_CX = nm_g_x
         PD_CY = nm_g_y - 900
-        s.junction(PD_CX, nm_g_y)
+        # No junction on the NMOS gate pin — wire-on-pin auto-connects.
         PD = place(pd_ref, PD_CX, PD_CY)
         pd_top_x, pd_top_y = PD["1"]
         pd_bot_x, pd_bot_y = PD["2"]
@@ -191,11 +201,11 @@ def build_bias() -> tuple[AltiumSheet, object]:
         s.power_at("GND", pd_bot_x, PD_GND_Y)
 
         s.text(f"FAIL-SAFE: BIAS_ISO{ch_idx} default-LOW (R{int(pd_ref[1:])} pull-down)",
-               pd_bot_x - 600, PD_GND_Y - 300)
+               pd_bot_x - 600, PD_GND_Y - 300 - (ch_idx * 200))
         s.text(f"-> {nmos_ref} OFF at POR -> no bias until FPGA asserts HIGH.",
-               pd_bot_x - 600, PD_GND_Y - 500)
+               pd_bot_x - 600, PD_GND_Y - 500 - (ch_idx * 200))
         s.text(f"{par_ref} is DNP -- populate ONLY to bypass FPGA control.",
-               pd_bot_x - 600, PD_GND_Y - 700)
+               pd_bot_x - 600, PD_GND_Y - 700 - (ch_idx * 200))
 
         # --- Channel decoupling cap (+3V3/GND, connects by net name) ---
         CAP_CX = pmos_cx - 700
@@ -214,8 +224,8 @@ def build_bias() -> tuple[AltiumSheet, object]:
     ch0 = bias_channel(0, pmos_cx=11000, pmos_ref="Q40", sense_ref="R40",
                         nmos_cx=11000, nmos_cy=2800, nmos_ref="Q42",
                         par_ref="R42", pd_ref="R44", cap_ref="C42")
-    ch1 = bias_channel(1, pmos_cx=19000, pmos_ref="Q41", sense_ref="R41",
-                        nmos_cx=19000, nmos_cy=2800, nmos_ref="Q43",
+    ch1 = bias_channel(1, pmos_cx=13500, pmos_ref="Q41", sense_ref="R41",
+                        nmos_cx=13500, nmos_cy=2800, nmos_ref="Q43",
                         par_ref="R43", pd_ref="R45", cap_ref="C43")
 
     # =========================================================
@@ -290,6 +300,14 @@ def build_bias() -> tuple[AltiumSheet, object]:
     # geometry tweaks.
     link_far(OPA["5"], OPA["6"], OPA["7"], "7", ch1["gate"], ch1["src_fb"],
              route_y=4900, out_lane=8800, fb_lane=8600)
+
+    # --- OUTA / OUTB descriptions (left side: near OPA; right side: near PMOS gate) ---
+    # y=6500 (was 6200) for the two long notes that ran into the sense resistors
+    # R40/R41 (whose bodies top out at y=6260) — lifted clear of the resistor band.
+    s.text("OUTA -> Q40.G  (CH0 bias gate drive)", 9200, 6500)
+    s.text("<- OUTA  gate drive", 10800, 4000)
+    s.text("OUTB -> Q41.G  (CH1 bias gate drive)", 9700, 3600)
+    s.text("<- OUTB  gate drive", 13400, 6500)
 
     validate(s, nl)
     return s, nl

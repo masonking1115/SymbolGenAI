@@ -84,9 +84,15 @@ RULES: list[dict] = [
     {"id": "cramped_spacing", "severity": "WARNING", "scope": "sheet",
      "summary": "Two components closer than the min readable gap"},
     {"id": "label_overlap", "severity": "WARNING", "scope": "sheet",
-     "summary": "Two drawn text/label boxes overlap (unreadable glob)"},
+     "summary": "Two drawn text/label boxes overlap (unreadable glob) — port-to-port "
+                "overlaps exempt (side-by-side layout like SCL/SDA is valid)"},
     {"id": "label_over_symbol", "severity": "WARNING", "scope": "sheet",
      "summary": "A label/port/value text box overlaps a component body"},
+    {"id": "label_symbol_clearance", "severity": "WARNING", "scope": "sheet",
+     "summary": "A PORT or text note sits flush against a component body (< min "
+                "readable gap) — label bumps the symbol; measured against the "
+                "true drawn body rect, not just the pin column. Aligned passive "
+                "value labels (e.g. 0Ω jumper banks) are exempt"},
     {"id": "wire_through_port", "severity": "WARNING", "scope": "sheet",
      "summary": "A net wire crosses a port BODY (net travels through the port)"},
     {"id": "offpage_text", "severity": "WARNING", "scope": "sheet",
@@ -515,12 +521,19 @@ def _label_boxes(s):
 
 
 def _body_boxes(s):
-    """[(refdes, box)] pin-extent body box (inflated) for each real component."""
+    """[(refdes, box)] drawn body box (inflated) for each real component.
+
+    Prefers the true rendered graphical extent (PlacedPart.graphic_box, from
+    altium_monkey's full_bounds_mils) which includes the symbol rectangle —
+    important for single-column parts (e.g. FMC connectors) whose drawn body is
+    offset to one side of the pin column, so a pin-only bbox understates the
+    width and misses labels bumping the symbol. Falls back to pin extent."""
     out = []
     for (_ref, _u), p in s._placed.items():
         if p.is_power or not p.pins:
             continue
-        bx0, by0, bx1, by1 = _part_bbox(p)
+        gb = getattr(p, "graphic_box", None)
+        bx0, by0, bx1, by1 = gb if gb else _part_bbox(p)
         out.append((p.refdes, (bx0 - _BODY_MARGIN, by0 - _BODY_MARGIN,
                                bx1 + _BODY_MARGIN, by1 + _BODY_MARGIN)))
     return out
@@ -528,12 +541,17 @@ def _body_boxes(s):
 
 def _check_label_overlap(s):
     """Two drawn text/label boxes overlap — the unreadable "glob" the user sees
-    (e.g. a value Comment sitting under a port name, or two values colliding)."""
+    (e.g. a value Comment sitting under a port name, or two values colliding).
+    Port-to-port overlaps are exempt: intentional side-by-side layout (e.g., SCL/SDA)
+    is valid and readable; only flag when other label types collide."""
     out = []
     items = _label_boxes(s)
     for i, (ka, na, ba) in enumerate(items):
         for (kb, nb, bb) in items[i + 1:]:
             if na == nb and ka == kb:
+                continue
+            # Port-to-port overlaps are intentional layout (e.g., SCL/SDA side-by-side)
+            if ka == "port" and kb == "port":
                 continue
             if _overlap(ba, bb):
                 out.append(LintIssue("WARNING", "label_overlap",
@@ -559,6 +577,60 @@ def _check_label_over_symbol(s):
     return out
 
 
+# Minimum readable gap (mil) of TRUE clear space between a port/note box and a
+# component's DRAWN body. Below this the label visibly bumps the symbol. Measured
+# against the un-inflated graphic_box (half a 100-mil grid), so a label sitting a
+# clean grid-step away is fine and only genuine near-touches are flagged.
+LABEL_SYMBOL_CLEAR = 50
+
+
+def _gap_between(a, b):
+    """Shortest axis-aligned gap between two boxes; negative if they overlap."""
+    dx = max(b[0] - a[2], a[0] - b[2], 0.0)
+    dy = max(b[1] - a[3], a[1] - b[3], 0.0)
+    if dx == 0.0 and dy == 0.0:
+        # boxes overlap on both axes -> overlapping; report negative penetration
+        return -min(min(a[2], b[2]) - max(a[0], b[0]),
+                    min(a[3], b[3]) - max(a[1], b[1]))
+    return (dx * dx + dy * dy) ** 0.5
+
+
+def _check_label_symbol_clearance(s):
+    """A PORT or text NOTE box sits flush against (but not on top of) a component
+    body — the "label bumps the symbol" case the eye catches as text crashing a
+    symbol outline. Distinct from label_over_symbol (hard overlap): this catches
+    near-zero clearance. Measured against the TRUE drawn body (graphic_box), so
+    the FMC connectors' offset body rectangle is respected, not just their pin
+    column.
+
+    Scope: only port/text labels vs OTHER parts' bodies. A part's own value
+    Comment, and value labels sitting in the regular gap of an aligned passive
+    ladder (e.g. the FMC 0Ω jumper banks), are NOT flagged — a small value in a
+    tidy, evenly-spaced bank reads fine and obstructs nothing. The defect we care
+    about is a signal port/name colliding with a symbol it doesn't belong to."""
+    out = []
+    # Use TRUE drawn bodies (un-inflated) so the gap reported is real clear space.
+    bodies = [(p.refdes, (p.graphic_box if getattr(p, "graphic_box", None)
+                          else _part_bbox(p)))
+              for (_r, _u), p in s._placed.items()
+              if not p.is_power and p.pins]
+    for (kind, name, lb) in _label_boxes(s):
+        # Only ports and free text notes can "bump a symbol"; a part's value
+        # Comment riding near an aligned passive bank is acceptable (user call).
+        if kind not in ("port", "text"):
+            continue
+        for (refdes, bb) in bodies:
+            if _overlap(lb, bb):
+                continue  # hard overlap is reported by label_over_symbol
+            g = _gap_between(lb, bb)
+            if g < LABEL_SYMBOL_CLEAR:
+                out.append(LintIssue("WARNING", "label_symbol_clearance",
+                    f"{kind} {name!r} sits {g:.0f} mil from {refdes} body "
+                    f"(< {LABEL_SYMBOL_CLEAR}-mil gap; label bumps the symbol - "
+                    f"space it clear)", [name, refdes]))
+    return out
+
+
 def _check_wire_through_port(s):
     """A net wire passes THROUGH a port body (the net visibly travels across the
     port instead of terminating at it). Distinct from wire_through_label, which
@@ -566,10 +638,16 @@ def _check_wire_through_port(s):
     being impaled even when the wire correctly ends at the connection edge."""
     out = []
     for lb in s._labels:
-        if lb.kind != "port" or not lb.box:
+        if lb.kind != "port":
+            continue
+        # Test the electrical body, not the text-expanded box: a long port name
+        # renders centered text wider than the 700-mil body, overhanging the
+        # connection edge — that text overhang is not the net impaling the body.
+        body = getattr(lb, "body_box", None) or lb.box
+        if not body:
             continue
         for (a, b) in s._wires:
-            if _seg_crosses_box(a, b, lb.box):
+            if _seg_crosses_box(a, b, body):
                 out.append(LintIssue("WARNING", "wire_through_port",
                     f"port {lb.name!r} body is crossed by wire {a}->{b} (net runs "
                     f"through the port; place its body in the margin)", [lb.name]))
@@ -578,20 +656,27 @@ def _check_wire_through_port(s):
 
 
 def _check_offpage_text(s):
-    """A drawn label/value/note box (or component body) spills past the sheet
-    border — its text is clipped at the page edge."""
-    paper = getattr(s, "_chosen_paper", None) or s._fit_paper()
+    """A drawn label/value/note box (or component body) spills past the sheet's
+    USABLE area — the region inside Altium's border/reference-zone margin. Checks
+    against the DECLARED paper size (s.paper), not auto-fitted. The bounds are
+    Altium's real drawable frame (s._PAPER_MIL) inset by the border margin
+    (s._PAPER_MARGIN), so content landing in the border or title-block zone is
+    caught — not just content past the raw ISO page rectangle."""
+    paper = s.paper  # Use declared paper, not auto-fitted
     W, H = s._PAPER_MIL.get(paper, (0, 0))
     if not W:
         return []
+    m = getattr(s, "_PAPER_MARGIN", {}).get(paper, 0)
+    lo_x, lo_y, hi_x, hi_y = m, m, W - m, H - m
     out = []
     items = [(k, n, b) for (k, n, b) in _label_boxes(s)]
     items += [("body", r, b) for (r, b) in _body_boxes(s)]
     for (kind, name, (x0, y0, x1, y1)) in items:
-        if x0 < 0 or y0 < 0 or x1 > W or y1 > H:
+        if x0 < lo_x or y0 < lo_y or x1 > hi_x or y1 > hi_y:
             out.append(LintIssue("WARNING", "offpage_text",
                 f"{kind} {name!r} box ({x0},{y0})..({x1},{y1}) spills past the "
-                f"{paper} page (0,0)..({W},{H})", [name]))
+                f"{paper} usable area ({lo_x},{lo_y})..({hi_x},{hi_y}) "
+                f"[frame {W}x{H}, {m}-mil border]", [name]))
     return out
 
 
@@ -671,7 +756,8 @@ ALL_CHECKS = (_check_off_grid, _check_diagonal, _check_out_of_bounds,
               _check_power_straddles_net, _check_stub_t_short,
               _check_ground_on_top, _check_wire_through_body, _check_off_center,
               _check_cramped_spacing, _check_label_overlap,
-              _check_label_over_symbol, _check_wire_through_port,
+              _check_label_over_symbol, _check_label_symbol_clearance,
+              _check_wire_through_port,
               _check_offpage_text, _check_wire_overlap, _check_bridged_drop,
               _check_duplicate_wire, _check_redundant_junction)
 

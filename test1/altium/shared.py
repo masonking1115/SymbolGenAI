@@ -20,6 +20,7 @@ from pathlib import Path
 from altium_monkey import (
     AltiumSchDoc,
     ColorValue,
+    CoordPoint,
     LineWidth,
     PortIOType,
     PortStyle,
@@ -109,6 +110,12 @@ class PlacedPart:
     # Rendered value-Comment text box (page mils) so the linter can detect the
     # value text colliding with ports/other text (the "22uF LDO_PG 0.1uF" glob).
     comment_box: tuple[int, int, int, int] | None = None
+    # True DRAWN graphical extent in page mils (symbol rectangle + pins), from
+    # altium_monkey's full_bounds_mils(). For single-column parts like the FMC
+    # connectors the drawn body rectangle is offset to one side of the pin
+    # column, so a pin-only bbox understates the real width — the linter uses
+    # this so label/port-to-symbol clearance is measured against what's rendered.
+    graphic_box: tuple[int, int, int, int] | None = None
 
 
 @dataclass
@@ -118,10 +125,16 @@ class LabelRec:
     x: int
     y: int
     orientation: int | None = None   # power ports: 0/1/2/3 (=0/90/180/270 deg)
-    # Rendered extent (page mils) of the drawn glyph+text. For ports this is the
-    # port BODY (which extends away from the connection point) — the linter uses
-    # it to catch wires impaling the body and bodies colliding with other items.
+    # Rendered extent (page mils) of the drawn glyph+text, INCLUDING the name
+    # text rendered above/beside the body — used for offpage + text-overlap
+    # checks. For ports this can be wider than the electrical body when the name
+    # is long (centered text overhangs the 700-mil body on both ends).
     box: tuple[int, int, int, int] | None = None
+    # Electrical body box only (no name-text expansion). For ports this is the
+    # 700-mil-wide port glyph; the wire_through_port check uses THIS so a long
+    # name's text overhang past the connection edge isn't mistaken for the net
+    # impaling the body. Falls back to `box` when unset.
+    body_box: tuple[int, int, int, int] | None = None
     # The underlying doc object, kept for cosmetic "text" notes so auto_fix_text
     # can reposition them after the build (other kinds carry connectivity).
     obj: object | None = None
@@ -221,7 +234,14 @@ class AltiumSheet:
             border_width=LineWidth.SMALL, auto_size=False, show_net_name=True,
         ))
         body = (anchor_x, y - 50, anchor_x + width_mils, y + 50)
-        self._labels.append(LabelRec("port", name, x, y, box=body))
+        # Expand box to include the port name text rendered above the body (y - 120)
+        text_box = _text_box(anchor_x + width_mils // 2, y - 120, name, "center")
+        merged = (min(body[0], text_box[0]), min(body[1], text_box[1]),
+                  max(body[2], text_box[2]), max(body[3], text_box[3]))
+        # body_box = electrical glyph only (no text overhang) so the
+        # wire_through_port check tests the actual port body, not the name text
+        # that a long port name renders past the connection edge.
+        self._labels.append(LabelRec("port", name, x, y, box=merged, body_box=body))
 
     def _infer_port_side(self, x: int, y: int, tol: float = 1.0) -> str:
         """Pick the body side ('left'/'right') that keeps the connecting net off
@@ -345,7 +365,7 @@ class AltiumSheet:
             self._wires.append(((lb.x, lb.y), (nx, lb.y)))
             # power-port location is a CoordPoint (not SchPointMils) — rebuild it
             # via the same type so to_geometry's .x/.y stay valid.
-            lb.obj.location = lb.obj.location.from_mils(nx, lb.y)
+            lb.obj.location = SchPointMils.from_mils(nx, lb.y).to_coord_point()
             lb.box = self._power_box(nx, lb.y, lb.name, "GND" in lb.name.upper())
             lb.x = nx
             changes.append((lb.name, dx))
@@ -422,12 +442,19 @@ class AltiumSheet:
 
     # --- placement --------------------------------------------------------
     def place(self, lib_path: Path, symbol: str, ref: str, value: str,
-              x: int, y: int, orientation: int = 0, unit: int = 1
+              x: int, y: int, orientation: int = 0, unit: int = 1,
+              comment_offset: tuple[int, int] | None = None
               ) -> dict[str, tuple[int, int]]:
         """Place a SchLib symbol (part `unit` for multi-unit), record it, and
         return {designator: (x,y)} for that unit's pins IN LOGICAL coords (the
         page offset is removed on the way out so builders can keep chaining pin
-        coords into wires without double-applying the centering shift)."""
+        coords into wires without double-applying the centering shift).
+
+        comment_offset=(dx, dy): where the value Comment renders relative to the
+        placement origin. Default (None) keeps the historic "centered just above
+        the top pin" placement. Pass an explicit offset for dense stacks where
+        the value-above-body would bump the row above (e.g. the FMC 0Ω banks —
+        push the value to the side instead)."""
         px0, py0 = self._t(x, y)
         comp = self.doc.add_component_from_library(
             library_path=lib_path, symbol_name=symbol, designator=ref,
@@ -439,32 +466,51 @@ class AltiumSheet:
         # top pin so it doesn't collide. Library metadata parameters (Footprint/
         # Datasheet/MPN/...) stay hidden — only designator + comment are drawn.
         top = max((py for (_px, py) in pins.values()), default=py0)
-        cy = top + 150
+        if comment_offset is None:
+            cdx, cdy = 0, (top - py0) + 150        # historic: above the top pin
+        else:
+            cdx, cdy = comment_offset
+        cx_text, cy = px0 + cdx, py0 + cdy
         try:
-            comp.set_comment(value, x=0, y=(top - py0) + 150, visible=True)
+            comp.set_comment(value, x=cdx, y=cdy, visible=True)
             comp.set_comment_style(font_name="Arial", font_size=10)
         except Exception:
             pass
-        # Comment renders centered at (px0, top+150); box it for overlap checks.
-        cbox = _text_box(px0, cy, value, "center") if value else None
+        # Comment renders centered at (cx_text, cy); box it for overlap checks.
+        cbox = _text_box(cx_text, cy, value, "center") if value else None
+        # Capture the true drawn graphical extent (rectangle + pins). For
+        # single-column symbols the body rect is offset to one side of the pin
+        # column, so this is wider than a pin-only bbox — the linter needs it to
+        # measure clearance against what's actually rendered.
+        gbox = None
+        try:
+            b = comp.full_bounds_mils()
+            gbox = (int(b.x1_mils), int(b.y1_mils), int(b.x2_mils), int(b.y2_mils))
+        except Exception:
+            pass
         self._placed[(ref, unit)] = PlacedPart(ref, symbol, value, px0, py0, pins,
-                                               unit=unit, comment_box=cbox)
+                                               unit=unit, comment_box=cbox,
+                                               graphic_box=gbox)
         return {d: (cx - self._ox, cy - self._oy) for d, (cx, cy) in pins.items()}
 
     def place_from_netlist(self, lib_path: Path, libid_to_symbol: dict[str, str],
                            netlist, refdes: str, x: int, y: int,
-                           orientation: int = 0, unit: int = 1
+                           orientation: int = 0, unit: int = 1,
+                           comment_offset: tuple[int, int] | None = None
                            ) -> dict[str, tuple[int, int]]:
         """Place a part whose symbol/value come from the YAML netlist, mapping
         its KiCad lib_id to an authored SchLib symbol name. For multi-unit parts
-        call once per declared unit. Mirrors gen.shared.place_from_netlist."""
+        call once per declared unit. Mirrors gen.shared.place_from_netlist.
+
+        comment_offset forwards to place() — see there."""
         p = netlist.parts[refdes]
         symbol = libid_to_symbol.get(p.lib_id)
         if symbol is None:
             raise ValueError(f"no SchLib symbol mapped for lib_id {p.lib_id!r} (refdes {refdes})")
         if unit not in p.units:
             raise ValueError(f"{refdes} unit {unit} not in declared units {p.units}")
-        return self.place(lib_path, symbol, p.refdes, p.value, x, y, orientation, unit=unit)
+        return self.place(lib_path, symbol, p.refdes, p.value, x, y, orientation,
+                          unit=unit, comment_offset=comment_offset)
 
     def pins_of(self, ref: str, unit: int = 1) -> dict[str, tuple[int, int]]:
         """{designator: (x,y)} in LOGICAL coords for an already-placed part —
@@ -537,9 +583,19 @@ class AltiumSheet:
         # stay on A4 even when the grid (3 cols × 4000 wide) overflows.
         self._sheet_symbol_boxes.append((x, y - 260, x + w, y + h + 160))
 
-    # A-series landscape usable sizes in mil (preferred order, smallest first).
-    _PAPER_MIL = {"A4": (11690, 8270), "A3": (16535, 11690),
-                  "A2": (23390, 16535), "A1": (33110, 23390), "A0": (46810, 33110)}
+    # A-series landscape sheet sizes in mil (preferred order, smallest first).
+    # These are Altium's ACTUAL drawable sheet-style frames (what doc.sheet
+    # .get_sheet_size_mils() returns and what altium_monkey renders), NOT ISO 216
+    # paper sizes. They are ~1000 mil smaller than ISO — e.g. Altium "A3" is
+    # 15500x11100, not ISO 16535x11690. Linting against ISO let content spill
+    # past the rendered frame (a port body landing in the border/title-block zone
+    # looked "on page"). Source: doc.sheet.get_sheet_size_mils() per sheet_style.
+    _PAPER_MIL = {"A4": (11500, 7600), "A3": (15500, 11100),
+                  "A2": (22300, 15700), "A1": (31500, 22300), "A0": (44600, 31500)}
+    # Border margin (mil) Altium reserves on every side for the frame + reference
+    # zone band. Content must stay inside (margin .. size-margin) to avoid the
+    # rendered border. Matches doc.sheet.get_margin_mils() per style.
+    _PAPER_MARGIN = {"A4": 200, "A3": 200, "A2": 300, "A1": 300, "A0": 300}
 
     def content_bbox(self) -> tuple[int, int, int, int]:
         """(min_x, min_y, max_x, max_y) over all placed pins, wires, labels."""
@@ -588,8 +644,15 @@ class AltiumSheet:
         self.doc.save(path)
         return path
 
+    def _convert_locations_to_coordpoint(self) -> None:
+        """Convert all SchPointMils locations to CoordPoint (required for rendering)."""
+        for obj in self.doc.objects:
+            if hasattr(obj, 'location') and isinstance(obj.location, SchPointMils):
+                obj.location = obj.location.to_coord_point()
+
     def render_svg(self, path: Path) -> Path:
         path.parent.mkdir(parents=True, exist_ok=True)
         self._apply_paper()
+        self._convert_locations_to_coordpoint()
         path.write_text(self.doc.to_svg(), encoding="utf-8")
         return path

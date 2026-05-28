@@ -241,6 +241,7 @@ export interface ChangelogItem {
 
 export type StagePhase =
   | "idle"
+  | "connecting"
   | "agent-thinking"
   | "applying-changelog"
   | "generating"

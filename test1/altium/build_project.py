@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import time
+import traceback
 
 from altium_monkey.altium_prjpcb import AltiumPrjPcb
 
@@ -118,6 +119,8 @@ def main() -> int:
             # Show what the auto-fixers corrected this run.
             for note, dy in autofixes:
                 short = note if len(note) <= 40 else note[:37] + "..."
+                # Encode safely for Windows console (cp1252)
+                short = short.encode('cp1252', errors='replace').decode('cp1252')
                 print(f"             ~ auto-fixed note {short!r} (moved {dy:+d} mil)")
             for rail, dx in powerfixes:
                 print(f"             ~ off-set power {rail!r} beside the net (moved {dx:+d} mil)")
@@ -128,6 +131,7 @@ def main() -> int:
                 print(f"             - {i}")
         except Exception as e:
             fails += 1
+            traceback.print_exc()
             report.append({"sheet": name, "severity": "ERROR",
                            "rule": "build_failed", "message": f"{type(e).__name__}: {e}",
                            "refs": []})
