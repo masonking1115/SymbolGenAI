@@ -378,11 +378,14 @@ export function Simulation({ setHealth, blocks, selected, onBlocksChanged }: Pro
             }
           };
           // Watchdog: if neither a verdict nor a stream-close arrives in time,
-          // stop waiting. Interpret (incl. up to 3 bounded re-sims) is well under
-          // this; a longer wait means something stalled.
+          // stop waiting. Interpret now works from the inlined cached params (it
+          // shouldn't read datasheets — the slow path), so a healthy pass is well
+          // under this; a longer wait means something stalled. Generous margin so
+          // a legitimately-thorough verdict (or up to 3 bounded re-sims) isn't cut
+          // off prematurely.
           const watchdog = setTimeout(
             () => finishInterpret(undefined, "interpretation timed out — the sim result above is valid"),
-            180_000,
+            240_000,
           );
           subscribeAgent(
             run_id,
@@ -848,44 +851,56 @@ function AgentModelPicker() {
     .map((fam) => ({ fam, models: cfg.models.filter((m) => m.family === fam) }))
     .filter((g) => g.models.length > 0);
   const idLabel = (id: string) => cfg.models.find((m) => m.id === id)?.label ?? id;
+  // Section the agents by their group (Simulation / Schematic), preserving the
+  // backend's order within each.
+  const groupsOrder: string[] = [];
+  for (const a of cfg.agents) if (!groupsOrder.includes(a.group)) groupsOrder.push(a.group);
+  const agentRow = (a: typeof cfg.agents[number]) => (
+    <div key={a.kind} className="flex items-center gap-2 text-[12px]">
+      <span className="text-ink-800 flex-1 truncate" title={a.kind}>{a.label}</span>
+      {a.overridden && (
+        <button onClick={() => setModel(a.kind, a.default)}
+          className="text-[10px] text-ink-400 hover:text-ink-700" title={`reset to default (${idLabel(a.default)})`}>
+          reset
+        </button>
+      )}
+      <select
+        value={a.model}
+        disabled={saving === a.kind}
+        onChange={(e) => setModel(a.kind, e.target.value)}
+        title={a.model}
+        className="h-7 w-56 rounded border border-edge bg-white text-[11px] font-mono px-1.5 outline-none focus:border-ink-400 disabled:opacity-50"
+      >
+        {byFamily.map((g) => (
+          <optgroup key={g.fam} label={g.fam.toUpperCase()}>
+            {g.models.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.id}{m.id === a.default ? " · default" : ""}{m.latest ? " · latest" : ""}
+              </option>
+            ))}
+          </optgroup>
+        ))}
+      </select>
+    </div>
+  );
   return (
     <div className="mt-3 rounded-md border border-edge bg-rail/40 p-3">
       <div className="text-[11px] uppercase tracking-wide text-ink-500 mb-2">
-        Agent models · exact Anthropic model per sim agent
+        Agent models · exact Anthropic model per agent (simulation + schematic)
       </div>
-      <div className="space-y-1.5">
-        {cfg.agents.map((a) => (
-          <div key={a.kind} className="flex items-center gap-2 text-[12px]">
-            <span className="text-ink-800 flex-1 truncate" title={a.kind}>{a.label}</span>
-            {a.overridden && (
-              <button onClick={() => setModel(a.kind, a.default)}
-                className="text-[10px] text-ink-400 hover:text-ink-700" title={`reset to default (${idLabel(a.default)})`}>
-                reset
-              </button>
-            )}
-            <select
-              value={a.model}
-              disabled={saving === a.kind}
-              onChange={(e) => setModel(a.kind, e.target.value)}
-              title={a.model}
-              className="h-7 w-56 rounded border border-edge bg-white text-[11px] font-mono px-1.5 outline-none focus:border-ink-400 disabled:opacity-50"
-            >
-              {byFamily.map((g) => (
-                <optgroup key={g.fam} label={g.fam.toUpperCase()}>
-                  {g.models.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.id}{m.id === a.default ? " · default" : ""}{m.latest ? " · latest" : ""}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
+      <div className="space-y-3">
+        {groupsOrder.map((grp) => (
+          <div key={grp}>
+            <div className="text-[10px] uppercase tracking-wide text-ink-400 mb-1">{grp}</div>
+            <div className="space-y-1.5">
+              {cfg.agents.filter((a) => a.group === grp).map(agentRow)}
+            </div>
           </div>
         ))}
       </div>
       <div className="text-[10px] text-ink-400 mt-2">
         Exact pinned model ids passed to <span className="font-mono">claude --model</span>. Applies to the next run of each agent;
-        generator/sync default to Opus, extraction/verdict to Sonnet.
+        authoring/repair agents default to Opus, extraction/verdict/chat to Sonnet.
       </div>
     </div>
   );

@@ -185,6 +185,7 @@ export interface SimBlock {
 export interface AgentModelEntry {
   kind: string;
   label: string;
+  group: string;          // section the agent belongs to (Simulation / Schematic)
   model: string;          // current model id
   default: string;        // per-kind default id
   overridden: boolean;

@@ -168,10 +168,14 @@ export const api = {
   changelogClear: () =>
     j<{ ok: boolean }>("/api/changelog/clear", { method: "POST" }),
 
-  applyAndGenerate: () =>
-    j<{ apply_run_id: string | null; generate_run_id: string; queued_items: number }>(
+  applyAndGenerate: (loopReview = false) =>
+    j<{ apply_run_id: string | null; generate_run_id: string | null; queued_items: number; loop_review?: boolean; max_rounds?: number }>(
       "/api/run/apply-and-generate",
-      { method: "POST" },
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ loop_review: loopReview }),
+      },
     ),
   symbolGen: (mpn: string) =>
     j<{ run_id: string; datasheet: string }>(

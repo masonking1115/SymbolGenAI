@@ -53,6 +53,10 @@ export function Generator({
   const [netlistFiles, setNetlistFiles] = useState<string[]>([]);
   const [fresh, setFresh] = useState<Freshness | null>(null);
   const [queuedCount, setQueuedCount] = useState(0);
+  // Closed-loop review: after apply+build, read the gates (validator + lint) and
+  // if the build failed, spawn a bounded fix pass and rebuild (up to 3 rounds),
+  // so Generate lands a gate-clean change instead of shipping a broken build.
+  const [loopReview, setLoopReview] = useState(false);
   // Which severity's detail list is expanded under the count cards (click to open).
   const [openSev, setOpenSev] = useState<Severity | null>(null);
   // Whether the linter checklist section is expanded.
@@ -122,8 +126,12 @@ export function Generator({
       // Stage 1+2: apply changelog (if any), then generate. Single backend
       // call orchestrates both runs.
       setLines((prev) => [...prev, "Contacting backend for build orchestration..."]);
-      const { apply_run_id, generate_run_id } = await api.applyAndGenerate();
-      setLines((prev) => [...prev, `Backend connected: apply_run_id=${apply_run_id || "none"} generate_run_id=${generate_run_id}`]);
+      const { apply_run_id, generate_run_id, loop_review, max_rounds } = await api.applyAndGenerate(loopReview);
+      setLines((prev) => [...prev, `Backend connected: apply_run_id=${apply_run_id || "none"} generate_run_id=${generate_run_id ?? "pending"}`]);
+      if (loop_review) {
+        setLines((prev) => [...prev, `[LOOP] Closed-loop review on — apply → build → read gates → fix (up to ${max_rounds} rounds) until clean.`]);
+        pushActivity(`▶ closed-loop review (≤${max_rounds} fix rounds)`);
+      }
 
       if (apply_run_id) {
         setStage("applying-changelog");
@@ -149,6 +157,63 @@ export function Generator({
             },
           );
         });
+      }
+
+      // CLOSED-LOOP REVIEW: the backend runs apply -> build -> fix -> build … in
+      // the background, so there isn't a single generate run — there's a sequence
+      // of "generate" and "lint-fix" runs. Stream each as it appears, in order,
+      // until the loop settles (no new run shows up within the grace window).
+      if (loop_review) {
+        // The backend runs apply -> build -> fix -> build … strictly SEQUENTIALLY
+        // in the background, so at any moment at most ONE generate/lint-fix run is
+        // `running`. Stream whichever is running; when none is, wait briefly; stop
+        // once the chain has gone quiet (idle grace). No ordering math needed.
+        const streamed = new Set<string>();
+        const streamOne = (id: string, kind: string) =>
+          new Promise<string>((resolve) => {
+            setRunId(kind === "generate" ? id : null);
+            setStage(kind === "lint-fix" ? "applying-changelog" : "generating");
+            setSubPhase(kind === "lint-fix" ? "fixing lint/validator failures" : "building + gating");
+            pushActivity(`▶ ${kind}`);
+            const tag = kind === "lint-fix" ? "[FIX]" : "[GEN]";
+            const onLine = (line: string) => { setLines((prev) => [...prev, `${tag} ${line}`]); pushActivity(line); };
+            const onDone = ({ status }: { status: string }) => { pushActivity(`✓ ${kind} ${status}`); resolve(status); };
+            if (kind === "generate") subscribeRun(id, onLine, onDone);
+            else subscribeAgent(id, onLine, onDone);
+          });
+        let lastBuildStatus = "fail";
+        let idle = 0;
+        // Cap generously: apply + up to 3×(fix+build) phases, with a polling grace.
+        for (let guard = 0; guard < 60 && idle < 20; guard++) {
+          let running: { id: string; kind: string } | null = null;
+          try {
+            const state = await api.state();
+            const r = (state.runs as any[]).find(
+              (x: any) => (x.kind === "generate" || x.kind === "lint-fix")
+                && x.status === "running" && !streamed.has(x.run_id),
+            );
+            if (r) running = { id: r.run_id, kind: r.kind };
+          } catch { /* keep polling */ }
+          if (running) {
+            streamed.add(running.id);
+            idle = 0;
+            const st = await streamOne(running.id, running.kind);
+            if (running.kind === "generate") lastBuildStatus = st;
+          } else {
+            idle++;
+            await new Promise((r) => setTimeout(r, 500));
+          }
+        }
+        setRunState(lastBuildStatus === "ok" ? "ok" : "fail");
+        onArtifactsChanged();
+        setStage(lastBuildStatus === "ok" ? "done" : "error");
+        setSubPhase(undefined);
+        setLines((prev) => [...prev,
+          lastBuildStatus === "ok"
+            ? "[LOOP] Closed-loop review complete — build passes the gates (lint ERRORs = 0)."
+            : "[LOOP] Closed-loop review ended — build still failing after the fix rounds; see the linter."]);
+        setTimeout(() => { refreshLint(); refreshFresh(); refreshChangelogCount(); }, 250);
+        return;
       }
 
       // If there's no generate_run_id yet (still waiting for apply to complete),
@@ -310,6 +375,24 @@ export function Generator({
               ? "Generate (sources changed)"
               : "Generate schematic"}
           </button>
+          {/* Closed-loop review: apply -> build -> read gates -> bounded fix ->
+              rebuild until the validator + lint pass (lands a clean change). */}
+          <label
+            title="After applying changes, build and read the validator + layout-lint gates; if the build fails, an agent fixes the failures and rebuilds (up to 3 rounds) so Generate lands a gate-clean schematic."
+            className={"inline-flex items-center gap-1.5 text-[12px] select-none cursor-pointer " +
+              (runState === "running" ? "opacity-50 pointer-events-none " : "") +
+              (loopReview ? "text-ink-900" : "text-ink-600")}
+          >
+            <input
+              type="checkbox"
+              checked={loopReview}
+              onChange={(e) => setLoopReview(e.target.checked)}
+              disabled={runState === "running"}
+              className="accent-ink-900"
+            />
+            <I.Refresh size={12} className={loopReview ? "text-ink-900" : "text-ink-400"} />
+            Loop review &amp; close the loop
+          </label>
           <button
             onClick={() => {
               refreshLint();

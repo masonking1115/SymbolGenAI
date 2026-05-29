@@ -125,16 +125,25 @@ def _canon_model(m: str | None) -> str | None:
 
 AGENT_MODELS_FILE = STATE_DIR / "agent_models.json"
 
-# Agent kinds whose model is user-selectable, with a sensible default + a label
-# for the GUI. Keep kind ids stable (persisted + sent over the API). Defaults are
-# full ids: heavy model-authoring agents on the frontier model, the rest balanced.
-SIM_AGENT_KINDS: dict[str, dict] = {
-    "sim_setup":     {"label": "Datasheet & scenario agent", "default": "claude-sonnet-4-6"},
-    "sim_interpret": {"label": "Verdict agent",              "default": "claude-sonnet-4-6"},
-    "sim_generate":  {"label": "SPICE-model generator",      "default": "claude-opus-4-8"},
-    "sim_update":    {"label": "Schematic-sync agent",       "default": "claude-opus-4-8"},
-    "sim_chat_edit": {"label": "Sim chat-edit agent",        "default": "claude-sonnet-4-6"},
+# Agent kinds whose model is user-selectable, with a sensible default + a label +
+# a group (for GUI sectioning). Keep kind ids stable (persisted + sent over the
+# API). Defaults are full ids: heavy authoring/repair agents on the frontier
+# model, the lighter extraction/verdict/chat agents balanced.
+AGENT_KINDS: dict[str, dict] = {
+    # --- Simulation agents ---
+    "sim_setup":     {"label": "Datasheet & scenario agent", "group": "Simulation",  "default": "claude-sonnet-4-6"},
+    "sim_interpret": {"label": "Verdict agent",              "group": "Simulation",  "default": "claude-sonnet-4-6"},
+    "sim_generate":  {"label": "SPICE-model generator",      "group": "Simulation",  "default": "claude-opus-4-8"},
+    "sim_update":    {"label": "Schematic-sync agent",       "group": "Simulation",  "default": "claude-opus-4-8"},
+    "sim_chat_edit": {"label": "Sim chat-edit agent",        "group": "Simulation",  "default": "claude-sonnet-4-6"},
+    # --- Schematic / generation agents ---
+    "apply":         {"label": "Apply-changelog agent",      "group": "Schematic",   "default": "claude-opus-4-8"},
+    "lint_fix":      {"label": "Lint/validator fix agent",   "group": "Schematic",   "default": "claude-opus-4-8"},
+    "symbol_gen":    {"label": "Symbol generator",           "group": "Schematic",   "default": "claude-opus-4-8"},
+    "chat":          {"label": "Chat / thinking-partner",    "group": "Schematic",   "default": "claude-sonnet-4-6"},
 }
+# Back-compat alias (was sim-only); both names point at the same registry.
+SIM_AGENT_KINDS = AGENT_KINDS
 
 
 def _load_agent_models() -> dict:
@@ -163,11 +172,11 @@ def agent_model_config() -> dict:
     return {
         "models": MODEL_CATALOG,
         "agents": [
-            {"kind": k, "label": v["label"],
+            {"kind": k, "label": v["label"], "group": v.get("group", "Other"),
              "model": model_for(k),
              "default": _canon_model(v["default"]),
              "overridden": _canon_model(overrides.get(k)) is not None}
-            for k, v in SIM_AGENT_KINDS.items()
+            for k, v in AGENT_KINDS.items()
         ],
     }
 
@@ -495,6 +504,42 @@ Write compact prose and bullets. Do NOT use any tools. Output ONLY the summary
 text — no preamble, no sign-off.
 """
 
+def _lint_expectations() -> str:
+    """A briefing on the gates an edit must satisfy, built from the LIVE rule
+    registry (so it can't drift from what the build actually enforces) plus the
+    placement/routing idioms a builder edit must honor. Shared by the apply pass
+    and the lint-fix pass so both write geometry the linter accepts."""
+    try:
+        from test1.altium.layout_lint import RULES
+        errs = [r for r in RULES if r.get("severity") == "ERROR"]
+        warns = [r for r in RULES if r.get("severity") == "WARNING"]
+        err_lines = "\n".join(f"     - {r['id']}: {r['summary']}" for r in errs)
+        warn_lines = "\n".join(f"     - {r['id']}: {r['summary']}" for r in warns)
+    except Exception:
+        err_lines = warn_lines = "     (rule registry unavailable)"
+    return f"""\
+GATES every build must pass (run by the backend: build_project -> connectivity
+validator + layout lint). A clean build prints per sheet `E/W/I = 0/0/0` and
+`FAILURES: none`. Write edits that hold to these:
+  * CONNECTIVITY (hard, fails the build): every YAML net must resolve to one
+    connected component. If you add/rename a part or net, wire it fully — no
+    dangling pins, no split nets, refdes/pins must exist.
+  * LAYOUT-LINT ERRORS (fail the build):
+{err_lines}
+  * LAYOUT-LINT WARNINGS (advisory, but aim for zero):
+{warn_lines}
+PLACEMENT / ROUTING IDIOMS (how altium/build_<sheet>.py stays lint-clean):
+  - 100-mil grid; orthogonal wires only (no diagonals).
+  - Draw the WIRE to a connection point BEFORE placing a port there, and use
+    `port(side="auto")` so the body sits clear of the net (never impaling it).
+  - GND power symbols point DOWN (270deg) at the bottom of their net; rails point
+    UP (90deg). Don't put a GND symbol above its net.
+  - Keep readable spacing between components; don't let a label/value/port text
+    box land on a component body or another text box (text is linted as a 2-D box).
+  - Add a new part with `place_from_netlist`, then route every one of its pins.
+  - Don't run a wire through a body, a port body, or a third part's pin."""
+
+
 _APPLY_INSTRUCTIONS = f"""\
 This is an APPLY-CHANGELOG pass. The user just clicked Generate.
 
@@ -507,12 +552,18 @@ You will receive a list of changelog items the user accumulated. Your job:
 2. Be conservative: make the smallest change that satisfies the bullet.
    If a bullet is ambiguous, do the most reasonable interpretation and
    note your assumption in the final summary.
-3. DO NOT run the build yourself (`python -m test1.altium.build_project`) — the
+3. Write edits that will PASS THE GATES (below). A value-only change (e.g. a
+   resistor/cap value in netlist/*.yaml) is connectivity-safe; but adding,
+   removing, or rewiring a PART changes geometry + connectivity, so place and
+   route it per the idioms so the build stays clean.
+4. DO NOT run the build yourself (`python -m test1.altium.build_project`) — the
    GUI backend will run it after you return.
-4. When done, clear the changelog file ({CHANGELOG_FILE}) to an empty
+5. When done, clear the changelog file ({CHANGELOG_FILE}) to an empty
    list [] so the next chat turn starts clean.
-5. Finish with a terse summary block, one bullet per item, of what you
+6. Finish with a terse summary block, one bullet per item, of what you
    actually changed.
+
+{_lint_expectations()}
 """
 
 
@@ -765,6 +816,7 @@ async def start_chat_turn(session_id: str, user_msg: str) -> AgentRun:
         prompt=prompt,
         system_suffix=_CHAT_INSTRUCTIONS,
         permission_mode="acceptEdits",  # allows write to changelog.json
+        model=model_for("chat"),
     )
     run = _register("chat")
 
@@ -819,8 +871,76 @@ async def start_apply_pass() -> AgentRun:
         prompt=prompt,
         system_suffix=_APPLY_INSTRUCTIONS,
         permission_mode="acceptEdits",
+        model=model_for("apply"),
     )
     run = _register("apply")
+    asyncio.create_task(_run_subprocess(run, proc))
+    return run
+
+
+# ---------------------------------------------------------------------------
+# Closed-loop apply: after the apply pass, the backend builds + gates; if the
+# build fails, this fix pass is handed the ACTUAL failures (lint.json issues +
+# build output) and corrects them. Bounded by the orchestrator (apply_and_
+# generate) to a few rounds. This is what closes the loop the way a human would:
+# apply -> build -> read the gates -> fix -> rebuild, until clean.
+_LINT_FIX_INSTRUCTIONS = f"""\
+This is a LINT/VALIDATOR FIX pass. An apply pass just edited the design, the
+backend built it, and the build DID NOT pass its gates. You are given the exact
+failures. Fix them — and ONLY them — with the smallest edits to netlist/*.yaml
+and altium/build_<sheet>.py.
+
+1. Read each failing sheet's builder (altium/build_<sheet>.py) and netlist
+   (netlist/<sheet>.yaml) and fix the specific issues listed. A connectivity
+   failure usually means a pin/net wasn't fully wired; a layout ERROR
+   (off_grid / component_overlap / out_of_bounds / stub_t_short / diagonal_wire)
+   means geometry to nudge to grid, move apart, or reroute.
+2. Do NOT introduce new parts or change the design intent — you are repairing
+   the apply pass's edits to pass the gates, not redesigning.
+3. DO NOT run the build yourself — the backend rebuilds after you return and
+   re-checks. If a failure is genuinely not fixable by an edit here (e.g. it
+   needs a design decision), say so in your summary rather than guessing.
+4. Finish with a terse summary: which issues you fixed and how.
+
+{_lint_expectations()}
+"""
+
+
+def _build_fix_prompt(failures: dict, round_no: int, max_rounds: int) -> str:
+    """failures = {exit, status, counts, issues:[...], tail:[build output lines]}."""
+    issues = failures.get("issues", [])
+    errs = [i for i in issues if i.get("severity") == "ERROR"]
+    shown = errs or issues          # prioritize ERRORs; fall back to all
+    lines = "\n".join(
+        f"  - [{i.get('severity','?')}] {i.get('rule','?')} on sheet "
+        f"'{i.get('sheet','?')}': {i.get('message','')}"
+        for i in shown[:40]
+    ) or "  (no structured lint issues — see build output below)"
+    tail = "\n".join(failures.get("tail", [])[-25:])
+    return f"""\
+Build gate FAILED (fix round {round_no} of {max_rounds}).
+Exit code: {failures.get('exit')}   lint status: {failures.get('status')}   \
+counts: {failures.get('counts')}
+
+Failing issues to fix:
+{lines}
+
+Build output (tail):
+{tail}
+
+Fix these now."""
+
+
+async def start_lint_fix_pass(failures: dict, round_no: int, max_rounds: int) -> AgentRun:
+    """Spawn a bounded fix pass given the build's actual gate failures."""
+    prompt = _build_fix_prompt(failures, round_no, max_rounds)
+    proc, _cmd = await _spawn_claude(
+        prompt=prompt,
+        system_suffix=_LINT_FIX_INSTRUCTIONS,
+        permission_mode="acceptEdits",
+        model=model_for("lint_fix"),
+    )
+    run = _register("lint-fix")
     asyncio.create_task(_run_subprocess(run, proc))
     return run
 
@@ -897,6 +1017,7 @@ pin/unit count matches the datasheet, then print a one-line summary.
         system_suffix="",  # symbol gen doesn't need the chat instructions
         permission_mode="acceptEdits",
         add_dir=repo_root,  # let the agent write under Parts Library + run the build
+        model=model_for("symbol_gen"),
     )
     run = _register("symbol-gen")
     asyncio.create_task(_run_subprocess(run, proc))
@@ -1033,8 +1154,26 @@ async def start_sim_interpret(
     result_json: str,                # the raw ngspice result the GUI computed
 ) -> AgentRun:
     """Interpret the sim result against spec. Device parameters were already
-    extracted into the cache by the setup pass, so this pass only CONSUMES them
-    (and the datasheets, for citations) — it does not extract/write params."""
+    extracted into the cache by the setup pass; this pass CONSUMES them (inlined
+    into the prompt so it needn't open the cache or a datasheet) — it does not
+    extract/write params. Keeping interpret off the PDF-reading path is the
+    latency fix: ngspice itself runs in <1s, so a slow interpret (re-reading
+    datasheets) is what makes the GUI's interpret watchdog fire."""
+    # Inline THIS block's cached params straight into the prompt, so the agent
+    # cites from numbers it already has and (almost) never needs to read a PDF —
+    # the slow path that was timing the pass out. Only the block's own MPNs.
+    block_mpns = {d.get("mpn") for d in datasheets}
+    try:
+        _all = json.loads(_SIM_PARAM_CACHE.read_text())
+    except (json.JSONDecodeError, OSError, FileNotFoundError):
+        _all = {}
+    _cached = {m: e for m, e in _all.items() if m in block_mpns} if isinstance(_all, dict) else {}
+    cached_params_block = (
+        json.dumps(_cached, indent=2) if _cached
+        else "(no cached params for this block's parts — it has none that feed a model)"
+    )
+    # Datasheets are a LAST-RESORT fallback now (a missing-from-cache number),
+    # not the primary reference — list them but de-emphasize.
     ds_lines = "\n".join(
         f"  - {d['mpn']}: {PROJECT_DIR / 'Parts Library' / d['mpn'] / d['file']}"
         for d in datasheets
@@ -1042,21 +1181,30 @@ async def start_sim_interpret(
     instructions = f"""\
 This is a SIMULATION-INTERPRET pass for block '{block_id}', sim '{sim_type}'.
 
-Datasheets for this block's parts (for citing the numbers you compare against):
+Datasheets for this block's parts (FALLBACK only — prefer the cached params below):
 {ds_lines}
 
 Spec: {PROJECT_DIR / 'design_requirements.md'}
-Device-param cache (already populated by setup — READ-ONLY here): {_SIM_PARAM_CACHE}
 
-The device parameters this sim used were extracted by the setup pass and are
-in the param cache above. Do NOT re-extract or rewrite them. Read the cache and
-the datasheets to ground your judgement; cite the datasheet number you compare
-the result against. To read a datasheet (the Read tool can't rasterize these
-PDFs — no poppler), use the helper via BASH (plain `python`, no cd, no absolute
-path, don't write your own pdf script). TEXT FIRST:
-    python sim/read_pdf.py "<pdf path>" --pages 4-9 --text-only
-and only render an image if a specific value is unreadable as text:
-    python sim/read_pdf.py "<pdf path>" --pages 6,7   (then Read the PNGs)
+The setup pass ALREADY extracted every device parameter this sim needs and
+cached it. The cached params for this block's parts are inlined here so you do
+NOT need to open the cache file or any datasheet:
+{cached_params_block}
+
+LATENCY — BE FAST. The sim is done; your job is a quick verdict, and the GUI
+times the interpret pass out. Work from the numbers you ALREADY have: the result
+JSON below and the cached params above. Those param keys already name the value,
+its condition, and its unit (e.g. "VOS_uV_max_25C": 5) — cite them directly as
+your datasheet reference. Do NOT re-read datasheets to "ground" or "double-check"
+a number that is already cached, and do NOT read a part's datasheet just to
+explain a result — the cached spec is the citation. Reading PDFs is the slow path
+that makes this pass time out.
+ONLY if a SPECIFIC number you must compare against is genuinely ABSENT from the
+cached params above may you read it — at most ONE targeted, text-only call, then
+stop (you are in test1/; plain `python`, no cd):
+    python sim/read_pdf.py "<pdf path>" --pages <only the EC-table page> --text-only
+Never render PNG images during interpret (vision reads are the slowest path and
+stall the pass); the cached params are authoritative.
 
 The GUI already ran the ngspice sim. Raw result JSON:
 {result_json}
@@ -1064,10 +1212,10 @@ The GUI already ran the ngspice sim. Raw result JSON:
 The block's nominal pass criterion was: {pass_criterion}
 
 Your job:
-1. Cross-check the sim RESULT against the datasheet specs AND design
-   requirements. State whether it meets spec, with the actual margin and a
-   datasheet citation (section/page or the number). Use the cached params +
-   the datasheets for context — do not modify {_SIM_PARAM_CACHE}.
+1. Cross-check the sim RESULT against the cached params AND design requirements.
+   State whether it meets spec, with the actual margin and the cached param you
+   compared against (cite the param key/value — that IS the datasheet number).
+   Do not modify the cache. Do not re-derive cached numbers from PDFs.
 2. SUGGESTIONS are CIRCUIT-DESIGN changes ONLY — edits the schematic-generation
    phase can apply to netlist/*.yaml or altium/build_*.py and then regenerate the board.
    The changelog feeds an apply pass that edits the DESIGN, so every bullet must

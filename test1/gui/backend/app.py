@@ -1759,6 +1759,46 @@ def sim_set_agent_model(req: AgentModelReq) -> dict:
 # ---- Generate with changelog-apply ----------------------------------------
 class ApplyAndGenOpts(BaseModel):
     no_reopen: bool = True
+    # Closed-loop review: after the apply pass, build + read the gates
+    # (validator + layout lint); if the build fails, spawn a bounded fix pass
+    # with the actual failures and rebuild — up to LOOP_MAX_ROUNDS — so Generate
+    # lands a gate-clean change instead of shipping a broken build. Opt-in.
+    loop_review: bool = False
+
+
+# Hard cap on apply->build->fix rounds when loop_review is on (mirrors the sim
+# iterate cap: bounded so a stubborn failure can't spin forever).
+LOOP_MAX_ROUNDS = 3
+
+
+def _read_lint_failures() -> dict:
+    """Read out/lint.json + the latest generate run's output tail into the
+    failure payload the fix pass consumes. Called after a build to decide
+    whether the gates passed."""
+    out: dict = {"status": "unknown", "counts": {}, "issues": [], "tail": [], "exit": None}
+    try:
+        data = json.loads((ALTIUM_OUT / "lint.json").read_text())
+        out["status"] = data.get("status", "unknown")
+        out["counts"] = data.get("counts", {})
+        out["issues"] = data.get("issues", [])
+    except (OSError, json.JSONDecodeError):
+        pass
+    # latest generate run's exit code + output tail
+    gen = next((r for r in reversed(list(_RUNS.values())) if r.kind == "generate"), None)
+    if gen is not None:
+        out["exit"] = gen.returncode
+        out["tail"] = list(gen.lines)[-30:]
+    return out
+
+
+def _gates_passed(failures: dict) -> bool:
+    """The build is clean iff it exited 0 AND lint reports no ERRORs. (WARN/INFO
+    are advisory and don't fail the build — matching build_project's gate.)"""
+    if failures.get("exit") not in (0, None):
+        return False
+    if failures.get("status") == "fail":
+        return False
+    return int(failures.get("counts", {}).get("ERROR", 0)) == 0
 
 
 @app.post("/api/run/apply-and-generate")
@@ -1777,46 +1817,82 @@ async def run_apply_and_generate(opts: ApplyAndGenOpts = ApplyAndGenOpts()) -> d
     if BACKEND != "altium" and not GEN_SCRIPT.exists():
         raise HTTPException(500, "gen_schematic.py missing")
 
+    # --- helpers shared by both paths ---------------------------------------
+    def _generate_cmd() -> tuple[list[str], str | None]:
+        if BACKEND == "altium":
+            return [sys.executable, "-m", "test1.altium.build_project"], str(REPO_ROOT)
+        cmd = [sys.executable, str(GEN_SCRIPT)]
+        if opts.no_reopen:
+            cmd.append("--no-reopen")
+        return cmd, None
+
+    async def _await_run(run_id: str) -> None:
+        r = _RUNS.get(run_id)
+        while r is not None and r.status == "running":
+            await asyncio.sleep(0.25)
+
+    async def _await_agent(run_id: str) -> None:
+        ar = agent_mod.get_run(run_id)
+        while ar is not None and ar.status == "running":
+            await asyncio.sleep(0.25)
+
+    async def _build_once() -> str:
+        cmd, cwd = _generate_cmd()
+        gid = await _start_run("generate", cmd, cwd=cwd)
+        await _await_run(gid)
+        return gid
+
     items = agent_mod.load_changelog()
     apply_run_id: str | None = None
     if items:
         apply_run = await agent_mod.start_apply_pass()
         apply_run_id = apply_run.run_id
 
-    # If there are no apply items, start generate immediately and return its ID.
-    # If there are apply items, start the apply pass and chain to generate in the background.
+    # ---- CLOSED-LOOP REVIEW path -------------------------------------------
+    # apply -> build -> read the gates -> if failed, bounded fix pass -> rebuild,
+    # up to LOOP_MAX_ROUNDS, so Generate lands a gate-clean change. All phases run
+    # in the background and surface via the run registry / SSE, exactly like the
+    # plain path; the frontend streams "generate"/"apply"/"lint-fix" runs as they
+    # appear. (Altium backend only — the loop reads the validator+lint gate.)
+    if opts.loop_review and BACKEND == "altium":
+        async def chain_with_loop_review() -> None:
+            if apply_run_id:
+                await _await_agent(apply_run_id)
+            await _build_once()
+            failures = _read_lint_failures()
+            rnd = 0
+            while not _gates_passed(failures) and rnd < LOOP_MAX_ROUNDS:
+                rnd += 1
+                fix = await agent_mod.start_lint_fix_pass(failures, rnd, LOOP_MAX_ROUNDS)
+                await _await_agent(fix.run_id)
+                await _build_once()
+                failures = _read_lint_failures()
+            # final state is whatever the last build left in lint.json / run registry
+        asyncio.create_task(chain_with_loop_review())
+        return {
+            "apply_run_id": apply_run_id,
+            "generate_run_id": None,    # phases appear in the run registry as they start
+            "queued_items": len(items),
+            "loop_review": True,
+            "max_rounds": LOOP_MAX_ROUNDS,
+        }
+
+    # ---- PLAIN path (unchanged behavior) -----------------------------------
     if not apply_run_id:
-        # No apply pass needed: start generate directly
-        if BACKEND == "altium":
-            cmd = [sys.executable, "-m", "test1.altium.build_project"]
-            generate_run_id = await _start_run("generate", cmd, cwd=str(REPO_ROOT))
-        else:
-            cmd = [sys.executable, str(GEN_SCRIPT)]
-            if opts.no_reopen:
-                cmd.append("--no-reopen")
-            generate_run_id = await _start_run("generate", cmd)
+        # No apply pass needed: start generate directly and return its id.
+        cmd, cwd = _generate_cmd()
+        generate_run_id = await _start_run("generate", cmd, cwd=cwd)
         return {
             "apply_run_id": None,
             "generate_run_id": generate_run_id,
             "queued_items": 0,
         }
 
-    # Apply items exist: start generate after apply completes, in the background.
     async def chain_to_generate() -> None:
         """Wait for apply to complete, then start generate."""
-        ar = agent_mod.get_run(apply_run_id)
-        assert ar is not None
-        while ar.status == "running":
-            await asyncio.sleep(0.25)
-        # Now start the generate subprocess
-        if BACKEND == "altium":
-            cmd = [sys.executable, "-m", "test1.altium.build_project"]
-            await _start_run("generate", cmd, cwd=str(REPO_ROOT))
-        else:
-            cmd = [sys.executable, str(GEN_SCRIPT)]
-            if opts.no_reopen:
-                cmd.append("--no-reopen")
-            await _start_run("generate", cmd)
+        await _await_agent(apply_run_id)
+        cmd, cwd = _generate_cmd()
+        await _start_run("generate", cmd, cwd=cwd)
 
     asyncio.create_task(chain_to_generate())
     return {
