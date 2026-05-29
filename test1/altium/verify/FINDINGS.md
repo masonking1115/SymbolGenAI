@@ -7,7 +7,7 @@ SCH API, diffs against altium_monkey's counts).
 
 ## Headline
 
-The KiCad→Altium backend is sound. Real Altium opens altium_monkey's
+The Altium backend is sound. Real Altium opens altium_monkey's
 `.SchDoc` **uncorrupted** and agrees on every object type **except junctions**:
 
 | Object | Altium | altium_monkey |
@@ -43,7 +43,7 @@ each with an explicit junction (`out/junction_repro.SchDoc`).
 **Conclusion:** altium_monkey cannot currently emit a junction that real Altium
 retains. Upstream write bug — file with this repro.
 
-## Why the migration is not blocked
+## Why this does not block the backend
 
 `AltiumSchDoc.to_netlist()` on the smoke schematic shows correct connectivity
 **without** junction objects:
@@ -57,8 +57,8 @@ retains. Upstream write bug — file with this repro.
 Real Altium **auto-junctions T-intersections** electrically. So:
 
 - **Design rule for the backend:** emit no junction object dependence; never
-  route a 4-way crossing (split into offset T's). The KiCad `gnd_bus` /
-  `decoupling_cluster` helpers already tap as T-intersections.
+  route a 4-way crossing (split into offset T's). The `gnd_bus` helper and the
+  per-sheet rail taps already connect as T-intersections.
 - Junctions are retained only in our internal validator connectivity graph.
 - `AltiumSheet.junction()` still adds the (Altium-ignored) record so the
   altium_monkey SVG shows the dot; it is cosmetic, not electrical.

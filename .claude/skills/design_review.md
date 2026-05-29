@@ -1,19 +1,29 @@
 ---
 name: design-review
-description: Review a KiCad hierarchical schematic against (a) the datasheets of every IC, MOSFET and passive in the design, and (b) a project-level design_requirements.md. Cross-references the two and emits an error_log.md of failures (must-fix) and warnings (should-fix). Never edits the schematic — output is read-only.
+description: Review the design (the netlist YAML + built Altium .SchDoc/.PrjPcb) against (a) the datasheets of every IC, MOSFET and passive, and (b) the project-level design_requirements.md. Cross-references the two and emits an error_log.md of failures (must-fix) and warnings (should-fix). Never edits the design — output is read-only.
 ---
 
 # Schematic design review (functional + requirements)
 
-Use when the user asks to "review" / "audit" / "check" a KiCad schematic project against its datasheets and/or requirements doc. Produces an `error_log.md` listing every deviation, grouped by component and severity. **Do not edit the schematic.** This is a read-only audit.
+Use when the user asks to "review" / "audit" / "check" the design against its datasheets and/or requirements doc. Produces an `error_log.md` listing every deviation, grouped by component and severity. **Do not edit the design.** This is a read-only audit.
+
+> The connectivity source of truth is `netlist/<sheet>.yaml` (read it via
+> `gen.netlist.load_netlist`, the same loader the generator and `review/`
+> package use). The built `test1/altium/out/<sheet>.SchDoc` shows what was
+> actually wired (open with `AltiumSchDoc(path)` and trace pins/wires/power
+> ports). Review the YAML + built design, NOT KiCad `.kicad_sch` files — the
+> KiCad backend was removed. This skill is the human-judgement audit; the
+> Voltai-PDF ingest path (`_review_incoming/` → `review/findings.json` →
+> `review/fix_queue.json`) and its agent-loop are in [[review-fix-queue]].
 
 ## Inputs
-- **Project directory** with hierarchical `.kicad_sch` files (root + sub-sheets).
-- **`design_requirements.md`** (or equivalent) — board-level spec, pin assignments, jumper/header layout, BOM constraints.
-- **Per-part datasheets** — PDFs in a `Parts Library/<MPN>/` layout (or `datasheets/` flat).
+- **Netlist YAML** (`test1/netlist/<sheet>.yaml`) — the declared connectivity per sheet.
+- **Built design** (`test1/altium/out/<sheet>.SchDoc` + `out/test1.PrjPcb`) — what was actually generated/wired.
+- **`design_requirements.md`** — board-level spec, pin assignments, jumper/header layout, BOM constraints, design rationale.
+- **Per-part datasheets** — PDFs in the `Parts Library/<MPN>/` layout.
 - **Top-level reference PDF** (e.g. an "External Bobcat Board Design.pdf") that may carry application-circuit guidance the datasheets alone don't.
 
-If any of these are missing, ask the user to point at them before starting. Don't infer requirements from the schematic itself — that defeats the purpose of a review.
+If any of these are missing, ask the user to point at them before starting. Don't infer requirements from the design itself — that defeats the purpose of a review.
 
 ## Two-pass review structure
 
@@ -26,7 +36,7 @@ For **each IC, FET, and bias passive** in the schematic, open its datasheet and 
 5. **Configuration / mode pins** — strap pins (e.g. TPS7A8401A ANY-OUT, /LDAC, address pins, /CS, /WP, mode select) match the intended configuration.
 6. **NC pins** — explicit `(no_connect …)` markers on every pin the datasheet calls out as NC. Never wire NC.
 7. **Polarity** — for active devices, confirm current/voltage direction: e.g., bias-current sources sourcing INTO vs sinking OUT of a pin per the chip's pin definition.
-8. **Pinout symbol vs datasheet** — every symbol's `(pin … (number "N") (name "…"))` matches the datasheet pin table. Symbol-library bugs are common; verify at least the power and signal pins.
+8. **Pinout symbol vs datasheet** — every symbol's pins (read via `symlib.read_pins(mpn)` on `Parts Library/<MPN>/<MPN>.SchLib`, or from the placed component) match the datasheet pin table by number and name. Symbol-library bugs are common (especially UL-sourced parts); verify at least the power and signal pins.
 
 ### Pass 2 — Correctness against design requirements
 For **each top-level requirement** in `design_requirements.md`, verify:
@@ -91,12 +101,12 @@ A small table of every Pass-1 finding mapped to the requirement(s) it conflicts 
 
 ## Process checklist (do these in order)
 
-1. **Enumerate the BOM** — walk every `.kicad_sch` and list every `(symbol …)` with refdes, lib_id, value, DNP flag.
+1. **Enumerate the BOM** — walk every `netlist/<sheet>.yaml` (`parts:` block) and list every refdes with its lib_id, value, units, and DNP-by-value. Cross-check against the built `.SchDoc` if you need to confirm what was actually placed.
 2. **Read the requirements doc** in full — extract every numeric spec, every required passive, every pin assignment into a checklist.
 3. **Open the top-level reference PDF** — extract pinout tables and any application-circuit notes that supersede or augment the per-IC datasheets.
 4. **For each IC**, open its datasheet and walk pins 1..N; verify per Pass-1 rules.
 5. **For each requirement bullet**, verify per Pass-2 rules. Grep the schematic for value strings (`10k`, `0`, `2.2k`, `0.1uF`, …) and component counts to catch missing passives.
-6. **Trace every hierarchical and global label** — verify each named net has a driver and at least one sink, on the sheets the requirements expect. Dangling globals are usually missing wiring, not intentional NCs.
+6. **Trace every cross-sheet port and power port** — verify each named net has a driver and at least one sink, on the sheets the requirements expect. A port appearing on only one sheet with nothing to pair it on the root/other sheets is usually missing wiring, not an intentional NC. (Reminder: altium_monkey's single-sheet netlister doesn't resolve signal-port names — confirm cross-sheet nets against the `.PrjPcb`, or against the netlist YAML which is the declared truth.)
 7. **Write `error_log.md`** at project root. Be specific: cite `file:line` for every observation.
 8. **Do not edit the schematic.** Tell the user the log is ready and let them choose what to fix.
 
@@ -104,10 +114,10 @@ A small table of every Pass-1 finding mapped to the requirement(s) it conflicts 
 
 - **Symbol-library bugs are common.** UL-sourced symbols sometimes mislabel power pins or omit ANY-OUT pins. Always cross-check pin numbers against the manufacturer datasheet.
 - **Open-drain pins need pull-ups.** TPS7A8401A PG, I²C SDA/SCL, MCP4728 RDY/BSY — all need explicit pull-ups; "the host provides one" is a hope, not a design.
-- **Hierarchical pins with no wire** on one side of the boundary still parse but dangle. Confirm both ends of every hier-label have wires.
-- **Global labels that appear on only one sheet** are dangling. Grep across all sheets for each global name.
-- **DNP-by-value-text vs DNP-flag** — the BOM tool may use one or the other. Flag the disagreement so the user picks a convention.
-- **Stacked power symbols** at the same coordinate (test point + GND symbol overlaid) collapse correctly but are easy to miss visually — confirm by reading the file, not just looking at the canvas.
+- **Ports with no wire** on one sheet still parse but dangle. Confirm both ends of every cross-sheet net (port on each side, plus the root sheet entry) actually have wires; grep the netlist YAML to see which sheets a net is declared on.
+- **A cross-sheet net named on only one sheet** is dangling. Check each net name appears on every sheet the requirements expect.
+- **DNP-by-value-text vs DNP convention** — confirm a part meant to be Do-Not-Populate is marked consistently. Flag any disagreement so the user picks a convention.
+- **Stacked power symbols** at the same coordinate (test point + GND symbol overlaid) are easy to miss visually — confirm by reading the netlist/`.SchDoc`, not just looking at the rendered SVG.
 - **Series 0Ω cap placement** — for a "decoupling + series-R" pair, the decoupling cap should be on the IC side of the 0Ω, not the supply side. Verify.
 - **FMC connector standards** — the LPC/HPC variants assign specific pins to specific power/management functions; don't trust requirements doc tables blindly, cross-check against VITA 57.1.
 

@@ -28,7 +28,7 @@ This builds all child sheets, runs the validator + layout linter on each, builds
 3. **Express coords RELATIVELY** off returned pin coords (`rail_y = pins["15"][1] - 550`), not absolute literals. Centering is applied as a build-time global offset (`set_build_offset`), and `place()` strips it back out of returned coords so pin-chaining stays correct — so relative routing cascades automatically when the sheet re-centers.
 4. **Wire it**: `s.wire(x1,y1,x2,y2)`, `s.net_label(net,x,y)`, `s.port(name,x,y,io)`, `s.power_at(rail,x,y)`, `s.no_connect(x,y)`, `s.gnd_bus(pins, rail_x)` for a shared ground rail. Cosmetic notes via `s.text(body,x,y)`.
 5. **Validate + lint**: `build_project` runs `gen.validator.validate` (connectivity gate — raises on disconnect/split) then `layout_lint.lint(s)` (geometry). A clean build prints `0/0/N` per sheet (E/W/I). ERROR fails the build; the cosmetic-note auto-fixer (`s.auto_fix_text()`) nudges overlapping `text` notes before the gate. See [[lint-autofix-and-generate-fix]].
-6. **Lint-first iteration loop**: when a visual issue surfaces, FIRST add a `_check_*` to `layout_lint.py` (it's the mil/Altium analogue of the old KiCad linter — `off_grid`, `diagonal_wire`, `out_of_bounds`, `component_overlap`, `wire_overlap`, `bridged_drop`, `wire_through_body`, `wire_through_label`, `ground_on_top`, `off_center`, `cramped_spacing`, …), THEN fix the offending case. Every check that exists is one less round-trip.
+6. **Lint-first iteration loop**: when a visual issue surfaces, FIRST add a `_check_*` to `layout_lint.py`, THEN fix the offending case. Every check that exists is one less round-trip. The current `RULES` registry (surfaced in the GUI Generator tab): `off_grid`, `diagonal_wire`, `out_of_bounds`, `component_overlap`, `power_orientation`, `visible_param_glob`, `wire_through_label`, `power_straddles_net`, `ground_on_top`, `wire_through_body`, `off_center`, `cramped_spacing`, `label_overlap`, `label_over_symbol`, `label_symbol_clearance`, `wire_through_port`, `offpage_text`, `wire_overlap`, `stub_t_short`, `bridged_drop`, `duplicate_wire`, `redundant_junction`, plus the library-scope `pin_name_overlap`. **Do not weaken or fundamentally restructure the linter** — only add checks or refine a threshold with evidence.
 7. **View** the result by opening `out/test1.PrjPcb` in real Altium (see [[altium-launch-dev-build]]), or rasterize a sheet with the dev-only `test1/altium/_render.py` (SVG→reportlab PDF→pymupdf PNG; cairo isn't available on this machine).
 
 ## Coordinate conventions (Altium)
@@ -46,6 +46,8 @@ This builds all child sheets, runs the validator + layout linter on each, builds
 - **GND sits below its net** (`ground_on_top`): a GND port whose wires all drop downward is above its net — jog right then drop so the symbol lands at the bottom.
 - **Stay centered + in-bounds.** `off_center` (content-bbox center >18% off page center) and `out_of_bounds` (content outside the page frame). Centering is the build-time offset, not per-part moves.
 - **Spacing.** `cramped_spacing` flags two non-power parts <200 mil apart (not overlapping); `component_overlap` flags actual overlaps.
+- **Labels/ports must not bump symbols.** `label_over_symbol` flags a port/value/text box that OVERLAPS a component body; `label_symbol_clearance` flags a port or text note sitting <50 mil of TRUE clear space from a body (a part's own value and aligned passive value labels — e.g. 0Ω jumper banks — are exempt). Both measure against the **true drawn body** (`PlacedPart.graphic_box` from altium_monkey's `full_bounds_mils()`), NOT the pin column — single-column parts (FMC/SMA/headers) have a body rectangle offset to one side of their pins, so a pin-only box understates the width and misses a port landing on the connector. When placing a port near a single-column connector, leave clearance to the drawn body edge, not the pin x.
+- **Text must stay on the page, accounting for the frame.** `offpage_text` flags any label/value/note/body box outside the sheet's USABLE area — the region inside Altium's border + reference-zone margin (`_PAPER_MARGIN`), not the raw page rectangle. A port body whose name text reaches the frame edge is flagged even if it's "within the page."
 
 ## Hierarchical (multi-sheet) designs
 The design is hierarchical: a root sheet embeds one child `.SchDoc` per functional block. `build_root.py` emits the root via `s.sheet_symbol(child_name, title, x, y, ...)`; `build_all.py` holds the `BUILDERS` list; `build_project.py` ties root + children into `test1.PrjPcb`.
@@ -61,16 +63,16 @@ The design is hierarchical: a root sheet embeds one child `.SchDoc` per function
 |---|---|---|---|
 | eeprom | `build_eeprom.py` | 24AA08 I²C EEPROM | A4 |
 | connectors | `build_connectors.py` | CLK/OSC/GPIO SMAs + header | A2 |
-| power | `build_power.py` | TPS7A8401A LDO + jumpers | A3 |
-| bias | `build_bias.py` | MCP4728 DAC + OPA2388 + PMOS + sense | A2 |
+| power | `build_power.py` | TPS7A8401A LDO + jumpers + TPS22916 load switch | A3 |
+| bias | `build_bias.py` | MCP4728 DAC + OPA2388 + PMOS + sense + NMOS isolation | A2 |
 | fmc | `build_fmc.py` | VITA 57.1 LPC 160-pin connector | A3 |
 | bobcat | `build_bobcat.py` | Bobcat QFN DUT + decoupling/pulls | A2 |
-| root | `build_root.py` | sheet symbols only, no parts | A4 |
+| root | `build_root.py` | sheet symbols only, no parts | A3 |
 
 **Rules driving the split (candidate generalizations):** one supply domain per page; the DUT gets its own page (never split its decoupling/pull network); connector banks get dedicated pages; independent sub-blocks (EEPROM, Bias) each get a page even if small; target 5–15 placed parts per page.
 
-### Sheet template (A4-preferred auto-fit)
-`AltiumSheet` defaults to **A4** and auto-upgrades to the smallest A-series size that contains the layout (`_fit_paper`, sizes in `_PAPER_MIL`). Simple sheets stay A4; dense ones grow. Nothing should overflow its frame (`out_of_bounds` ERROR).
+### Sheet template (A4-preferred auto-fit) + real Altium frame sizes
+`AltiumSheet` defaults to **A4** and auto-upgrades to the smallest A-series size that contains the layout (`_fit_paper`). A sheet can also declare its paper explicitly (`paper="A2"`) when content is known to need it. **`_PAPER_MIL` holds Altium's REAL drawable frame sizes** (A3 = 15500×11100, *not* ISO 216's 16535×11690 — Altium sheet styles are ~1000 mil smaller), and `_PAPER_MARGIN` is the border/reference-zone band each side. `out_of_bounds` (content past the frame) is an ERROR; `offpage_text` checks the usable area *inside* the margin. Don't size content against ISO dimensions — a layout that fits ISO A3 can still overflow Altium's A3 frame.
 
 ## Builder API quick reference (`test1/altium/shared.py`)
 ```python

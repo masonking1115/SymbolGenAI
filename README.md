@@ -1,134 +1,117 @@
-# Symbol Library AI
+# HW/SW Codesigner
 
-AI-assisted EDA tooling. Inputs: part datasheets + freeform design requirements. Outputs: validated KiCad symbol libraries (`.kicad_sym`) and complete application schematics (`.kicad_sch`) that open in eeschema.
+AI-assisted EDA tooling. Inputs: part datasheets + freeform design requirements.
+Outputs: a validated **Altium** schematic project (`.PrjPcb` + per-sheet
+`.SchDoc`), a native Altium symbol library (`.SchLib`) and footprints
+(`.PcbLib`). A local GUI drives the generate / review / simulate loop.
 
-Long-term direction: a chunked design pipeline (`spec → part fingerprints → nets → BOM → schematic`) with a Python/ngspice simulation feedback loop, and integration into the user's existing platform with its own chat front end.
+The backend is pure-Python [`altium_monkey`](https://github.com/wavenumber-eng/altium_monkey)
+— it reads/writes Altium's native binary files with **no Altium install or
+scripting API needed to build**. Altium Designer is only needed to *open*,
+compile, and fidelity-verify the result.
 
-See [PROJECT_MEMORY.md](PROJECT_MEMORY.md) for the full handoff doc (architecture, skills, running eeschema, current state).
+> The project began on a KiCad backend; that backend was removed and Altium is
+> now the only one. The declarative netlist and the connectivity validator are
+> backend-agnostic and were reused unchanged. See
+> [PROJECT_MEMORY.md](PROJECT_MEMORY.md) for the full handoff (environment,
+> pipeline, skills, current state) and [docs/pipeline.tex](docs/pipeline.tex) for
+> the architecture writeup.
 
 ## Repo layout
 
 ```
-.claude/skills/        per-stage skill docs (symbol gen, circuit gen, KiCad launch)
-test1/                 active project — Bobcat carrier-board parts library
-PROJECT_MEMORY.md      project memory + handoff
+.claude/skills/        per-stage skill contracts (symbol, circuit, launch, review)
+docs/pipeline.tex      LaTeX architecture writeup
+test1/                 active project — Bobcat carrier board
+PROJECT_MEMORY.md      project memory + handoff (read this first)
 README.md
 ```
 
 ## Per-project convention — strict isolation
 
-Every design is its own self-contained folder. Two projects that use the same MPN each carry their own copy of the symbol and datasheet — no cross-contamination of data between projects.
+Every design is its own self-contained folder, including the parts it uses. Two
+projects that use the same MPN each carry their own copy of the symbol and
+datasheet — editing one project's library cannot silently affect another.
 
 ```
 <project>/
-   design_requirements.md               REQUIRED — application, specs, parts list, notes
-   <project>.kicad_pro
-   <project>.kicad_sch                  schematic — embeds lib_symbols self-contained
-   datasheets/<MPN>/
-      <MPN>.kicad_sym                   parts used in this project only
-      <MPN>.pdf                         source datasheet (optional)
-   generate.py                          Python generator (optional)
+   design_requirements.md            REQUIRED — source of truth: application, specs, parts, rationale
+   netlist/<sheet>.yaml              declarative connectivity (canonical)
+   Parts Library/<MPN>/<MPN>.SchLib  parts used in this project only (+ .PcbLib, .pdf)
+   altium/                           the generator backend for this project
 ```
 
-`design_requirements.md` is the source of truth for what is being designed and why; read it first when entering a project. See PROJECT_MEMORY.md for the suggested section structure. Add more files (e.g. `nets.yaml`, `bom.yaml`, `sim/`) as a project evolves — always inside the per-project folder.
+Do not create a shared parts dir at the repo root. The duplication is
+intentional — a project folder is a complete, transportable unit.
 
-Do not create a shared `datasheets/` at the repo root. The duplication is intentional: each project folder is a complete, transportable unit, and editing one project's symbols cannot silently affect another.
+## Build
 
-## Running a generated schematic in eeschema
+From the repo root, with the spike-venv interpreter (Python 3.11–3.12 +
+`altium-monkey`; venv lives outside the repo at
+`C:\Users\mking\Downloads\altium_spike\.venv`):
 
-This machine uses a partial KiCad dev build at `~/Downloads/kicad/`. See [`.claude/skills/kicad-launch-dev-build.md`](.claude/skills/kicad-launch-dev-build.md) for the working binary paths and the kiface/resource symlinks.
-
-On a fresh machine, `brew install kicad` and open the schematic directly:
-
-```sh
-open -a KiCad <project>/<project>.kicad_pro
+```powershell
+C:\Users\mking\Downloads\altium_spike\.venv\Scripts\python.exe -m test1.altium.build_project
 ```
 
-Schematics generated through the skills embed their `lib_symbols` self-contained, so they render without registering the `.kicad_sym` files in the user-level `sym-lib-table`.
+This builds all 6 child sheets + the hierarchical root, runs the two gates per
+sheet, and writes `test1/altium/out/test1.PrjPcb` + one `.SchDoc` per sheet + the
+merged `out/lib/parts.SchLib`. `out/` is generated (gitignored).
 
-## Editing in eeschema
+To open / verify in real Altium (this Windows machine has AD26 installed), see
+the `altium-launch-and-verify` skill.
 
-Two workflow rules to make edits durable and avoid the "false save" trap. Full rationale in [PROJECT_MEMORY.md](PROJECT_MEMORY.md).
-
-1. **Symbol-shape edits only go through the Symbol Editor on the canonical `<project>/datasheets/<MPN>/<MPN>.kicad_sym`.** Never use right-click → Edit Symbol on a placed instance — that writes only to the schematic's embedded copy and is overwritten by the next `generate.py` run. After editing the canonical file, run **Tools → Update Symbols from Library** in eeschema to refresh.
-2. **End every editing session with `git add && git commit && git push`.** Cmd+S writes to disk; only a commit reaches GitHub. Schematic placement, wires, refdes, and values can be edited freely in eeschema — just commit when done.
-
-## Skills
-
-- [`kicad-symbol-from-datasheet`](.claude/skills/kicad-symbol-from-datasheet.md) — generate a `.kicad_sym` from a PDF datasheet.
-- [`kicad-circuit-from-topology`](.claude/skills/kicad-circuit-from-topology.md) — build a full schematic from a parts list + net topology, with layout rules to avoid text overlap and floating nets.
-- [`kicad-launch-dev-build`](.claude/skills/kicad-launch-dev-build.md) — open schematics in eeschema and run `kicad-cli` on this machine's specific dev build.
-
-## Schematic generation pipeline (test1 reference)
-
-The active reference project, [`test1/`](test1/), implements the end-to-end pipeline below. Read each stage's named module for the actual contract.
+## Pipeline
 
 ```
-                        ┌─────────────────────────────────────┐
-  design_requirements   │ test1/design_requirements.md        │
-  ─────────────────────►│   (manual: application, specs, BOM) │
-                        └─────────────────────────────────────┘
-                                         │
-                                         ▼
-  parts (per-MPN)       ┌─────────────────────────────────────┐
-  ─────────────────────►│ test1/Parts Library/<MPN>/          │
-   kicad-symbol-        │   <MPN>.kicad_sym + .pdf            │
-   from-datasheet skill │   (one folder per MPN — strict)     │
-                        └─────────────────────────────────────┘
-                                         │
-                                         ▼
-  netlist (per-sheet)   ┌─────────────────────────────────────┐
-  ─────────────────────►│ test1/netlist/<sheet>.yaml          │
-   (manual: nets +      │   parts: {refdes: {lib_id, value}}  │
-    members per net)    │   nets:  {name: [Rx.1, Uy.5, ...]}  │
-                        └─────────────────────────────────────┘
-                                         │
-                                         ▼
-  layout (per-sheet)    ┌─────────────────────────────────────┐
-  ─────────────────────►│ test1/gen/build_<sheet>.py          │
-   (Python, relative    │   place(U1, x, y) → returns pin map │
-    to chip pins)       │   wire(...) / junction(...) /       │
-                        │   power_at(...) / hier_label(...)   │
-                        │  + gen/shared.py (Sheet, primitives)│
-                        └─────────────────────────────────────┘
-                                         │
-                                         ▼
-  generator             ┌─────────────────────────────────────┐
-  ─────────────────────►│ test1/gen_schematic.py              │
-   (orchestrator)       │   per sheet:                        │
-                        │     • emit .kicad_sch               │
-                        │     • strict net validator          │
-                        │     • layout lint                   │
-                        │     • kicad-cli sch export png      │
-                        │   → kicad/<sheet>.kicad_sch         │
-                        │   → kicad/render/<sheet>.png        │
-                        └─────────────────────────────────────┘
-                                         │
-                       ┌─────────────────┴────────────────┐
-                       ▼                                  ▼
-              ┌─────────────────┐               ┌──────────────────┐
-              │ visual review   │               │ open in eeschema │
-              │ (Read PNG —     │               │ for final user   │
-              │  catches what   │               │ sign-off         │
-              │  lint misses)   │               └──────────────────┘
-              └─────────────────┘
+  design_requirements.md ─► netlist/<sheet>.yaml ─► test1/altium/build_<sheet>.py ─► build_project
+        (manual)              (declarative,            (place from netlist,            (orchestrator:
+                               canonical)               route from live pin             per sheet → validate
+                                                        hot-spots, relative coords)      → lint → render SVG;
+                                                                                         emit .PrjPcb + .SchDoc)
 ```
 
-### Gate semantics
+### Gates (per sheet, in order)
 
-The orchestrator runs three gates per sheet, in order:
+1. **Connectivity validator** ([`test1/gen/validator.py`](test1/gen/validator.py),
+   reused backend-agnostic) — every YAML net member must land in a connected
+   component named that net. Raises `ValidationError`; **fails the build**.
+2. **Layout linter** ([`test1/altium/layout_lint.py`](test1/altium/layout_lint.py))
+   — geometric checks the validator can't see (silent shorts via wire overlap,
+   ports impaling bodies, labels bumping symbols, off-page text, …). Severities
+   `ERROR/WARNING/INFO`, reported per sheet as `E/W/I`. A clean build is `0/0/0`
+   on every sheet. ERROR fails the build; WARNING/INFO are advisory.
+3. **Parse + render** — `AltiumSheet.render_svg` (altium_monkey `to_svg`) is the
+   in-process parse gate; the GUI serves the SVGs.
 
-1. **Strict net validator** ([`test1/gen/validator.py`](test1/gen/validator.py)) — every YAML-declared net member must be in a connected component named that net. Raises `ValidationError` on failure. This is the hard correctness gate; build fails if any sheet doesn't pass.
-2. **Layout linter** ([`test1/gen/layout_lint.py`](test1/gen/layout_lint.py)) — advisory geometric checks for visual issues the validator can't catch (silent shorts via parallel-range wire overlap, label-on-wire-interior, label crowding components, wires crossing label text, …). Severity is `ERROR / WARNING / INFO`; reported but does not fail the build. The current full check set:
-   - `diagonal_wires`, `bbox_overlap_and_spacing`, `wire_through_body`, `wire_into_body`, `bridged_drop_column`, `wire_overlap`, `label_on_body`, `refval_on_body`, `vertical_label`, `wire_through_label`, `wire_crosses_label_text`, `label_overlap_part`, `dense_gnd_cluster`, `duplicate_wires`, `redundant_junctions`.
-3. **Parse + render** (`kicad-cli sch export png`) — emits `kicad/render/<sheet>.png` and surfaces any s-expr parse failure as exit-code-3 `"Failed to load schematic"`.
+The full rule set and the builder API are documented in the
+`altium-circuit-from-topology` skill.
 
 ### Coordinate convention
 
-All coordinates inside a build module are **chip-pin-relative**, not absolute. The only true anchor is each IC's `place_from_netlist(x, y)` call. Every downstream rail / column / label anchor is expressed as `U1["<pin>"][offset_axis] ± delta`. This keeps origin snaps cascade-free: shifting U1 by 0.46 mm to land it on grid requires zero downstream edits.
-
-The 50-grid (1.27 mm) is the coordinate floor. Standard `Device:R/C/L` pins are at local ±3.81 mm (50-grid), so wire endpoints touching those pins are inherently on 50-grid; trying to force everything to 100-grid is impossible without redrawing the symbol library. Pre-emission coords are rounded to 3 decimals so float arithmetic (`R10_X - 6.35 - 5.08`) doesn't pollute the `.kicad_sch` git diff.
+Coordinates are **mils, Y-up (Altium native), 100-mil grid**. All routing is
+**chip-pin-relative** — the only anchor is each IC's `place_from_netlist(x, y)`;
+everything else is `pins["<n>"][axis] ± delta`, so shifting a chip cascades
+without downstream edits. Centering is a build-time global offset, not per-part
+translation. `off_grid` and `diagonal_wire` are lint ERRORs.
 
 ### Lint-first iteration
 
-When the visual review surfaces an issue (yours or via screenshot), the first move is to **convert the rule into a new `_check_*` in `layout_lint.py`** before fixing the offending case. Every check that exists is one less round-trip on future iterations. See the skill doc's Process section for the full loop.
+When a visual issue surfaces, first add a `_check_*` to `layout_lint.py`, then
+fix the offending case — every check is one less future round-trip. Do not weaken
+or fundamentally restructure the linter; only add checks or refine thresholds
+with evidence.
+
+## Skills
+
+- [`altium-symbol-from-datasheet`](.claude/skills/altium-symbol-from-datasheet.md) — make/import a `.SchLib` (pin-spec author or Ultra Librarian).
+- [`altium-circuit-from-topology`](.claude/skills/altium-circuit-from-topology.md) — build a full project from a netlist + topology; the builder API + every layout rule the linter enforces.
+- [`altium-launch-and-verify`](.claude/skills/altium-launch-and-verify.md) — open in real Altium AD26, preview sheets, run the fidelity oracle.
+- [`design-review`](.claude/skills/design_review.md) — read-only functional + requirements audit → `error_log.md`.
+- [`review-fix-queue`](.claude/skills/review-fix-queue.md) — triage queued review fixes via the YAML→builder→rebuild path.
+
+## GUI
+
+[`test1/gui/`](test1/gui/) — FastAPI backend (port 8765) drives the Altium
+pipeline and serves renders; React+Vite frontend (port 5173). See
+[test1/gui/README.md](test1/gui/README.md).

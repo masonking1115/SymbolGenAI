@@ -1,13 +1,19 @@
-# test1/altium — Altium backend (Gate 0)
+# test1/altium — Altium backend
 
-Migration of the KiCad generator's backend to **Altium**, via
+The generator backend, built on
 [`altium_monkey`](https://github.com/wavenumber-eng/altium_monkey) (pure-Python
-read/write of Altium binary files — no Altium install or scripting API needed).
+read/write of Altium binary files — no Altium install or scripting API needed to
+build). The full test1 design is ported and builds clean.
 
-**Strategy:** `netlist/*.yaml` stays the canonical source of truth; only the
-backend swaps. This package mirrors `gen/` module-for-module.
+**Strategy:** `netlist/*.yaml` is the canonical source of truth; this package is
+the Altium backend that consumes it. It reuses the backend-agnostic `gen/`
+core (`gen.netlist` loader, `gen.validator` connectivity check) unchanged.
 
-## Seam mapping (KiCad → Altium)
+> Historical: this replaced an earlier KiCad backend (now removed). The table
+> below maps the old KiCad seam to its Altium equivalent — useful when reading
+> old commits or porting another KiCad design, not a description of pending work.
+
+## Seam mapping (former KiCad → current Altium)
 
 | KiCad (`gen/`) | Altium (`altium/`) | altium_monkey API |
 |---|---|---|
@@ -29,18 +35,20 @@ backend swaps. This package mirrors `gen/` module-for-module.
 - `config.py` — paths, fonts, rail→power-glyph map.
 - `symbols.py` — author `.SchLib` (passives + 24AA08); lib_id→symbol map; read placed pin hot-spots.
 - `footprints.py` — author `.PcbLib` footprints.
-- `shared.py` — `AltiumSheet`: primitives + `gnd_bus` + validator-facing records (`_wires`/`_junctions`/`_placed`/`_labels`).
-- `build_eeprom.py` — first real sheet port (24AA08 I²C EEPROM).
-- `smoke_test.py` — Gate 0 driver.
-- `verify/` — Tier 1 real-Altium oracle (`run_altium_verify.py`) + junction repro + FINDINGS.md.
+- `shared.py` — `AltiumSheet`: primitives + `gnd_bus` + validator-facing records (`_wires`/`_junctions`/`_placed`/`_labels`); `_PAPER_MIL` (real Altium frame sizes) + `_PAPER_MARGIN`.
+- `build_<sheet>.py` — per-sheet builders (eeprom, connectors, power, bias, fmc, bobcat); `build_root.py` emits the hierarchical root; `build_all.py` / `build_project.py` orchestrate.
+- `layout_lint.py` — geometric gate (RULES registry; library-scope `lint_library`).
+- `author_symbol.py` / `symlib.py` / `build_symbols.py` — author `.SchLib` from a pin-spec, read pins, merge the library.
+- `verify/` — real-Altium oracle (`run_altium_verify.py`) + junction repro + FINDINGS.md.
 
 ## Reuse, not reimplementation
-The Altium backend **imports the KiCad** `gen/netlist.py` (YAML loader) and
-`gen/validator.py` (strict connectivity check) unchanged. The validator is
-coordinate-based and backend-agnostic — `AltiumSheet` exposes the same
-duck-typed records (`_wires`, `_junctions`, `_placed`, `_labels`), so the
-*identical* validator gates both backends == true functional parity. (Needs
-`pip install pyyaml` in the spike venv.)
+The Altium backend **imports the backend-neutral** `gen/netlist.py` (YAML loader)
+and `gen/validator.py` (strict connectivity check) unchanged — the part of `gen/`
+that survived the KiCad-backend removal. The validator is coordinate-based and
+backend-agnostic: `AltiumSheet` exposes the same duck-typed records (`_wires`,
+`_junctions`, `_placed`, `_labels`) the validator reads, so the *same* validator
+that gated the old KiCad output now gates Altium == true functional parity.
+(Needs `pyyaml` in the spike venv.)
 
 ## Full design port
 
@@ -78,18 +86,22 @@ emits the hierarchical root; `build_project.py` ties it together.
 | connectors | 14 | 12 | A2 | ✓ | — |
 | power | 17 | 19 | A3 | ✓ | — |
 | bias | 16 | 16 | A2 | ✓ | — |
-| fmc | 32 | 62 | A0 | ✓ | ✓ (all counts match) |
-| bobcat | 25 | 35 | A3 | ✓ | ✓ (all counts match) |
+| fmc | 32 | 62 | A3 | ✓ | ✓ (all counts match) |
+| bobcat | 25 | 35 | A2 | ✓ | ✓ (all counts match) |
 
 Verified three ways: (1) reused `gen.validator` connectivity check; (2)
 `to_netlist()` pin groupings match the YAML; (3) real-Altium oracle opens the
 file uncorrupted with matching object counts.
 
-### Sheet template (A4-preferred auto-fit)
+### Sheet template (A4-preferred auto-fit, real Altium frame sizes)
 `AltiumSheet` defaults to **A4** and auto-upgrades to the smallest A-series size
-that contains the layout (`_fit_paper`), so simple sheets stay A4 and dense ones
-grow. A real carrier board with a 160-pin FMC connector can't all fit A4 (KiCad
-used A3 per sheet too); nothing overflows its frame.
+that contains the layout (`_fit_paper`); a sheet may also declare its paper
+explicitly when content is known to need it. `_PAPER_MIL` holds Altium's **real
+drawable frame sizes** (A3 = 15500×11100, *not* ISO 216's 16535×11690 — Altium
+sheet styles run ~1000 mil smaller), and `_PAPER_MARGIN` is the border/
+reference-zone band; the linter's `offpage_text` checks the usable area inside
+that margin, so content is sized to Altium's frame, not ISO. Nothing overflows
+its frame (`out_of_bounds` ERROR).
 
 ### Known limitations
 - Signal **Port** names don't propagate as net names in altium_monkey's
@@ -107,19 +119,20 @@ Needs Python 3.11–3.12 and `altium-monkey`. Isolated spike venv lives at
 `C:\Users\mking\Downloads\altium_spike\.venv` (outside this repo).
 
 ```powershell
-# from the repo root (SymbolGenAI/)
-C:\Users\mking\Downloads\altium_spike\.venv\Scripts\python.exe -m test1.altium.smoke_test
+# from the repo root (SymbolGenAI/) — builds + validates + lints all sheets
+C:\Users\mking\Downloads\altium_spike\.venv\Scripts\python.exe -m test1.altium.build_project
 ```
 
-## Gate 0 status
+To open / preview / fidelity-verify in real Altium AD26 (installed on this
+Windows machine), see the `altium-launch-and-verify` skill.
 
-In-process steps **PASS**: authors `.SchLib`+`.PcbLib`, builds `out/smoke.SchDoc`
-exercising every primitive, round-trips it (2 components / 5 wires / 1 net
-label / 2 power ports / 1 port survive reopen), renders `out/render/smoke.svg`
-(non-empty geometry).
+## Verification status
 
-**Remaining manual gate:** open `out/smoke.SchDoc` in **real Altium** on this
-Windows machine and confirm it is uncorrupted. That is the one fidelity check
-the library cannot self-verify (binary format is reverse-engineered).
+The full design builds clean (all 6 sheets `0/0/0` E/W/I, `FAILURES: none`),
+verified three ways: (1) the reused `gen.validator` connectivity gate; (2)
+`to_netlist()` pin groupings match the YAML; (3) the **real-Altium oracle**
+(`verify/run_altium_verify.py`) opens the files in AD26 and confirms they are
+**uncorrupted**, agreeing on every object type except junctions (which Altium
+drops by design — see `verify/FINDINGS.md`; connectivity rides T-intersections).
 
 `out/` is generated — safe to delete and regenerate; should be gitignored.

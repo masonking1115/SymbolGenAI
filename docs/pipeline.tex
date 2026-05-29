@@ -382,15 +382,18 @@ the checklist always reflects exactly what the build gates on.
 \texttt{power\_orientation} & WARN & sheet & Power port against convention (GND down, rails up).\\
 \texttt{visible\_param\_glob} & WARN & sheet & Visible metadata parameter stacks into a glob.\\
 \texttt{wire\_through\_label} & WARN & sheet & Port/power hot-spot sits mid-wire.\\
+\texttt{power\_straddles\_net} & WARN & sheet & Power/port glyph straddles the net (net runs through it).\\
 \texttt{ground\_on\_top} & WARN & sheet & GND symbol above its net instead of at the bottom.\\
 \texttt{wire\_through\_body} & WARN & sheet & Net wire crosses a component body.\\
 \texttt{off\_center} & WARN & sheet & Content bunched against an edge.\\
 \texttt{cramped\_spacing} & WARN & sheet & Two components closer than the readable gap.\\
 \texttt{label\_overlap} & WARN & sheet & Two drawn text boxes overlap (glob).\\
 \texttt{label\_over\_symbol} & WARN & sheet & A label/port/value text box over a component body.\\
+\texttt{label\_symbol\_clearance} & WARN & sheet & A port/text note flush against the true drawn body ($<$50 mil); aligned passive value labels exempt.\\
 \texttt{wire\_through\_port} & WARN & sheet & A net wire crosses a port \emph{body}.\\
 \texttt{offpage\_text} & WARN & sheet & A drawn box spills past the sheet border.\\
 \texttt{wire\_overlap} & WARN & sheet & Collinear same-axis wires overlap (silent short).\\
+\texttt{stub\_t\_short} & ERROR & sheet & Power/port glyph on an unrelated wire's interior (Altium auto-junctions a silent short).\\
 \texttt{bridged\_drop} & WARN & sheet & Wire interior crosses a third part's pin.\\
 \texttt{duplicate\_wire} & INFO & sheet & Identical wire segment drawn twice.\\
 \texttt{redundant\_junction} & INFO & sheet & Junction with $<3$ segments / on a pin.\\

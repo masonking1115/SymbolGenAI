@@ -1,77 +1,78 @@
 # test1 GUI
 
-Local web app for the test1 (Bobcat carrier) schematic pipeline. FastAPI
-backend wraps `gen_schematic.py` / `run_review.py` as subprocesses and
-streams output over SSE; the React frontend matches the visual style of
-the reference checklist tool — left rail nav, top toolbar, optional
-split-pane PNG view.
+Local web app for the Bobcat carrier schematic pipeline. A FastAPI backend
+drives the **Altium** generator (`python -m test1.altium.build_project`) and the
+review pass as subprocesses and streams their output over SSE; the React/Vite
+frontend renders the sheets, the linter checklist, and the chat/review panes.
 
 ## What's wired today
 
-- **Schematic Generator tab** — full behavior end-to-end. Click *Generate
-  schematic*, watch console stream in real time, see the linter checklist
-  populate per rule with pass/fail and per-issue detail, then the PNG
-  pane refreshes automatically (cache-busted on mtime).
-- **Design Review tab** — run review, run review + autofix-trivial,
-  findings list, full `error_log.md` viewer. After a successful autofix
-  it bounces back to the Generator tab so you can re-lint.
-- **Library tab** — lists every part under `Parts Library/<MPN>/`, shows
-  which have datasheets / fingerprints / generated symbols, with filter
-  chips and a stubbed *Generate symbol* action.
-- **PNG split view** — toggle on/off from the top bar; switch sheets with
-  arrows or chips; zoom controls.
+- **Schematic Generator tab** — click *Generate*, watch the build stream in real
+  time, see the linter checklist populate per rule (from `out/lint.json`) with
+  pass/fail and per-issue detail, then the sheet preview refreshes
+  automatically (cache-busted on mtime).
+- **Design Review tab** — run review, run review + autofix-trivial, findings
+  list, full `error_log.md` viewer. After a successful autofix it bounces back to
+  the Generator tab so you can re-lint. Uploading a review PDF parses it into
+  `review/findings.json`; clicking *Apply* parks a request in
+  `review/fix_queue.json` for the agent (see the `review-fix-queue` skill).
+- **Library tab** — lists every part under `Parts Library/<MPN>/`, shows which
+  have datasheets / footprints / symbols, renders the symbol SVG, surfaces the
+  Ultra Librarian deep-link, and accepts a `.SchLib` upload.
+- **Design Resources tab** — datasheets, design-requirements, and skills
+  (markdown CRUD under `test1/resources/`).
+- **Simulation tab** — ngspice-backed test-block catalog + results.
+- **Sheet preview** — toggle the split view; switch sheets; zoom. Renders the
+  altium_monkey SVG (or a rasterized PNG).
 
 ## Run it
 
-Two processes — backend and Vite dev server.
+Two processes — backend and Vite dev server. Use the **spike venv** interpreter
+for the backend (it has `altium-monkey` + the build deps):
 
-```bash
+```powershell
 # 1. backend (port 8765)
-cd test1/gui/backend
-pip install -r requirements.txt   # one time
-python app.py
+C:\Users\mking\Downloads\altium_spike\.venv\Scripts\python.exe test1\gui\backend\app.py
 
-# 2. frontend (port 5173, proxies /api → 8765)
-cd test1/gui/frontend
-npm install                       # one time
+# 2. frontend (port 5173, proxies /api -> 8765)
+cd test1\gui\frontend
+npm install          # one time
 npm run dev
 ```
 
-Open <http://localhost:5173>.
+Open <http://localhost:5173>. Build/verify the frontend with the **local**
+binaries: `./node_modules/.bin/tsc --noEmit -p .` then
+`./node_modules/.bin/vite build` (a global `tsc` pulls the wrong package).
 
 ## Layout
 
 ```
 backend/
   app.py            FastAPI app + SSE streaming for run output
-  requirements.txt
+  agent.py          drives `claude -p` for chat / apply / sim
+  requirements.txt  (fastapi, uvicorn, pydantic — altium-monkey comes from the venv)
 frontend/
   index.html, vite.config.ts, tailwind/postcss configs
   src/
-    main.tsx, App.tsx     shell + tab routing
+    main.tsx, App.tsx     shell + tab routing + pipeline-stage state
     api.ts                fetch + EventSource client
     types.ts
-    components/
-      Sidebar.tsx, TopBar.tsx, PngViewer.tsx
-      Console.tsx, Icon.tsx
-    tabs/
-      Generator.tsx       phase 2 — full behavior
-      Library.tsx         phase 1 — listing + detail
-      Review.tsx          phase 3 — run + autofix + log
+    components/           Sidebar, TopBar, PngViewer, AgentRail, Splitter, ...
+    tabs/                 Generator, Library, Resources, Review, Simulation
 ```
 
 ## Notes
 
-- Backend always passes `--no-reopen` to `gen_schematic.py` so the
-  AppleScript-driven eeschema reload never fires from the server.
-- `/api/file` allow-lists `netlist/`, `design_requirements.md`,
-  `Voltai_Notes.md`, `error_log.md`, and `review/semantic_findings.json`
-  so the GUI can edit YAML + requirements without exposing the rest of
-  the project.
-- The lint report is parsed from `gen_schematic.py` stdout, not by
-  importing the linter module. Cheap, but means the GUI shows only what
-  the script actually printed.
-- Concurrent runs aren't blocked, but the scripts assume serial use.
-- Library tab's *Generate symbol* button is intentionally a stub — the
-  per-IC ingester / fingerprint pipeline lives outside this GUI for now.
-```
+- The backend runs the generator with the spike-venv interpreter and forces
+  `PYTHONUTF8`/`PYTHONIOENCODING=utf-8` on the subprocess, so a non-ASCII glyph
+  in a sheet annotation can't crash the build with a Windows cp1252
+  `UnicodeEncodeError`.
+- The lint report is read from `out/lint.json` (written by `build_project`);
+  parsing the run stdout is only a fallback.
+- `/api/file` allow-lists `netlist/`, `design_requirements.md`, `error_log.md`,
+  and `review/semantic_findings.json` so the GUI can edit the YAML + requirements
+  without exposing the rest of the project. Keep this list tight.
+- Run state is an **in-memory** registry — restarting the backend drops run
+  history. Concurrent runs aren't blocked, but the scripts assume serial use.
+- The SSE run stream sends a `done` event even to a subscriber that connects
+  *after* the process finishes, so the GUI never hangs on a fast build.

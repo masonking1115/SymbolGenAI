@@ -825,7 +825,6 @@ def library_datasheet(mpn: str, name: str | None = None):
 _ALLOWED_PREFIXES = (
     "netlist/",
     "design_requirements.md",
-    "Voltai_Notes.md",
     "error_log.md",
     "review/semantic_findings.json",
 )
