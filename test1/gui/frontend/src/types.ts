@@ -174,6 +174,32 @@ export interface SimBlock {
   models_needed: string[];
   datasheets: SimDatasheet[];
   sim_types: SimType[];
+  // SPICE-model lifecycle. has_model=false → offer "Generate SPICE model";
+  // model_status="stale" → schematic changed under the model, offer "Update".
+  has_model: boolean;
+  model_status: "none" | "unknown" | "fresh" | "stale";
+}
+
+// Per-agent LLM selection (sim agents). The backend owns the list + defaults.
+// `model`/`default` are EXACT Anthropic model ids (e.g. "claude-opus-4-8").
+export interface AgentModelEntry {
+  kind: string;
+  label: string;
+  model: string;          // current model id
+  default: string;        // per-kind default id
+  overridden: boolean;
+}
+// The exact model the picker offers (full pinned-snapshot id + display meta).
+export interface ModelChoice {
+  id: string;
+  label: string;
+  family: "opus" | "sonnet" | "haiku";
+  tier: string;
+  latest: boolean;
+}
+export interface AgentModelConfig {
+  models: ModelChoice[];
+  agents: AgentModelEntry[];
 }
 
 // A functional grouping for the Simulation tab + sidebar. The ordered list comes

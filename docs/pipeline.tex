@@ -29,7 +29,7 @@
 \newcommand{\file}[1]{\texttt{#1}}
 \newcommand{\mod}[1]{\texttt{#1}}
 
-\title{\textbf{HW/SW Co-Designer:\\ Schematic Generation Pipeline \& System Overview}}
+\title{\textbf{HW/SW Co-Designer:\\ Schematic Generation \& Simulation Pipelines\\ \& System Overview}}
 \author{Voltai --- \texttt{SymbolGenAI/test1}}
 \date{\today}
 
@@ -37,24 +37,30 @@
 \maketitle
 
 \begin{abstract}
-This document describes the end-to-end workflow by which the HW/SW Co-Designer
-turns declarative, machine-readable design intent (YAML netlists and per-part
-symbol libraries) into a complete, validated Altium schematic project. It covers
-the system-level architecture, the concrete file pipeline (what is read, written,
-and converted at each stage), the connectivity validator and layout linter that
-gate every build, and how the interactive GUI consumes the same artifacts. The
-pipeline is Altium-native end to end: every component symbol is a committed
-per-MPN Altium \file{.SchLib}, and a single Python entry point
-(\texttt{python -m test1.altium.build\_project}) reads the YAML, merges the
-symbols, builds and gates every sheet, and assembles the project. (The design
-was migrated off an earlier KiCad generator, which has since been removed.)
+This document describes the end-to-end workflows of the HW/SW Co-Designer. There
+are \textbf{two pipelines over one shared source of truth} (the YAML netlists and
+per-MPN symbol libraries). The \textbf{generation pipeline}
+(\S\ref{sec:overview}--\S\ref{sec:gen-rules}) is a deterministic Python compiler
+that turns declarative design intent into a complete, validated Altium schematic
+project, gated by a strict connectivity validator and an advisory layout linter;
+it is Altium-native end to end (every symbol a committed per-MPN \file{.SchLib})
+and runs from one entry point (\texttt{python -m test1.altium.build\_project}).
+The \textbf{simulation pipeline} (\S\ref{sec:sim}--\S\ref{sec:sim-lifecycle})
+verifies architecture and component values: behavioral SPICE models of testable
+sub-circuits (``blocks''), run through \texttt{ngspice}, with AI agents for
+datasheet extraction, result interpretation, a bounded iteration loop, and a
+SPICE-model lifecycle (generate / update-to-match-schematic / chat-edit). Both
+pipelines read the same netlists, so a design change flows into the sims with no
+hand-editing. The final section
+(\S\ref{sec:gui}) covers the interactive GUI that drives both. (The design was
+migrated off an earlier KiCad generator, which has since been removed.)
 \end{abstract}
 
 \tableofcontents
 \bigskip
 
 %==============================================================================
-\section{System overview}
+\section{System overview}\label{sec:overview}
 %==============================================================================
 
 The system is a \emph{deterministic compiler} for schematics. Design intent is
@@ -236,6 +242,87 @@ consumes the resulting renders and \file{lint.json}.}
 \end{figure}
 
 %==============================================================================
+\section{Inputs \& ingestion}\label{sec:ingest}
+%==============================================================================
+
+Before either pipeline runs, the committed inputs must exist on disk. There are
+three input \emph{kinds}, each with a defined format and a defined way it is
+\textbf{ingested} into the repo. Ingestion is a one-time, offline step per part;
+the build/sim pipelines only ever \emph{read} the committed result.
+
+\subsection{Input file formats}
+\begin{description}[leftmargin=1.4em]
+  \item[Netlist YAML \textnormal{(\file{test1/netlist/<sheet>.yaml})}.] The
+    declarative source of truth, hand-authored (or agent-edited via the GUI
+    changelog/apply flow). One file per sheet. Schema (parsed by
+    \mod{gen.netlist.load\_netlist} into a typed \texttt{Netlist}): a
+    \texttt{parts:} map of \texttt{refdes -> \{lib, value, dnp, \dots\}} and a
+    \texttt{nets:} map of \texttt{netname -> [members]}, where each member is a
+    \texttt{REFDES.PIN} token (\texttt{parse\_member} handles multi-unit pins).
+    Resistor values carry a tolerance tail (e.g.\ \texttt{"5.11k 0.1\%"}); the
+    sim value-parser strips it (\mod{sim.design\_extract}). This is the \emph{one}
+    file both pipelines read for connectivity and as-built values.
+  \item[Per-MPN Altium symbol \textnormal{(\file{Parts Library/<MPN>/<MPN>.SchLib})}.]
+    The committed graphical source of truth for a component symbol --- a native
+    Altium binary (OLE compound file) read/written through \mod{altium\_monkey}.
+    A part directory may also hold \file{<MPN>.PcbLib} (footprint, carried but not
+    used by the schematic pipeline), \file{<MPN>.pinspec.json} (see below), and
+    the part's datasheet PDF(s).
+  \item[Datasheet PDF \textnormal{(\file{Parts Library/<MPN>/*.pdf})}.] Read by
+    the AI agents, not the deterministic build. Because the headless environment
+    has no poppler, agents do not open the PDF directly: \mod{sim.read\_pdf}
+    renders target pages to PNG via PyMuPDF (with a \texttt{--text-only} fast
+    path) and the agent reads those.
+\end{description}
+
+\subsection{Two ingestion paths to a committed \file{.SchLib}}
+A per-MPN symbol enters the library one of two ways. Both end at the same
+artifact (\file{Parts Library/<MPN>/<MPN>.SchLib}) that
+\mod{build\_symbols.get\_library} later merges.
+
+\begin{description}[leftmargin=1.4em]
+  \item[(1) Ultra Librarian import \textnormal{(\file{\_ul\_incoming/install\_ul.py})}.]
+    Vendor symbols are obtained as \textbf{Ultra Librarian zips}
+    (\file{\_ul\_incoming/ul\_<MPN>.zip}), extracted under \file{\_ul\_incoming/\_x/}.
+    For each entry, \mod{install\_ul} finds the \file{.SchLib} (and optional
+    \file{.PcbLib}) in the extracted tree, \textbf{validates} it by opening it
+    through \texttt{AltiumSchLib.get\_symbol\_names} (a parse gate --- a symbol
+    that won't open is rejected), then copies it to
+    \file{Parts Library/<dir>/<dir>.SchLib}, backing up any existing project
+    symbol to \file{<dir>.SchLib.bak}. A \texttt{MAP} table translates the UL zip
+    stem (e.g.\ \texttt{OPA2388IDGKR}, \texttt{TPS7A8401ARGRR}) to the project's
+    part-directory name (\texttt{OPA2388}, \texttt{TPS7A8401A}); ambiguous
+    multi-file zips are resolved by matching the file stem to the UL name, else
+    the largest. The \file{.PcbLib} copy is additive (footprint kept for later
+    PCB work; the schematic pipeline ignores it).
+  \item[(2) AI symbol generation \textnormal{(GUI Library tab $\to$
+    \mod{author\_symbol})}.] When no vendor symbol exists, the GUI's symbol-gen
+    agent reads the datasheet and writes a small \textbf{pin specification},
+    \file{Parts Library/<MPN>/<MPN>.pinspec.json} --- a JSON schema of
+    \texttt{\{mpn, description, reference, properties, units:[\{unit, pins:[\{number,
+    name, type, side\}]\}]\}}, where \texttt{type} is an electrical role
+    (input/output/power\_in/\dots) and \texttt{side} (left/right/top/bottom) lays
+    pins out by function. \mod{author\_symbol} then \emph{deterministically}
+    authors \file{<MPN>.SchLib} from that spec (pins via \texttt{make\_sch\_pin},
+    body via the standard glyphs of \S\ref{sec:lint}'s neighbour). The pinspec is
+    the reviewable, regenerable intermediate; the \file{.SchLib} is the committed
+    output.
+\end{description}
+
+\paragraph{Normalization \& passives.} Discrete MOSFETs are (re)authored as
+proper enhancement devices with an integrated body diode by \mod{author\_mosfets};
+passive R/C parts are normalized / auto-authored with standard glyphs by
+\mod{normalize\_passive} and \mod{symbols.\_add\_passive}, then merged into the
+library as \file{out/lib/\_passives.SchLib}. So whether a symbol arrived by UL
+import or AI generation, its body is brought to the same conventional schematic
+form before it reaches a sheet.
+
+\paragraph{Historical note.} Symbols originally came from KiCad
+\file{.kicad\_sym} and were translated once into committed \file{.SchLib}; that
+one-time migration tooling and the KiCad sources have been removed. UL import and
+AI generation are the two live ingestion paths today.
+
+%==============================================================================
 \section{The file pipeline: read / write / convert}
 %==============================================================================
 
@@ -362,7 +449,7 @@ Generator" tab renders the schematic and a \emph{Linter checklist}; its
 the checklist always reflects exactly what the build gates on.
 
 %==============================================================================
-\section{Layout linter rule set}
+\section{Layout linter rule set}\label{sec:gen-rules}
 %==============================================================================
 
 \begin{longtable}{p{0.21\textwidth} p{0.10\textwidth} p{0.10\textwidth} p{0.45\textwidth}}
@@ -402,24 +489,269 @@ the checklist always reflects exactly what the build gates on.
 \end{longtable}
 
 %==============================================================================
-\section{Reproducing a build}
+\section{The simulation pipeline}\label{sec:sim}
+%==============================================================================
+
+The simulation layer is the \emph{second} pipeline over the same inputs. Where
+generation renders the netlist into a schematic, simulation verifies the
+architecture and component values by running behavioral SPICE models of testable
+sub-circuits (\textbf{blocks}) through \texttt{ngspice}. Two principles make it
+trustworthy:
+
+\begin{description}[leftmargin=1.4em]
+  \item[Behavioral, not transcribed.] The decks are \emph{hand-written
+    behavioral} models --- they model device \emph{behavior} (regulation, gain,
+    droop), not a transistor-level transcription of the schematic. This keeps a
+    block's model small and intentional (a part like the op-amp is one
+    \texttt{.subckt}, not its gm guts).
+  \item[Values from the as-built design.] Although the topology is hand-authored,
+    the component \emph{values} (decoupling caps, the bias sense resistor,
+    jumpers) are read from the same \file{netlist/*.yaml} the generator consumes,
+    via \mod{sim.design\_extract}. A netlist edit therefore flows straight into
+    the sim with no hand-editing. Only genuinely \emph{off-sheet} boundary values
+    (source impedance, enable timing, downstream load current, the incoming rail
+    voltage) and the pass/acceptance criterion are curated, in
+    \file{sim/blocks.yaml}.
+\end{description}
+
+\subsection{The block catalog (\file{sim/blocks.yaml})}
+Each catalog entry is one testable sub-circuit: the netlist sheet it derives
+from, the \texttt{sim\_types} that apply (each with a rationale and a concrete
+\texttt{pass:} criterion), the device models it needs, the off-sheet boundary
+stubs, and a functional \texttt{group}. \mod{sim.catalog} loads it;
+\texttt{resolve\_boundaries} merges a block's base boundaries with a sim type's
+\texttt{boundary\_overrides}. A block's \texttt{status} is one of
+\texttt{implemented} (a deck builder runs it), \texttt{planned} (curated but no
+deck yet), or \texttt{not\_simulatable} (no useful SPICE behavior, documented so
+the gap is explicit). The functional groups --- \texttt{power\_generation},
+\texttt{power\_distribution}, \texttt{analog\_bias}, \texttt{system\_integration},
+\texttt{not\_simulatable} --- order and label the Simulation tab's sidebar
+(\texttt{SIM\_GROUPS} in \mod{app}). Current blocks: \texttt{ldo\_rail} (LDO +
+load switch), \texttt{opa\_bias} (OPA2388 V-to-I loop), four PDN decap banks
+(\texttt{vddio/vddd/vdda1/vdda2\_pdn}), the planned \texttt{system\_sequencing},
+and the non-simulatable \texttt{eeprom}/\texttt{fmc}/\texttt{connectors}.
+
+\subsection{Deck builders \& the deck-builder contract}
+One module per block lives in \file{sim/decks/} (\mod{ldo\_rail}, \mod{opa\_bias},
+\mod{pdn}). A conformant deck builder:
+\begin{enumerate}[leftmargin=1.6em, itemsep=1pt]
+  \item exposes \texttt{build\_deck(*, mode, **kw) -> (deck\_text, trace\_specs)};
+  \item reads as-built values from \mod{sim.design\_extract}
+    (\texttt{caps\_on\_net}, \texttt{resistor\_value}, \texttt{sense\_resistance},
+    \dots) --- never hardcodes a netlist value;
+  \item uses the shared device models (\mod{sim.models}) and boundary stubs
+    (\mod{sim.stubs}, \texttt{emit\_stub});
+  \item provides analyzer fn(s) returning a dict with an
+    \texttt{"overall": "OK"|"FAIL"} key, plus a \texttt{refdes\_map()} tying each
+    deck element to its netlist refdes (or \texttt{None} for behavioral
+    scaffolding: boundary sources, ammeters, DUT-load stubs);
+  \item is wired into \mod{sim.service} dispatch (\texttt{run\_block\_sim} +
+    \texttt{build\_deck\_text} + \texttt{\_refdes\_map\_for}) and has a
+    \file{blocks.yaml} entry;
+  \item stamps provenance once it matches the schematic
+    (\S\ref{sec:sim-lifecycle}) and verifies the sim runs.
+\end{enumerate}
+
+Table~\ref{tab:simmods} maps the \file{sim/} modules.
+
+\begin{longtable}{p{0.27\textwidth} p{0.65\textwidth}}
+\caption{The \file{sim/} module map.}\label{tab:simmods}\\
+\toprule
+\textbf{Module} & \textbf{Role}\\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Module} & \textbf{Role}\\
+\midrule
+\endhead
+\mod{blocks.yaml} & Curated block catalog (the library surfaced in the tab).\\
+\mod{catalog.py} & Load the catalog; \texttt{resolve\_boundaries} (base + per-sim merge).\\
+\mod{catalog\_edit.py} & Surgical, comment-preserving \file{blocks.yaml} edits.\\
+\mod{service.py} & GUI-facing dispatch: (block, sim\_type) $\to$ build deck $\to$ run ngspice $\to$ analyze $\to$ JSON (traces, analysis, parsed circuit). \texttt{has\_deck\_builder()} = does a block have a SPICE model.\\
+\mod{runner.py} & Invoke \texttt{ngspice -b} on a deck; parse \texttt{.dat} traces.\\
+\mod{models.py} & Shared behavioral device models (LDO, switch, op-amp, FET).\\
+\mod{stubs.py} & Boundary stubs (\texttt{RailIn}/\texttt{RailOut}/\texttt{DigitalDrive}/\dots); \texttt{emit\_stub}.\\
+\mod{design\_extract.py} & The reader of netlist values for the sim layer (value parse w/ tolerance strip, \texttt{caps\_on\_net}, \texttt{resistor\_value}, \texttt{sense\_resistance}, \texttt{sheet\_refdes}).\\
+\mod{simconfig.py} & Operating-point \emph{scenario} cache + freshness (\texttt{is\_fresh}).\\
+\mod{dscache.py}, \mod{param\_map.py} & Datasheet-derived device params $\to$ ngspice model inputs (\texttt{param\_map.\_MAP} keys the parts that feed models).\\
+\mod{circuit.py} & Parse a deck $\to$ \texttt{\{elements, nets, subckts\}} node-graph for the GUI ``SPICE model'' view (refdes-aware; named pins from subckt ports).\\
+\mod{deck\_provenance.py} & Per-block netlist \emph{fingerprint} + staleness: \texttt{model\_status} $\in$ \texttt{none|unknown|fresh|stale}.\\
+\mod{iterate\_sim.py} & Bounded re-sim CLI for the interpret agent (hard cap 3).\\
+\mod{read\_pdf.py} & Render datasheet PDF pages to PNG (PyMuPDF) + \texttt{--text-only} fast path, so agents can read datasheets (the Read tool can't rasterize PDFs here --- no poppler).\\
+\bottomrule
+\end{longtable}
+
+\subsection{The simulation run workflow}\label{sec:sim-run}
+``Run'' in the Simulation tab is a three-stage, \emph{context-first} flow
+(parameters are decided \emph{before} the sim runs) wrapped in a bounded feedback
+loop. Each AI stage is a \texttt{claude -p} subprocess streamed to the GUI over
+SSE.
+
+\begin{figure}[h]
+\centering
+\resizebox{0.98\textwidth}{!}{%
+\begin{tikzpicture}[
+  font=\small,
+  stage/.style={draw, rounded corners, fill=stage, align=center,
+                minimum height=2.6em, text width=15em, inner sep=4pt},
+  ai/.style={draw, rounded corners, fill=artifact, align=center,
+             minimum height=2.6em, text width=15em, inner sep=4pt},
+  arr/.style={-{Stealth[length=2.2mm]}, thick},
+  node distance=7mm and 10mm,
+]
+\node[ai] (setup) {\textbf{1. SETUP} (AI)\\\scriptsize ``Datasheet \& scenario''\\\scriptsize cache-gated; reads datasheets + netlist;\\\scriptsize writes params + operating point};
+\node[stage, right=of setup] (sim) {\textbf{2. SIMULATE}\\\scriptsize \texttt{ngspice} (no AI)\\\scriptsize deck (values from netlist) $\to$ analyze};
+\node[ai, right=of sim] (interp) {\textbf{3. INTERPRET} (AI)\\\scriptsize ``Verdict''; result vs datasheet+spec\\\scriptsize VERDICT/MARGIN/SUGGESTIONS\\\scriptsize inline iterate (re-sim, hard cap 3)};
+\draw[arr] (setup) -- (sim);
+\draw[arr] (sim) -- (interp);
+\draw[arr, dashed] (interp.south) .. controls +(0,-1) and +(0,-1) .. node[below, font=\scriptsize]{incomplete $\to$ re-tune (outer loop, up to 3 passes)} (setup.south);
+\end{tikzpicture}%
+}
+\caption{The simulation run workflow. Orange = AI (\texttt{claude -p}); green =
+ngspice. Setup OWNS datasheet $\to$ parameter extraction (cache-gated by
+\mod{simconfig.is\_fresh}); the sim runs on the determined operating point;
+interpret judges the result against datasheet specs + requirements and may
+inline-iterate by correcting a \emph{scenario} parameter and re-running
+(\mod{iterate\_sim}, hard-capped at 3). An outer feedback loop re-runs the whole
+sequence (up to 3 passes) when a pass comes up incomplete; the tab's workflow
+strip shows a green check per completed step and a ``loop $N/3$'' badge.}
+\end{figure}
+
+\noindent The endpoints are \texttt{POST /api/sim/setup} (stage 1, returns
+\texttt{fresh} or a \texttt{run\_id}), \texttt{POST /api/sim/run} (stage 2,
+synchronous), and \texttt{POST /api/sim/interpret} (runs the sim then spawns the
+verdict agent). Resilience: the interpret SSE has a watchdog and settles on
+error, so a dropped stream or backend restart can't hang the Run; a Cancel button
+terminates the live \texttt{claude -p}; persisted state never shows a phantom
+``running'' on reload.
+
+%==============================================================================
+\section{SPICE-model lifecycle \& agent workflows}\label{sec:sim-lifecycle}
+%==============================================================================
+
+A block's deck is \emph{dynamically dependent on the schematic}. Three agents
+keep models in sync, and a fourth pair of controls governs which model each agent
+runs on. All lifecycle agents share one \texttt{\_DECK\_CONTRACT} (in \mod{agent})
+and are \textbf{guarded to the sim layer}: they may write \file{sim/decks/*.py}
+and edit \file{sim/blocks.yaml}/\mod{sim.service}, but must \emph{not} touch
+\file{netlist/*.yaml}, \file{altium/*}, \file{gen/*}, or the linter --- the
+schematic is the \emph{input}, never edited here.
+
+\begin{description}[leftmargin=1.4em]
+  \item[Generate (no model).] When a block has no deck builder
+    (\texttt{has\_model = false}, \texttt{model\_status = none}),
+    \texttt{POST /api/sim/generate-model} $\to$ \mod{start\_sim\_generate\_model}.
+    The agent reads the netlist + datasheets, studies the existing decks as
+    templates, \emph{writes} \file{sim/decks/<block>.py} + the service dispatch +
+    a \file{blocks.yaml} entry, stamps provenance, and verifies the sim runs. The
+    GUI shows a \emph{Generate SPICE model} button.
+  \item[Update (stale).] When the netlist has changed under a model
+    (\texttt{model\_status = stale}), \texttt{POST /api/sim/update-model} $\to$
+    \mod{start\_sim\_update\_model}. The agent diffs the current netlist against
+    the deck's assumptions, makes the minimal changes to re-sync, re-stamps, and
+    verifies. The GUI shows an \emph{Update to match schematic} button. Staleness
+    is decided by \mod{sim.deck\_provenance}: a content fingerprint of the block's
+    netlist sheet(s) is stamped when a model is generated/updated; if the live
+    fingerprint differs, the model is stale.
+  \item[Chat-edit (foundation).] \texttt{POST /api/sim/chat-edit} $\to$
+    \mod{start\_sim\_chat\_edit} applies a natural-language request to a block's
+    pass criteria / boundary params / model / functions (smallest change;
+    \texttt{CLARIFY} if ambiguous). The agent and endpoint are wired so the
+    interactive chat UI --- gated on a forthcoming chat API --- is a thin
+    wire-up, not new machinery.
+\end{description}
+
+\paragraph{Per-agent model selection.} Each sim agent \emph{kind} runs on a
+selectable Claude model (\texttt{opus}/\texttt{sonnet}/\texttt{haiku}),
+overridable from the GUI (the ``Agent models'' control) and persisted in
+\file{gui/state/agent\_models.json}. \mod{agent.model\_for(kind)} resolves the
+choice per spawn (override $\to$ per-kind default $\to$ global \texttt{MODEL}) and
+threads it into \texttt{\_spawn\_claude}; \texttt{GET/POST /api/sim/agent-models}
+read and set it. Defaults: the heavy model-authoring agents
+(\texttt{sim\_generate}, \texttt{sim\_update}) default to \texttt{opus}; the
+extraction/verdict/chat agents to \texttt{sonnet}.
+
+\paragraph{Agent mechanics.} Agents are \texttt{claude -p} subprocesses
+(stream-json, \texttt{--permission-mode acceptEdits}, \texttt{cwd=test1/},
+reusing the user's \texttt{claude} auth --- no API key). The spike venv's
+\texttt{python} dir is prepended to the agent \texttt{PATH} (so a plain
+\texttt{python sim/read\_pdf.py} resolves to the PyMuPDF-having interpreter) and
+\texttt{PYTHONUTF8=1} is set. Tool allow-lists are sim-scoped; sim agents
+auto-discover \file{test1/.claude/skills/} (e.g.\ \texttt{sim-datasheet-extraction}).
+Datasheet extraction is a \emph{setup-only} (design-input) step; interpret is
+read-only on the param cache.
+
+%==============================================================================
+\section{The GUI}\label{sec:gui}
+%==============================================================================
+
+The GUI drives both pipelines. The FastAPI backend (port 8765) and the
+React/Vite frontend (port 5173) read the same artifacts the build writes. Tabs:
+\textbf{Resources} (datasheets / requirements / skills), \textbf{Library}
+(per-MPN symbols; AI symbol-gen from a datasheet), \textbf{Generator} (run the
+generation pipeline; the linter checklist), \textbf{Simulation} (the whole
+simulation pipeline above), and \textbf{Review} (design-review findings + fix
+queue). The Simulation panel stays \emph{mounted} across tab switches (hidden via
+CSS), so a running sim's loop and SSE subscriptions survive navigating away.
+
+\begin{longtable}{p{0.34\textwidth} p{0.58\textwidth}}
+\caption{Key Simulation-tab endpoints (\mod{gui.backend.app}).}\label{tab:simapi}\\
+\toprule
+\textbf{Endpoint} & \textbf{Role}\\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Endpoint} & \textbf{Role}\\
+\midrule
+\endhead
+\texttt{GET /api/sim/blocks} & Catalog + groups + \texttt{has\_model}/\texttt{model\_status}.\\
+\texttt{GET /api/sim/circuit} & Parsed deck node-graph (no ngspice) for the ``SPICE model'' view.\\
+\texttt{GET /api/sim/simulated-region} & Which sheets/refdes a block covers (cross-sheet highlight).\\
+\texttt{POST /api/sim/run} & Run ngspice for one (block, sim\_type).\\
+\texttt{POST /api/sim/setup} & Stage 1 (cache-gated) agent.\\
+\texttt{POST /api/sim/interpret} & Run + stage 3 (verdict) agent.\\
+\texttt{POST /api/sim/generate-model} & Author a new SPICE model (agent).\\
+\texttt{POST /api/sim/update-model} & Re-sync a stale model (agent).\\
+\texttt{POST /api/sim/chat-edit} & NL edit of a block's sim (agent; foundation).\\
+\texttt{GET/POST /api/sim/agent-models} & Per-agent model selection.\\
+\texttt{GET/POST /api/sim/requirements} & Edit pass criteria + boundary params.\\
+\texttt{POST /api/sim/cache/clear} & Drop scenario / params / counters per block.\\
+\texttt{POST /api/agent/\{run\_id\}/cancel} & Terminate a live \texttt{claude -p}.\\
+\texttt{GET /api/agent/\{run\_id\}/stream} & SSE of an agent run.\\
+\bottomrule
+\end{longtable}
+
+%==============================================================================
+\section{Reproducing a build / running a sim}
 %==============================================================================
 
 \begin{lstlisting}[language=bash]
 # All Python runs through the Altium spike venv (Windows):
 PY=c:/Users/mking/Downloads/altium_spike/.venv/Scripts/python.exe
 
+# --- Generation pipeline ---
 # Full project: merge symbols, build+validate+lint 6 sheets, assemble .PrjPcb
 $PY -m test1.altium.build_project
-
 # Lint only, across all sheets:
 $PY -m test1.altium.layout_lint
-
 # Dev render a sheet to PNG (SVG -> PDF -> PNG):
 $PY -m test1.altium._render power
+
+# --- Simulation pipeline ---
+# Run one block/sim_type headlessly (status should be 'ran', or 'no_simulator'):
+$PY -c "import sys; sys.path.insert(0,'.'); from test1.sim import service; \
+        print(service.run_block_sim('ldo_rail','dc_op_point')['status'])"
+# Model-vs-schematic status / stamp the netlist fingerprint:
+$PY test1/sim/deck_provenance.py --status ldo_rail
+$PY test1/sim/deck_provenance.py --stamp  ldo_rail
+
+# --- GUI (drives both pipelines) ---
+# backend (repo root on PYTHONPATH):  cd test1/gui/backend && PYTHONPATH=<repo> $PY app.py   # :8765
+# frontend:                           cd test1/gui/frontend && npm run dev                    # :5173
 \end{lstlisting}
 
-A clean run prints, per sheet, \texttt{E/W/I = 0/0/0} (only cosmetic
-\texttt{redundant\_junction} INFO is expected) and \texttt{FAILURES: none}.
+A clean generation run prints, per sheet, \texttt{E/W/I = 0/0/0} (only cosmetic
+\texttt{redundant\_junction} INFO is expected) and \texttt{FAILURES: none}. A
+healthy sim returns \texttt{status = "ran"} with an analysis verdict.
 
 \end{document}

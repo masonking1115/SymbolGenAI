@@ -78,6 +78,117 @@ PY = sys.executable
 MODEL = os.environ.get("TEST1_AGENT_MODEL", "sonnet")
 MAX_HISTORY_TURNS = 30
 
+# ---------------------------------------------------------------------------
+# Per-agent model selection
+# ---------------------------------------------------------------------------
+# Each agent KIND can run on a different Claude model — extraction/verdict are
+# fine on a fast/cheap model, while writing a new deck builder (generate-model)
+# wants the strongest one. The choice is user-overridable from the GUI and
+# persisted in state/agent_models.json; falls back to the per-kind default, then
+# the global MODEL.
+#
+# MODEL_CATALOG is the EXACT set of Anthropic model IDs the picker offers — full
+# pinned-snapshot ids that `claude -p --model` accepts verbatim (the CLI also
+# accepts the short aliases opus/sonnet/haiku, but we expose explicit ids so the
+# choice is unambiguous + reproducible). Source: Anthropic models overview
+# (platform.claude.com/docs/.../models/overview), current as of 2026-05. Keep in
+# sync when Anthropic ships/retires a model. tier: relative capability/cost for
+# the GUI; label: menu text.
+MODEL_CATALOG: list[dict] = [
+    # --- latest generation ---
+    {"id": "claude-opus-4-8",              "label": "Opus 4.8 (latest, most capable)", "family": "opus",   "tier": "frontier", "latest": True},
+    {"id": "claude-sonnet-4-6",            "label": "Sonnet 4.6 (balanced)",           "family": "sonnet", "tier": "balanced", "latest": True},
+    {"id": "claude-haiku-4-5-20251001",    "label": "Haiku 4.5 (fastest)",             "family": "haiku",  "tier": "fast",     "latest": True},
+    # --- legacy, still available ---
+    {"id": "claude-opus-4-7",              "label": "Opus 4.7",                         "family": "opus",   "tier": "frontier", "latest": False},
+    {"id": "claude-opus-4-6",              "label": "Opus 4.6",                         "family": "opus",   "tier": "frontier", "latest": False},
+    {"id": "claude-opus-4-5-20251101",     "label": "Opus 4.5",                         "family": "opus",   "tier": "frontier", "latest": False},
+    {"id": "claude-opus-4-1-20250805",     "label": "Opus 4.1",                         "family": "opus",   "tier": "frontier", "latest": False},
+    {"id": "claude-sonnet-4-5-20250929",   "label": "Sonnet 4.5",                       "family": "sonnet", "tier": "balanced", "latest": False},
+]
+MODEL_IDS = [m["id"] for m in MODEL_CATALOG]
+# Short aliases still accepted (e.g. a persisted "opus") → resolve to the latest
+# of that family, so old configs + the CLI aliases keep working.
+_ALIAS_TO_ID = {
+    "opus":   "claude-opus-4-8",
+    "sonnet": "claude-sonnet-4-6",
+    "haiku":  "claude-haiku-4-5-20251001",
+}
+
+def _canon_model(m: str | None) -> str | None:
+    """A model string the picker/CLI accepts → a known full id, or None."""
+    if not m:
+        return None
+    if m in MODEL_IDS:
+        return m
+    return _ALIAS_TO_ID.get(m)
+
+AGENT_MODELS_FILE = STATE_DIR / "agent_models.json"
+
+# Agent kinds whose model is user-selectable, with a sensible default + a label
+# for the GUI. Keep kind ids stable (persisted + sent over the API). Defaults are
+# full ids: heavy model-authoring agents on the frontier model, the rest balanced.
+SIM_AGENT_KINDS: dict[str, dict] = {
+    "sim_setup":     {"label": "Datasheet & scenario agent", "default": "claude-sonnet-4-6"},
+    "sim_interpret": {"label": "Verdict agent",              "default": "claude-sonnet-4-6"},
+    "sim_generate":  {"label": "SPICE-model generator",      "default": "claude-opus-4-8"},
+    "sim_update":    {"label": "Schematic-sync agent",       "default": "claude-opus-4-8"},
+    "sim_chat_edit": {"label": "Sim chat-edit agent",        "default": "claude-sonnet-4-6"},
+}
+
+
+def _load_agent_models() -> dict:
+    try:
+        data = json.loads(AGENT_MODELS_FILE.read_text())
+        return data if isinstance(data, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def model_for(kind: str) -> str:
+    """Resolve the model id for an agent kind: user override → per-kind default →
+    global MODEL. Canonicalized to a known id so a stale/aliased persisted value
+    can't feed an unknown --model to claude."""
+    override = _canon_model(_load_agent_models().get(kind))
+    if override:
+        return override
+    default = SIM_AGENT_KINDS.get(kind, {}).get("default")
+    return _canon_model(default) or _canon_model(MODEL) or "claude-sonnet-4-6"
+
+
+def agent_model_config() -> dict:
+    """The full per-kind model picture for the GUI: kind, label, current model id,
+    default id, overridden flag, and the exact model catalog to choose from."""
+    overrides = _load_agent_models()
+    return {
+        "models": MODEL_CATALOG,
+        "agents": [
+            {"kind": k, "label": v["label"],
+             "model": model_for(k),
+             "default": _canon_model(v["default"]),
+             "overridden": _canon_model(overrides.get(k)) is not None}
+            for k, v in SIM_AGENT_KINDS.items()
+        ],
+    }
+
+
+def set_agent_model(kind: str, model: str | None) -> bool:
+    """Set (or clear, with model=None) the model override for an agent kind.
+    Accepts a full id or a short alias; stores the canonical full id. Returns
+    False for an unknown kind or an unrecognized model."""
+    if kind not in SIM_AGENT_KINDS:
+        return False
+    data = _load_agent_models()
+    if model is None:
+        data.pop(kind, None)
+    else:
+        canon = _canon_model(model)
+        if not canon:
+            return False
+        data[kind] = canon
+    _save(AGENT_MODELS_FILE, data)
+    return True
+
 
 # ---------------------------------------------------------------------------
 # State helpers — JSON file is the source of truth; in-memory cache only
@@ -503,16 +614,18 @@ async def _spawn_claude(
     permission_mode: str = "acceptEdits",
     allowed_tools: list[str] | None = None,
     add_dir: Path | None = None,
+    model: str | None = None,
 ) -> tuple[asyncio.subprocess.Process, list[str]]:
     """Spawn `claude -p` and return (proc, cmd). Output format is
-    stream-json so we can parse per-event."""
+    stream-json so we can parse per-event. `model` overrides the global MODEL
+    (used by the per-agent model selection); falls back to MODEL when None."""
     cmd = [
         CLAUDE,
         "-p", prompt,
         "--output-format", "stream-json",
         "--include-partial-messages",
         "--verbose",                # stream-json requires verbose
-        "--model", MODEL,
+        "--model", model or MODEL,
         "--permission-mode", permission_mode,
         "--append-system-prompt", _BASE_CONTEXT + "\n" + system_suffix,
         "--no-session-persistence",
@@ -904,6 +1017,7 @@ Your job — gain context, then establish ALL parameters before the sim runs:
             "Bash(python:*)", "Bash(python3:*)", "Bash(pdftotext:*)",
             "Bash(cd:*)", "Bash(ls:*)", "Bash(cat:*)",
         ],
+        model=model_for("sim_setup"),
     )
     run = _register("Sim setup")
     asyncio.create_task(_run_subprocess(run, proc))
@@ -1013,8 +1127,237 @@ circuit edits, one per line; "- none" if no circuit change is warranted):
             "Bash(python:*)", "Bash(python3:*)", "Bash(pdftotext:*)",
             "Bash(cd:*)", "Bash(ls:*)", "Bash(cat:*)",
         ],
+        model=model_for("sim_interpret"),
     )
     run = _register("Sim interpret")
+    asyncio.create_task(_run_subprocess(run, proc))
+    return run
+
+
+# ---------------------------------------------------------------------------
+# SPICE-model lifecycle agents: GENERATE (no model yet) / UPDATE (model stale vs
+# the schematic) / CHAT-EDIT (interactive block/param/model edits).
+# ---------------------------------------------------------------------------
+# These write CODE (a deck builder under sim/decks/) and edit the catalog, so
+# they get a wider — but still sim-scoped — tool allowance than the
+# extraction/verdict agents. acceptEdits governs writes; the prompts pin them to
+# the sim layer and forbid touching the generator/linter/netlist.
+_SIM_BUILD_TOOLS = [
+    "Read", "Edit", "Write", "Glob", "Grep",
+    "Bash(python:*)", "Bash(python3:*)", "Bash(pdftotext:*)",
+    "Bash(cd:*)", "Bash(ls:*)", "Bash(cat:*)",
+]
+
+# The deck-builder contract, shared by generate + update so both author decks the
+# pipeline can actually dispatch + parse. Kept in one place so it can't drift.
+_DECK_CONTRACT = f"""\
+DECK-BUILDER CONTRACT — a block's SPICE model is a Python module
+{PROJECT_DIR}/sim/decks/<block_id>.py that the sim layer dispatches. To stay
+runnable + renderable it MUST:
+  1. Expose `build_deck(*, mode: str, **kw) -> tuple[str, dict[str, list[str]]]`
+     returning (ngspice deck text, trace_specs). Study the EXISTING builders as
+     the template — sim/decks/ldo_rail.py (multi-mode + analyzers), opa_bias.py
+     (feedback loop + refdes_map), pdn.py (cap-bank PDN). MATCH their structure.
+  2. Read as-built component VALUES from the netlist via sim/design_extract.py
+     (caps_on_net, resistor_value, sense_resistance, …) — NEVER hardcode a value
+     that lives in netlist/<sheet>.yaml. Only genuinely off-sheet boundary values
+     (source impedance, load current, enable timing) come from blocks.yaml.
+  3. Use the shared device models in sim/models.py and boundary stubs in
+     sim/stubs.py (emit_stub) rather than inventing inline models where one exists.
+  4. Provide analyzer fn(s) returning a dict with an "overall": "OK"|"FAIL" key
+     for each sim_type, and a `refdes_map()` mapping each deck element ref to its
+     netlist refdes (or None for behavioral scaffolding) so the GUI ties the model
+     back to the schematic.
+  5. Be wired into sim/service.py dispatch (run_block_sim + build_deck_text +
+     _refdes_map_for) AND have a blocks.yaml catalog entry (id, title, sheet,
+     group, status: implemented, sim_types with rationale + a concrete `pass`,
+     boundaries). Use sim/catalog_edit.py for surgical, comment-preserving
+     blocks.yaml edits where possible.
+  6. After the model matches the schematic, RECORD provenance so staleness
+     tracking works:  python sim/deck_provenance.py --stamp <block_id>
+  7. VERIFY before finishing: run the sim through the service, e.g.
+       python -c "import sys; sys.path.insert(0,'.'); from test1.sim import service; \\
+                  print(service.run_block_sim('<block_id>', '<sim_type>')['status'])"
+     (cwd is test1/). status must be 'ran' (or 'no_simulator' if ngspice is
+     absent — acceptable; means the deck built + dispatched).
+
+GUARDRAILS — stay in the SIM LAYER. You MAY write sim/decks/*.py and edit
+sim/blocks.yaml + sim/service.py. Do NOT touch netlist/*.yaml, altium/*, gen/*,
+review/*, or the linter — the schematic is the INPUT, never edited here. Behavioral
+models only: model device BEHAVIOR (regulation, gain, droop), not a transistor-
+level transcription. If a value/intent is genuinely ambiguous, record it as a
+needs_clarification note rather than guessing.
+"""
+
+
+async def start_sim_generate_model(
+    *,
+    block_id: str,
+    title: str,
+    sheet: str,                      # the block's netlist sheet, e.g. "power.yaml"
+    datasheets: list[dict],          # [{mpn, file}]
+    description: str = "",
+    group: str = "",
+) -> AgentRun:
+    """Generate a NEW SPICE model for a block that has none. The agent reads the
+    netlist sheet + datasheets, studies the existing deck builders as templates,
+    and writes sim/decks/<block>.py + the service dispatch + a blocks.yaml entry,
+    then verifies the sim runs. Guarded to the sim layer."""
+    ds_lines = "\n".join(
+        f"  - {d['mpn']}: {PROJECT_DIR / 'Parts Library' / d['mpn'] / d['file']}"
+        for d in datasheets
+    ) or "  (none listed — infer the block's parts from the netlist sheet)"
+    netlist_path = PROJECT_DIR / "netlist" / sheet if sheet.endswith(".yaml") else f"(composed: {sheet})"
+    instructions = f"""\
+This is a GENERATE-SPICE-MODEL pass. Block '{block_id}' ({title!r}) has NO deck
+builder yet — there is no SPICE model for it. Your job is to AUTHOR one from the
+as-built schematic + datasheets, so the Simulation tab can run it.
+
+Block:        {block_id}  —  {title}
+Description:  {description or "(derive from the netlist + datasheets)"}
+Netlist:      {netlist_path}
+Datasheets:
+{ds_lines}
+Requirements: {PROJECT_DIR / 'design_requirements.md'}
+
+{_DECK_CONTRACT}
+
+READING DATASHEET PDFs — the Read tool can't rasterize PDFs (no poppler). Use the
+helper via BASH, TEXT FIRST (you are already in test1/, do NOT cd):
+    python sim/read_pdf.py "<pdf path>" --pages 4-9 --text-only
+render an image only for a specific value unreadable as text.
+
+Steps:
+1. Read the netlist sheet to learn the block's real parts, nets, and values.
+   Read the datasheets for the active devices' behavior (regulation, gain, RON,
+   dropout, …). Read design_requirements.md for intent.
+2. Decide the sim_types that make sense for THIS block (mirror how comparable
+   blocks are tested — e.g. a rail → dc_op_point + a load step; an amp → dc/ac/
+   settling). Each needs a rationale + a concrete, checkable `pass` criterion.
+3. Write sim/decks/{block_id}.py per the contract, wire it into sim/service.py,
+   and add the blocks.yaml entry (status: implemented).
+4. Stamp provenance and VERIFY the sim runs (contract steps 6-7).
+5. Finish with one line:
+   MODEL_GENERATED: <block_id>; sim_types=[...]; verified status=<ran|no_simulator>
+"""
+    proc, _cmd = await _spawn_claude(
+        prompt=instructions,
+        system_suffix="",
+        permission_mode="acceptEdits",
+        allowed_tools=_SIM_BUILD_TOOLS,
+        model=model_for("sim_generate"),
+    )
+    run = _register("Sim generate-model")
+    asyncio.create_task(_run_subprocess(run, proc))
+    return run
+
+
+async def start_sim_update_model(
+    *,
+    block_id: str,
+    title: str,
+    sheet: str,
+    datasheets: list[dict],
+    status_reason: str = "",         # why we think it's stale (provenance)
+) -> AgentRun:
+    """Update a block's EXISTING SPICE model + catalog entry to match the current
+    schematic, after the netlist changed under it. The agent diffs the netlist
+    against the deck's assumptions and brings the model back in sync, then
+    re-stamps provenance. Guarded to the sim layer."""
+    ds_lines = "\n".join(
+        f"  - {d['mpn']}: {PROJECT_DIR / 'Parts Library' / d['mpn'] / d['file']}"
+        for d in datasheets
+    ) or "  (none listed)"
+    netlist_path = PROJECT_DIR / "netlist" / sheet if sheet.endswith(".yaml") else f"(composed: {sheet})"
+    instructions = f"""\
+This is an UPDATE-SPICE-MODEL pass. Block '{block_id}' ({title!r}) HAS a model
+(sim/decks/{block_id}.py), but the schematic changed under it{f' — {status_reason}' if status_reason else ''}.
+Bring the model + its catalog entry back in sync with the as-built design.
+
+Block:    {block_id}  —  {title}
+Model:    {PROJECT_DIR / 'sim' / 'decks' / f'{block_id}.py'}
+Netlist:  {netlist_path}   (the CURRENT schematic — the source of truth)
+Catalog:  {PROJECT_DIR / 'sim' / 'blocks.yaml'}  (entry id '{block_id}')
+Datasheets:
+{ds_lines}
+
+{_DECK_CONTRACT}
+
+Steps:
+1. Read the CURRENT netlist sheet and the EXISTING deck builder. Diff them:
+   - parts/nets the deck references that no longer exist or were renamed,
+   - new parts/nets in scope the deck should now include,
+   - component values: confirm the deck reads them from design_extract (not
+     hardcoded) — fix any that drifted.
+2. Make the MINIMAL changes to sim/decks/{block_id}.py (+ service.py/blocks.yaml
+   if the topology/sim_types genuinely changed) so the model reflects the new
+   schematic. Don't gratuitously rewrite a working deck.
+3. Re-stamp provenance and VERIFY (contract steps 6-7).
+4. Finish with one line:
+   MODEL_UPDATED: <block_id>; changes=<one-line summary>; verified status=<ran|no_simulator>
+"""
+    proc, _cmd = await _spawn_claude(
+        prompt=instructions,
+        system_suffix="",
+        permission_mode="acceptEdits",
+        allowed_tools=_SIM_BUILD_TOOLS,
+        model=model_for("sim_update"),
+    )
+    run = _register("Sim update-model")
+    asyncio.create_task(_run_subprocess(run, proc))
+    return run
+
+
+async def start_sim_chat_edit(
+    *,
+    block_id: str,
+    instruction: str,                # the user's natural-language edit request
+    sheet: str = "",
+) -> AgentRun:
+    """Foundation for chat-driven sim editing: apply a natural-language request to
+    a block's sim — its pass criteria / boundary params (catalog), its model
+    (deck builder), or its functions. The interactive chat UI that drives this is
+    gated on the user's forthcoming chat API; the agent + endpoint are ready so
+    that hook is a thin wire-up, not new machinery.
+
+    `instruction` is the user's request, e.g. "loosen the VDDIO droop limit to
+    40mV", "add an output-noise sim", "model the LDO PSRR".
+    """
+    netlist_path = PROJECT_DIR / "netlist" / sheet if sheet.endswith(".yaml") else "(see the block's sheet)"
+    instructions = f"""\
+This is a SIM CHAT-EDIT pass for block '{block_id}'. Apply the user's request to
+the block's simulation — its pass criteria / boundary params, its SPICE model
+(deck builder), its sim_types, or its model parameters — whichever the request
+calls for.
+
+USER REQUEST:
+{instruction}
+
+Block model:   {PROJECT_DIR / 'sim' / 'decks' / f'{block_id}.py'}
+Catalog entry: {PROJECT_DIR / 'sim' / 'blocks.yaml'} (id '{block_id}')
+Netlist:       {netlist_path}
+
+{_DECK_CONTRACT}
+
+Behaviour:
+1. Interpret the request and make the SMALLEST change that satisfies it. Prefer
+   surgical catalog edits (sim/catalog_edit.py) for pass/param changes; edit the
+   deck builder for model/topology/function changes.
+2. If the request is ambiguous or would change the design intent, DON'T guess —
+   finish with a CLARIFY line stating what you need.
+3. If you changed the deck/topology, re-stamp provenance + verify (contract 6-7).
+4. Finish with one line:
+   CHAT_EDIT_DONE: <block_id>; <one-line summary of what changed>
+   (or)  CLARIFY: <the question>
+"""
+    proc, _cmd = await _spawn_claude(
+        prompt=instructions,
+        system_suffix="",
+        permission_mode="acceptEdits",
+        allowed_tools=_SIM_BUILD_TOOLS,
+        model=model_for("sim_chat_edit"),
+    )
+    run = _register("Sim chat-edit")
     asyncio.create_task(_run_subprocess(run, proc))
     return run
 

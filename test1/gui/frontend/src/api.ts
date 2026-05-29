@@ -13,6 +13,7 @@ import type {
   RunHandle,
   RunStatus,
   RunSummary,
+  AgentModelConfig,
   SheetMeta,
   SimBlock,
   SimGroup,
@@ -252,6 +253,38 @@ export const api = {
   cancelAgent: (runId: string) =>
     j<{ run_id: string; cancelled: boolean }>(`/api/agent/${runId}/cancel`, {
       method: "POST",
+    }),
+
+  // --- SPICE-model lifecycle (generate / update / chat-edit) ----------------
+  // Generate a SPICE model for a block that has none (agent authors the deck).
+  simGenerateModel: (block: string) =>
+    j<{ run_id: string }>("/api/sim/generate-model", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ block, sim_type: "" }),
+    }),
+  // Update a stale model to match the current schematic.
+  simUpdateModel: (block: string) =>
+    j<{ run_id: string }>("/api/sim/update-model", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ block, sim_type: "" }),
+    }),
+  // Apply a natural-language edit to a block's sim (foundation for chat editing).
+  simChatEdit: (block: string, instruction: string) =>
+    j<{ run_id: string }>("/api/sim/chat-edit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ block, instruction }),
+    }),
+
+  // --- per-agent model selection (which Claude model each sim agent runs on) --
+  simAgentModels: () => j<AgentModelConfig>("/api/sim/agent-models"),
+  simSetAgentModel: (kind: string, model: string | null) =>
+    j<AgentModelConfig>("/api/sim/agent-models", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind, model }),
     }),
 
   // --- per-sim requirements (editable pass criteria + boundary params) ------

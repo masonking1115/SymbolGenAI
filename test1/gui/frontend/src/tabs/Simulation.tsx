@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, subscribeAgent } from "../api";
 import { I } from "../components/Icon";
-import type { SimBlock, SimRequirements, SimResult, SimSeries, SimXAxis } from "../types";
+import type { AgentModelConfig, ModelChoice, SimBlock, SimRequirements, SimResult, SimSeries, SimXAxis } from "../types";
 
 type StepState = "pending" | "active" | "pass" | "fail" | "warn" | "done";
 
@@ -213,6 +213,9 @@ interface Props {
    *  and this detail pane stay in sync. */
   blocks: SimBlock[];
   selected: string;
+  /** Re-fetch the block catalog after a model is generated/updated (its
+   *  has_model / model_status / sim_types change). */
+  onBlocksChanged?: () => void;
 }
 
 const STATUS_BADGE: Record<string, string> = {
@@ -235,7 +238,7 @@ function loadLS<T>(key: string): T | null {
   }
 }
 
-export function Simulation({ setHealth, blocks, selected }: Props) {
+export function Simulation({ setHealth, blocks, selected, onBlocksChanged }: Props) {
   // Rehydrate results + settled interpretations from localStorage so the tab
   // survives navigation away and full page refreshes.
   const [results, setResults] = useState<Record<string, SimResult>>(
@@ -248,6 +251,7 @@ export function Simulation({ setHealth, blocks, selected }: Props) {
   const runCtl = useRef<{ key: string; runId: string | null; cancelled: boolean } | null>(null);
   const [logged, setLogged] = useState<Record<string, boolean>>({});
   const [reqOpen, setReqOpen] = useState(false);
+  const [modelsOpen, setModelsOpen] = useState(false);
   // Pass criteria edited in the Requirements panel are also shown (read-only) on
   // each sim_type card; keep a per-(block,sim) override so the card reflects an
   // edit immediately without needing the parent to re-fetch the blocks catalog.
@@ -427,6 +431,20 @@ export function Simulation({ setHealth, blocks, selected }: Props) {
     setHealth({ text: "cancelling…", tone: "neutral" });
   }, [setHealth]);
 
+  // Wipe the DISPLAYED results for a block (all its sim_type keys) so a
+  // cache-clear visibly returns the tab to "not run yet" — no stale chart or
+  // verdict lingering against state that's just been cleared. Drops the chart
+  // (results), the interpretation/workflow (interp), and the changelog flag
+  // (logged); the next Run re-derives from scratch. Keyed by "<block>:<sim>".
+  const resetBlockDisplay = useCallback((blockId: string) => {
+    const mine = (k: string) => k.startsWith(`${blockId}:`);
+    const prune = <T,>(m: Record<string, T>) =>
+      Object.fromEntries(Object.entries(m).filter(([k]) => !mine(k)));
+    setResults((prev) => prune(prev));
+    setInterp((prev) => prune(prev));
+    setLogged((prev) => prune(prev));
+  }, []);
+
   const toggleSuggestion = useCallback((key: string, idx: number) => {
     setInterp((prev) => {
       const it = prev[key];
@@ -479,20 +497,41 @@ export function Simulation({ setHealth, blocks, selected }: Props) {
               {block.status}
             </span>
             <span className="text-[10px] text-ink-500 font-mono">{block.sheet}</span>
-            {/* per-block controls: edit requirements + clear cache */}
+            {/* per-block controls: edit requirements + clear cache + agent models */}
             <div className="ml-auto flex items-center gap-1.5">
               <button
-                onClick={() => setReqOpen((v) => !v)}
+                onClick={() => { setModelsOpen((v) => !v); setReqOpen(false); }}
+                className={"h-7 px-2.5 inline-flex items-center gap-1.5 rounded-md border text-[11px] " +
+                  (modelsOpen ? "border-ink-300 bg-rail text-ink-900" : "border-edge bg-white text-ink-600 hover:border-ink-300")}
+                title="Which Claude model each sim agent runs on"
+              >
+                <I.Dot size={12} /> Agent models
+              </button>
+              <button
+                onClick={() => { setReqOpen((v) => !v); setModelsOpen(false); }}
                 className={"h-7 px-2.5 inline-flex items-center gap-1.5 rounded-md border text-[11px] " +
                   (reqOpen ? "border-ink-300 bg-rail text-ink-900" : "border-edge bg-white text-ink-600 hover:border-ink-300")}
               >
                 <I.Wrench size={12} /> Requirements
               </button>
-              <ClearCacheMenu block={block} onCleared={(msg) => setHealth({ text: msg, tone: "ok" })} />
+              <ClearCacheMenu
+                block={block}
+                onCleared={(msg) => setHealth({ text: msg, tone: "ok" })}
+                onReset={() => resetBlockDisplay(block.id)}
+              />
             </div>
           </div>
           <h2 className="text-[18px] font-semibold text-ink-900 mt-0.5">{block.title}</h2>
           <p className="text-sm text-ink-700 mt-1.5 leading-relaxed">{block.description}</p>
+
+          {/* SPICE-model lifecycle: generate (no model) / update (stale) — agentic */}
+          <ModelLifecycle
+            block={block}
+            setHealth={setHealth}
+            onChanged={onBlocksChanged}
+          />
+
+          {modelsOpen && <AgentModelPicker />}
 
           {reqOpen && (
             <RequirementsEditor
@@ -661,9 +700,203 @@ export function Simulation({ setHealth, blocks, selected }: Props) {
 }
 
 // ---------------------------------------------------------------------------
+// SPICE-model lifecycle: when a block has NO model, offer "Generate SPICE
+// model"; when its model is STALE (the schematic changed under it), offer
+// "Update to match schematic". Both spawn a guarded agent (claude -p) that
+// writes/edits the deck builder; we stream its activity inline and re-fetch the
+// catalog when it finishes (the block's has_model / model_status / sim_types
+// change).
+function ModelLifecycle({ block, setHealth, onChanged }: {
+  block: SimBlock;
+  setHealth: (h: { text: string; tone: "ok" | "warn" | "err" | "neutral" } | undefined) => void;
+  onChanged?: () => void;
+}) {
+  const [running, setRunning] = useState<null | "generate" | "update">(null);
+  const [lines, setLines] = useState<string[]>([]);
+  const [done, setDone] = useState<string | null>(null);
+
+  const run = async (kind: "generate" | "update") => {
+    setRunning(kind); setLines([]); setDone(null);
+    setHealth({ text: kind === "generate" ? "generating SPICE model…" : "updating model to match schematic…", tone: "neutral" });
+    try {
+      const { run_id } = kind === "generate"
+        ? await api.simGenerateModel(block.id)
+        : await api.simUpdateModel(block.id);
+      await new Promise<void>((resolve) => {
+        subscribeAgent(run_id,
+          (l) => setLines((p) => [...p, l]),
+          (status) => {
+            setDone(status.text ?? "");
+            resolve();
+          });
+      });
+      setHealth({ text: kind === "generate" ? "model generated" : "model updated", tone: "ok" });
+      onChanged?.();          // re-fetch the catalog: status/sim_types changed
+    } catch (e) {
+      setHealth({ text: "model agent error", tone: "err" });
+      setDone(`error: ${String(e)}`);
+    } finally {
+      setRunning(null);
+    }
+  };
+
+  // Decide what (if anything) to surface for this block.
+  const ms = block.model_status;
+  const needGenerate = !block.has_model;
+  const stale = block.has_model && ms === "stale";
+  // No banner when the model exists and is fresh/unknown and nothing is running.
+  if (!needGenerate && !stale && !running && !done) return null;
+
+  const tone = needGenerate
+    ? "border-warn/40 bg-warn/[0.06]"
+    : stale ? "border-amber-400/50 bg-amber-50" : "border-edge bg-rail/40";
+
+  return (
+    <div className={"mt-3 rounded-md border p-3 " + tone}>
+      <div className="flex items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="text-[12px] font-medium text-ink-900">
+            {needGenerate ? "No SPICE model for this block"
+              : stale ? "SPICE model may be out of date"
+              : "SPICE model"}
+          </div>
+          <div className="text-[11px] text-ink-600 mt-0.5 leading-snug">
+            {needGenerate
+              ? "There's no deck builder yet. Generate one agentically from the netlist + datasheets — it authors the SPICE model, wires it in, and verifies it runs."
+              : stale
+                ? "The schematic changed since this model was last synced. Update it agentically to match the current netlist."
+                : "Re-sync this model with the schematic at any time."}
+          </div>
+        </div>
+        {running ? (
+          <span className="h-8 px-3 inline-flex items-center gap-1.5 rounded-md border border-edge bg-white text-ink-600 text-xs shrink-0">
+            <span className="w-3 h-3 rounded-full border-2 border-ink-300 border-t-ink-700 animate-spin" />
+            {running === "generate" ? "generating…" : "updating…"}
+          </span>
+        ) : needGenerate ? (
+          <button onClick={() => run("generate")}
+            className="h-8 px-3 inline-flex items-center gap-1.5 rounded-md bg-ink-900 text-white text-xs font-medium hover:bg-black shrink-0">
+            <I.Play size={13} /> Generate SPICE model
+          </button>
+        ) : (
+          <button onClick={() => run("update")}
+            className="h-8 px-3 inline-flex items-center gap-1.5 rounded-md border border-amber-400 bg-white text-amber-700 text-xs font-medium hover:bg-amber-50 shrink-0">
+            <I.Refresh size={13} /> Update to match schematic
+          </button>
+        )}
+      </div>
+      {(running || lines.length > 0) && (
+        <ModelAgentLog lines={lines} running={!!running} />
+      )}
+      {done && !running && (
+        <div className="mt-2 text-[11px] text-ink-700 font-mono whitespace-pre-wrap border-t border-edge/60 pt-2">
+          {done.split("\n").slice(-4).join("\n")}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Compact live log of the lifecycle agent's streamed tool calls (reuses the same
+// classify logic as the behind-the-scenes panel).
+function ModelAgentLog({ lines, running }: { lines: string[]; running: boolean }) {
+  const endRef = useRef<HTMLDivElement>(null);
+  const entries = lines.map(classifyLine).filter((e) => e.text);
+  useEffect(() => { endRef.current?.scrollIntoView({ block: "nearest" }); }, [entries.length]);
+  return (
+    <div className="mt-2 rounded border border-edge bg-white/70">
+      <div className="px-2 py-1 text-[10px] uppercase tracking-wide text-ink-500 flex items-center gap-1.5">
+        {running && <span className="w-1.5 h-1.5 rounded-full bg-violet-500 animate-pulse" />}
+        model agent {running ? "working" : "log"}
+        <span className="ml-auto text-ink-400">{entries.length}</span>
+      </div>
+      {entries.length > 0 && (
+        <div className="max-h-40 overflow-auto px-2 pb-1.5 font-mono text-[10px] leading-relaxed thin-scroll">
+          {entries.map((e, i) => (
+            <div key={i} className="flex items-start gap-1.5 py-0.5">
+              <span className={"mt-0.5 shrink-0 " + LOG_TONE[e.kind]}>{LOG_ICON[e.kind]}</span>
+              <span className={"break-all " + (e.kind === "think" ? "text-ink-600 italic" : LOG_TONE[e.kind])}>{e.text}</span>
+            </div>
+          ))}
+          <div ref={endRef} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Per-agent model picker: choose which Claude model each sim agent runs on
+// (extraction/verdict vs. the heavier model-generator). Backed by
+// /api/sim/agent-models; persisted server-side.
+function AgentModelPicker() {
+  const [cfg, setCfg] = useState<AgentModelConfig | null>(null);
+  const [saving, setSaving] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    api.simAgentModels().then((c) => { if (alive) setCfg(c); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  if (!cfg) return <div className="mt-3 text-[11px] text-ink-400">loading agent models…</div>;
+  const setModel = async (kind: string, model: string) => {
+    setSaving(kind);
+    try { setCfg(await api.simSetAgentModel(kind, model)); } catch { /* ignore */ } finally { setSaving(null); }
+  };
+  // Exact model ids grouped by family (latest first within each), for <optgroup>.
+  const families: Array<ModelChoice["family"]> = ["opus", "sonnet", "haiku"];
+  const byFamily = families
+    .map((fam) => ({ fam, models: cfg.models.filter((m) => m.family === fam) }))
+    .filter((g) => g.models.length > 0);
+  const idLabel = (id: string) => cfg.models.find((m) => m.id === id)?.label ?? id;
+  return (
+    <div className="mt-3 rounded-md border border-edge bg-rail/40 p-3">
+      <div className="text-[11px] uppercase tracking-wide text-ink-500 mb-2">
+        Agent models · exact Anthropic model per sim agent
+      </div>
+      <div className="space-y-1.5">
+        {cfg.agents.map((a) => (
+          <div key={a.kind} className="flex items-center gap-2 text-[12px]">
+            <span className="text-ink-800 flex-1 truncate" title={a.kind}>{a.label}</span>
+            {a.overridden && (
+              <button onClick={() => setModel(a.kind, a.default)}
+                className="text-[10px] text-ink-400 hover:text-ink-700" title={`reset to default (${idLabel(a.default)})`}>
+                reset
+              </button>
+            )}
+            <select
+              value={a.model}
+              disabled={saving === a.kind}
+              onChange={(e) => setModel(a.kind, e.target.value)}
+              title={a.model}
+              className="h-7 w-56 rounded border border-edge bg-white text-[11px] font-mono px-1.5 outline-none focus:border-ink-400 disabled:opacity-50"
+            >
+              {byFamily.map((g) => (
+                <optgroup key={g.fam} label={g.fam.toUpperCase()}>
+                  {g.models.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.id}{m.id === a.default ? " · default" : ""}{m.latest ? " · latest" : ""}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </div>
+        ))}
+      </div>
+      <div className="text-[10px] text-ink-400 mt-2">
+        Exact pinned model ids passed to <span className="font-mono">claude --model</span>. Applies to the next run of each agent;
+        generator/sync default to Opus, extraction/verdict to Sonnet.
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Clear-cache menu: drop a block's cached sim state so the next Run re-derives
 // it. Scope chosen at click time (scenario / datasheet params / all).
-function ClearCacheMenu({ block, onCleared }: { block: SimBlock; onCleared: (msg: string) => void }) {
+function ClearCacheMenu({ block, onCleared, onReset }: {
+  block: SimBlock; onCleared: (msg: string) => void; onReset: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const clear = async (scope: "scenario" | "params" | "all") => {
@@ -674,6 +907,9 @@ function ClearCacheMenu({ block, onCleared }: { block: SimBlock; onCleared: (msg
       if (r.scenario_cleared) bits.push("scenario");
       if (r.counters_cleared) bits.push(`${r.counters_cleared} counters`);
       if (r.params_cleared?.length) bits.push(`${r.params_cleared.length} part params`);
+      // The displayed chart/verdict reflects the now-cleared cache — wipe it so
+      // the tab visibly returns to "not run yet" rather than showing a stale graph.
+      onReset();
       onCleared(`cleared ${block.id}: ${bits.join(", ") || "nothing cached"} — next Run re-derives`);
     } catch {
       onCleared(`clear failed for ${block.id}`);

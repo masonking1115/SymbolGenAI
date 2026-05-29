@@ -1428,6 +1428,16 @@ class SimRunReq(BaseModel):
     vout_set: float | None = None
 
 
+class SimChatEditReq(BaseModel):
+    block: str
+    instruction: str                 # natural-language edit request
+
+
+class AgentModelReq(BaseModel):
+    kind: str                        # agent kind (sim_setup, sim_generate, …)
+    model: str | None = None         # one of MODEL_CHOICES, or None to clear override
+
+
 # Functional grouping for the Simulation tab + sidebar. The `group` id on each
 # block (blocks.yaml) keys into this ordered list — it gives the section its
 # display label, a one-line blurb, and (by position) its order. A block whose
@@ -1663,6 +1673,87 @@ async def sim_interpret(req: SimRunReq) -> dict:
         result_json=json.dumps(compact, indent=2),
     )
     return {"run_id": run.run_id, "sim_ok": res.get("ok")}
+
+
+# ---- SPICE-model lifecycle (generate / update / chat-edit) ----------------
+@app.post("/api/sim/generate-model")
+async def sim_generate_model(req: SimRunReq) -> dict:
+    """Spawn the generator agent to AUTHOR a SPICE model for a block that has
+    none (writes sim/decks/<block>.py + dispatch + catalog entry). Stream the run
+    via /api/agent/{run_id}/stream. 409 if the block already has a model."""
+    blocks = {b["id"]: b for b in sim_service.list_blocks()}
+    block = blocks.get(req.block)
+    if not block:
+        raise HTTPException(404, f"no block {req.block!r}")
+    if block.get("has_model"):
+        raise HTTPException(409, f"block {req.block!r} already has a SPICE model — use update instead")
+    run = await agent_mod.start_sim_generate_model(
+        block_id=req.block,
+        title=block.get("title", req.block),
+        sheet=block.get("sheet", ""),
+        datasheets=block.get("datasheets", []),
+        description=block.get("description", ""),
+        group=block.get("group", ""),
+    )
+    return {"run_id": run.run_id}
+
+
+@app.post("/api/sim/update-model")
+async def sim_update_model(req: SimRunReq) -> dict:
+    """Spawn the schematic-sync agent to bring a block's EXISTING model + catalog
+    entry back in line with the current netlist. 409 if the block has no model
+    (generate first)."""
+    blocks = {b["id"]: b for b in sim_service.list_blocks()}
+    block = blocks.get(req.block)
+    if not block:
+        raise HTTPException(404, f"no block {req.block!r}")
+    if not block.get("has_model"):
+        raise HTTPException(409, f"block {req.block!r} has no SPICE model — generate one first")
+    run = await agent_mod.start_sim_update_model(
+        block_id=req.block,
+        title=block.get("title", req.block),
+        sheet=block.get("sheet", ""),
+        datasheets=block.get("datasheets", []),
+        status_reason=f"model_status={block.get('model_status')}",
+    )
+    return {"run_id": run.run_id}
+
+
+@app.post("/api/sim/chat-edit")
+async def sim_chat_edit(req: SimChatEditReq) -> dict:
+    """Apply a natural-language edit to a block's sim (pass criteria / params /
+    model / functions). Foundation for the interactive chat editor — the live
+    chat UI is gated on the forthcoming chat API; this endpoint + agent are the
+    ready wire-up."""
+    blocks = {b["id"]: b for b in sim_service.list_blocks()}
+    block = blocks.get(req.block)
+    if not block:
+        raise HTTPException(404, f"no block {req.block!r}")
+    if not (req.instruction or "").strip():
+        raise HTTPException(400, "instruction is empty")
+    run = await agent_mod.start_sim_chat_edit(
+        block_id=req.block,
+        instruction=req.instruction.strip(),
+        sheet=block.get("sheet", ""),
+    )
+    return {"run_id": run.run_id}
+
+
+# ---- Per-agent model selection --------------------------------------------
+@app.get("/api/sim/agent-models")
+def sim_agent_models() -> dict:
+    """Which Claude model each sim agent runs on (current + default + choices),
+    for the GUI's per-agent model picker."""
+    return agent_mod.agent_model_config()
+
+
+@app.post("/api/sim/agent-models")
+def sim_set_agent_model(req: AgentModelReq) -> dict:
+    """Set (or clear, model=null) the model override for one agent kind."""
+    ok = agent_mod.set_agent_model(req.kind, req.model)
+    if not ok:
+        raise HTTPException(400, f"unknown agent kind {req.kind!r} or invalid model {req.model!r}")
+    return agent_mod.agent_model_config()
 
 
 # ---- Generate with changelog-apply ----------------------------------------

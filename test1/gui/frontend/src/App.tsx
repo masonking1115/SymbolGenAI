@@ -51,7 +51,7 @@ export default function App() {
   const [simBlocks, setSimBlocks] = useState<SimBlock[]>([]);
   const [simGroups, setSimGroups] = useState<SimGroup[]>([]);
   const [selectedSimBlock, setSelectedSimBlock] = useState<string>("");
-  useEffect(() => {
+  const refetchSimBlocks = useCallback(() => {
     api.simBlocks()
       .then((r) => {
         setSimBlocks(r.blocks);
@@ -61,6 +61,7 @@ export default function App() {
       })
       .catch(() => {});
   }, []);
+  useEffect(() => { refetchSimBlocks(); }, [refetchSimBlocks]);
   const selectSimBlock = useCallback((id: string) => {
     setSelectedSimBlock(id);
     setTab("simulation");
@@ -125,6 +126,7 @@ export default function App() {
       setHealth={simSetHealth}
       blocks={simBlocks}
       selected={selectedSimBlock}
+      onBlocksChanged={refetchSimBlocks}
     />
   );
 

@@ -38,15 +38,23 @@ _Y_LABEL = {
 
 
 def list_blocks() -> list[dict]:
-    """Block catalog for the frontend tab (incl. per-sim-type status)."""
+    """Block catalog for the frontend tab (incl. per-sim-type status + the SPICE-
+    model lifecycle status, so the GUI can offer Generate / Update)."""
+    from . import deck_provenance
     out: list[dict] = []
     for b in catalog.load_catalog():
+        has_model = has_deck_builder(b.get("id"))
         out.append({
             "id": b.get("id"),
             "title": b.get("title"),
             "sheet": b.get("sheet"),
             "group": b.get("group") or "other",   # functional domain (GUI grouping)
             "status": b.get("status"),
+            # SPICE-model lifecycle: has_model + model_status (none/unknown/fresh/
+            # stale) → the GUI shows "Generate SPICE model" (none) or "Update to
+            # match schematic" (stale).
+            "has_model": has_model,
+            "model_status": deck_provenance.deck_status(b, has_model=has_model),
             "description": b.get("description") or b.get("reason") or "",
             "models_needed": b.get("models_needed", []),
             "datasheets": b.get("datasheets", []),
@@ -228,6 +236,16 @@ _OPA_MODE = {"dc_sweep": "dc_sweep", "ac_stability": "ac_stability",
              "transient_settling": "transient_settling", "por_failsafe": "por",
              "dc_compliance": "compliance"}
 _PDN_MODE = {"transient_load_step": "load_step", "ac_pdn_impedance": "impedance"}
+
+
+def has_deck_builder(block_id: str) -> bool:
+    """True if a Python deck builder backs this block (ldo_rail / opa_bias / a
+    PDN rail). False means there's NO SPICE model for the block yet — the GUI
+    offers to GENERATE one (the generate-model agent writes sim/decks/<block>.py
+    + the catalog entry). The single source of truth for the dispatch in
+    run_block_sim / build_deck_text, so 'can it run' and 'does it have a model'
+    can't drift apart."""
+    return (block_id in ("ldo_rail", "opa_bias")) or (block_id in pdn.RAIL_OF_BLOCK)
 
 
 def build_deck_text(block_id: str, sim_type: str) -> str | None:
