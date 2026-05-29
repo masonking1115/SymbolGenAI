@@ -9,7 +9,7 @@ There are two distinct call sites today:
 
   2. Apply pass — user clicked Generate. The agent reads the queued
      changelog and implements each item (Edit/Write on yaml + python). The
-     pipeline (gen_schematic.py → lint → review) is run by the backend
+     pipeline (build_project → validate + lint → review) is run by the backend
      *after* this returns, NOT by the agent.
 
 The same `claude` binary backs both. We swap the system-prompt suffix and
@@ -35,6 +35,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import sys
 import time
 import uuid
@@ -48,11 +49,27 @@ from typing import AsyncIterator
 # ---------------------------------------------------------------------------
 HERE = Path(__file__).resolve().parent
 PROJECT_DIR = HERE.parent.parent          # test1/
+REPO_ROOT = PROJECT_DIR.parent            # SymbolGenAI/ — the agent's working dir
 STATE_DIR = HERE.parent / "state"         # test1/gui/state/
 CHAT_FILE = STATE_DIR / "chat.json"       # legacy single transcript (migrated)
 CHATS_FILE = STATE_DIR / "chats.json"     # multi-session chat store
 CHANGELOG_FILE = STATE_DIR / "changelog.json"
 STATUS_FILE = STATE_DIR / "status.json"
+
+# Claude Code auto-memory dir for this project. The `claude -p` subprocess loads
+# memory keyed by its working directory, which Claude slugifies as the absolute
+# path with non-alphanumerics → '-' (e.g. C:\Users\mking\Downloads\HW-SW_CoDesigner
+# → 'c--Users-mking-Downloads-HW-SW-CoDesigner'). Derive it from REPO_ROOT's
+# parent (the working dir) so it isn't hardcoded to one user/path.
+def _memory_dir() -> Path:
+    cwd = REPO_ROOT.parent  # the dir the GUI/agent runs from (…/HW-SW_CoDesigner)
+    # Claude slugifies with a lowercased drive letter on Windows.
+    slug = re.sub(r"[^A-Za-z0-9]", "-", str(cwd))
+    if len(slug) >= 2 and slug[1] == "-":          # "C--Users…" → "c--Users…"
+        slug = slug[0].lower() + slug[1:]
+    return Path.home() / ".claude" / "projects" / slug / "memory"
+
+MEMORY_DIR = _memory_dir()
 
 CLAUDE = "claude"
 MODEL = os.environ.get("TEST1_AGENT_MODEL", "sonnet")
@@ -286,27 +303,33 @@ def remove_changelog(item_id: str) -> bool:
 # System prompts
 # ---------------------------------------------------------------------------
 _BASE_CONTEXT = f"""\
-You are the in-GUI agent for the test1 (Bobcat carrier) KiCad schematic pipeline.
+You are the in-GUI agent for the test1 (Bobcat carrier) Altium schematic pipeline.
 
 The user is iterating on a hierarchical schematic via a browser GUI. They
-can see the live rendered PNGs and a linter checklist. The actual pipeline
-(gen_schematic.py → lint → run_review.py) is invoked by the GUI's backend
-— not by you. Your job is to be the user's thinking partner and to plan
-+ implement edits to the YAML netlists and Python builders.
+can see the live rendered SVGs and a linter checklist. The actual pipeline
+(build_project → connectivity validator + layout lint → design review) is
+invoked by the GUI's backend (`python -m test1.altium.build_project`) — not by
+you. Your job is to be the user's thinking partner and to plan + implement edits
+to the YAML netlists and Python builders.
+
+This is an ALTIUM pipeline (pure-Python altium_monkey), NOT KiCad — the KiCad
+backend was removed. Any `.kicad_sym`/`.kicad_sch`/`eeschema`/`kicad-cli`/
+`gen/build_*.py` reference is stale; the active builders live in `altium/`.
 
 Project root: {PROJECT_DIR}
 Key files:
-  - netlist/*.yaml          declarative source of truth (parts + nets)
-  - gen/build_<sheet>.py    Python placement code per sheet
-  - gen/layout_lint.py      visual/spatial linter
-  - review/rules.py         deterministic design rules
-  - design_requirements.md  spec
-  - Parts Library/<MPN>/    datasheets + symbols
+  - netlist/<sheet>.yaml      declarative source of truth (parts + nets) — as-built
+  - altium/build_<sheet>.py   Python placement/routing code per sheet
+  - altium/layout_lint.py     visual/spatial linter (the geometry gate)
+  - gen/validator.py          backend-neutral strict connectivity check (reused)
+  - review/rules.py           deterministic design rules
+  - design_requirements.md    spec
+  - Parts Library/<MPN>/      datasheets + symbols
 
 Memory (cross-session facts about the user + project) lives under
-~/.claude/projects/-Users-masonking-Downloads-SymbolLibraryAI/memory/ and
-is loaded automatically. Read it if you need context about Mason's
-preferences or prior decisions.
+{MEMORY_DIR} and is loaded
+automatically. Read it if you need context about Mason's preferences or prior
+decisions.
 
 Be terse. The user can see your tool calls; don't narrate them.
 """
@@ -325,7 +348,7 @@ How to behave:
    the number. Proactively gather context you're missing instead of guessing.
    Useful sources:
      - netlist/*.yaml            as-built parts + nets
-     - gen/build_<sheet>.py      placement code per sheet
+     - altium/build_<sheet>.py   placement/routing code per sheet
      - design_requirements.md    spec / intent
      - review/ findings + rules  design-review state
      - sim/cache/*, sim/results/ simulation params + outputs
@@ -334,7 +357,7 @@ How to behave:
    (and may begin with a compacted summary). Build on it; keep continuity.
 3. Read freely: Read, Glob, Grep (Bash for grep/inspection). Answer in plain
    prose, terse — the user can see your tool calls, so don't narrate them.
-4. DO NOT edit netlist/*.yaml or gen/*.py on a chat turn. Design edits happen
+4. DO NOT edit netlist/*.yaml or altium/*.py on a chat turn. Design edits happen
    only at apply-changelog time (a separate invocation).
 5. Changelog is SECONDARY and opt-in. ONLY when the user EXPLICITLY asks for a
    design change should you append a one-line bullet to {CHANGELOG_FILE} (read
@@ -364,12 +387,14 @@ This is an APPLY-CHANGELOG pass. The user just clicked Generate.
 You will receive a list of changelog items the user accumulated. Your job:
 
 1. Implement each item by editing the relevant files (netlist/*.yaml,
-   gen/build_<sheet>.py, design_requirements.md). Use Read, Edit, Write.
+   altium/build_<sheet>.py, design_requirements.md). Use Read, Edit, Write.
+   (This is the Altium pipeline — edit altium/build_*.py, NOT gen/build_*.py,
+   which no longer exists.)
 2. Be conservative: make the smallest change that satisfies the bullet.
    If a bullet is ambiguous, do the most reasonable interpretation and
    note your assumption in the final summary.
-3. DO NOT run gen_schematic.py yourself — the GUI backend will run it
-   after you return.
+3. DO NOT run the build yourself (`python -m test1.altium.build_project`) — the
+   GUI backend will run it after you return.
 4. When done, clear the changelog file ({CHANGELOG_FILE}) to an empty
    list [] so the next chat turn starts clean.
 5. Finish with a terse summary block, one bullet per item, of what you
@@ -747,11 +772,26 @@ async def start_sim_setup(
         f"  - {d['mpn']}: {PROJECT_DIR / 'Parts Library' / d['mpn'] / d['file']}"
         for d in datasheets
     )
+    all_mpns = sorted({d["mpn"] for d in datasheets})
+    # The parts whose datasheet numbers actually feed an ngspice model param
+    # (have a sim/param_map mapper). These are the ones the sim's accuracy
+    # depends on and that the freshness check requires cached; the rest are
+    # behavioral stubs or netlist-valued (caps, the DUT load).
+    try:
+        from test1.sim import param_map as _pm
+        model_mpns = sorted(m for m in all_mpns if m in _pm._MAP)
+    except Exception:
+        model_mpns = []
     cached = dscache_cached_mpns()
+    must_extract = [m for m in model_mpns if m not in cached]
     netlist_path = PROJECT_DIR / "netlist" / sheet
     instructions = f"""\
 This is a SIM-SETUP pass for block '{block_id}'. The order is context FIRST,
 then parameters, THEN the sim runs (done by the backend after you finish).
+Setup OWNS the datasheet → parameter extraction: every device parameter the
+sim uses is established HERE, before the run. The interpret pass downstream
+only CONSUMES what you cache — it does not read datasheets — so a model part
+you leave uncharacterized here will silently run on model defaults.
 
 Datasheets for this block's parts:
 {ds_lines}
@@ -761,18 +801,32 @@ Current design (as-built):   {netlist_path}
 Device-param cache:          {_SIM_PARAM_CACHE}
 Sim-scenario cache:          {_SIM_CONFIG}
 
-Already-cached device parts (don't re-read their PDFs unless you need a
-clarification): {sorted(cached)}
+Parts whose datasheet numbers FEED the sim (must be cached): {model_mpns or "(none — this block has no model-param parts)"}
+Already in the param cache: {sorted(cached)}
+You MUST extract these now (missing model parts): {must_extract or "(none — all model parts cached)"}
 
-Your job — gain context, then determine the parameters to apply:
+(The block's other parts are behavioral stubs or netlist-valued — caps, the DUT
+load — and don't need datasheet params; characterize one only if it clarifies
+the operating point.)
+
+Your job — gain context, then establish ALL parameters before the sim runs:
 1. Read the requirements AND the current netlist to understand the as-built
-   circuit (what this block actually drives, at what voltages/currents). Read
-   any not-yet-cached datasheets.
-2. Write device model params per MPN into {_SIM_PARAM_CACHE} (descriptive keys
-   with units, e.g. "DROPOUT_mV_max_VIN1V1_BIAS_3A"; a code mapper converts
-   them to ngspice inputs). Read the file first, merge, write it back.
-3. Determine the SIM SCENARIO and write {_SIM_CONFIG} keyed by '{block_id}'
-   (read first, merge, write back):
+   circuit (what this block actually drives, at what voltages/currents).
+2. DEVICE PARAMS — every part in "must be cached" above must end up in
+   {_SIM_PARAM_CACHE}, keyed by MPN with sub-keys `model_params` and `spec`. For
+   each such part NOT yet cached, read its datasheet PDF and extract the key
+   electrical parameters. Use DESCRIPTIVE keys naming the value, its condition,
+   and its UNIT (e.g. "DROPOUT_mV_max_VIN1V1_BIAS_3A", "RON_mOhm_max_VIN1V8_85C",
+   "tON_us_typ_VIN1V8", "VOS_uV_max_25C", "GBW_MHz", "AOL_dB_min") — a
+   deterministic code mapper (sim/param_map.py) converts these into ngspice
+   model inputs, so accuracy + clear units matter more than matching a fixed
+   name. Prefer worst-case numbers where they matter (max offset, min gain).
+   Set `source`, `extracted_at`, and `needs_clarification` (null, or a question
+   if a value that matters is ambiguous). Read {_SIM_PARAM_CACHE} first, MERGE,
+   write it back. Do not drop already-cached parts. When you finish, every part
+   in "must be cached" above must be present.
+3. SIM SCENARIO — write {_SIM_CONFIG} keyed by '{block_id}' (read first, merge,
+   write back):
      - operating_points_V: the REAL operating point(s) grounded in the
        requirements + the current design — e.g. if the LDO feeds the Bobcat
        core rails at 0.6-1.0V, use [0.6, 1.0], NOT an arbitrary default.
@@ -780,7 +834,7 @@ Your job — gain context, then determine the parameters to apply:
      - load_note, rationale, sources (files you used), needs_clarification
        (null, or a question if intent is ambiguous).
 4. Do NOT run the sim and do NOT edit netlists. Finish with one line:
-   SETUP_DONE: <one-sentence summary of the scenario you chose>
+   SETUP_DONE: <params cached for [MPNs]; scenario = one-sentence summary>
 """
     proc, _cmd = await _spawn_claude(
         prompt=instructions,
@@ -800,28 +854,26 @@ async def start_sim_interpret(
     datasheets: list[dict],          # [{mpn, file}]
     result_json: str,                # the raw ngspice result the GUI computed
 ) -> AgentRun:
-    """Read the block's datasheets + requirements, extract/cache the key
-    device parameters, and interpret the sim result against spec."""
+    """Interpret the sim result against spec. Device parameters were already
+    extracted into the cache by the setup pass, so this pass only CONSUMES them
+    (and the datasheets, for citations) — it does not extract/write params."""
     ds_lines = "\n".join(
         f"  - {d['mpn']}: {PROJECT_DIR / 'Parts Library' / d['mpn'] / d['file']}"
         for d in datasheets
     )
-    cached = {m: True for m in dscache_cached_mpns()}
-    cache_note = (
-        f"Already-cached parts (DON'T re-read their PDFs unless you need a "
-        f"clarification): {sorted(cached)}" if cached else
-        "Nothing cached yet — read the PDFs below."
-    )
     instructions = f"""\
 This is a SIMULATION-INTERPRET pass for block '{block_id}', sim '{sim_type}'.
 
-Datasheets for this block's parts:
+Datasheets for this block's parts (for citing the numbers you compare against):
 {ds_lines}
 
 Spec: {PROJECT_DIR / 'design_requirements.md'}
-Parameter cache (read + update this JSON): {_SIM_PARAM_CACHE}
+Device-param cache (already populated by setup — READ-ONLY here): {_SIM_PARAM_CACHE}
 
-{cache_note}
+The device parameters this sim used were extracted by the setup pass and are
+in the param cache above. Do NOT re-extract or rewrite them. Read the cache and
+the datasheets to ground your judgement; cite the datasheet number you compare
+the result against.
 
 The GUI already ran the ngspice sim. Raw result JSON:
 {result_json}
@@ -829,21 +881,12 @@ The GUI already ran the ngspice sim. Raw result JSON:
 The block's nominal pass criterion was: {pass_criterion}
 
 Your job:
-1. For any of this block's parts NOT already cached, read its datasheet and
-   extract the key electrical parameters into {_SIM_PARAM_CACHE}, keyed by MPN
-   with sub-keys `model_params` and `spec`. Use DESCRIPTIVE keys that name the
-   value, its condition, and its UNIT (e.g. "DROPOUT_mV_max_VIN1V1_BIAS_3A",
-   "RON_mOhm_max_VIN1V8_85C", "tON_us_typ_VIN1V8", "VOS_uV_max_25C", "GBW_MHz",
-   "AOL_dB_typ"). A deterministic code-side mapper (sim/param_map.py) converts
-   these into the ngspice model inputs, so accuracy + clear units matter more
-   than matching a fixed name. Read {_SIM_PARAM_CACHE} first, merge, write it
-   back. Set `source`, `extracted_at`, and `needs_clarification` (null, or a
-   question if the datasheet is ambiguous about a value that matters here).
-2. Cross-check the sim RESULT against the datasheet specs AND design
+1. Cross-check the sim RESULT against the datasheet specs AND design
    requirements. State whether it meets spec, with the actual margin and a
-   datasheet citation (section/page or the number).
-3. SUGGESTIONS are CIRCUIT-DESIGN changes ONLY — edits the schematic-generation
-   phase can apply to netlist/*.yaml or gen/*.py and then regenerate the board.
+   datasheet citation (section/page or the number). Use the cached params +
+   the datasheets for context — do not modify {_SIM_PARAM_CACHE}.
+2. SUGGESTIONS are CIRCUIT-DESIGN changes ONLY — edits the schematic-generation
+   phase can apply to netlist/*.yaml or altium/build_*.py and then regenerate the board.
    The changelog feeds an apply pass that edits the DESIGN, so every bullet must
    be an actionable circuit edit: change a component value, add/remove a part or
    decoupling cap, swap a part for a better one (e.g. a lower-RON load switch),
@@ -856,7 +899,7 @@ Your job:
    sim-coverage gap or an open question (not a circuit edit), put it in CLARIFY.
    Only suggest a circuit change when the design actually warrants one; write
    "- none" if the circuit is fine as-is. Do NOT edit files or push yourself.
-4. ITERATE (optional, HARD-capped at 3). If a clarification would be resolved
+3. ITERATE (optional, HARD-capped at 3). If a clarification would be resolved
    by an INSTANT re-sim with a corrected SCENARIO parameter — e.g. the wrong
    operating point or load was used — you MAY fix it and re-run:
      a) update the scenario in {_SIM_CONFIG} (e.g. primary_vout_set_V, keyed by

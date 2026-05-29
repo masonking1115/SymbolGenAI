@@ -323,7 +323,7 @@ export function Simulation({ setHealth, blocks, selected }: Props) {
         <div className="px-6 py-5 max-w-[1100px]">
           <div className="flex items-center gap-2">
             <div className="text-[11px] tracking-wide uppercase text-ink-500">
-              Phase 4 · Simulation
+              Simulation · ngspice
             </div>
             <span className={"text-[10px] px-1.5 py-0.5 rounded border " + (STATUS_BADGE[block.status] ?? STATUS_BADGE.not_simulatable)}>
               {block.status}
@@ -340,6 +340,12 @@ export function Simulation({ setHealth, blocks, selected }: Props) {
                 ))}
               </div>
             )}
+
+            <div className="mt-2 text-[11px] text-ink-500">
+              Deck values are read from the as-built design
+              {block.sheet ? <> (<span className="font-mono text-ink-700">netlist/{block.sheet}</span>)</> : null};
+              device params come from the datasheets below.
+            </div>
 
             {block.datasheets.length > 0 && (
               <div className="mt-3">

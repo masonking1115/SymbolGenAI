@@ -27,7 +27,12 @@ from ..catalog import resolve_boundaries
 from ..models import opa_models
 from ..stubs import emit_stub
 
-R_SENSE = 5110.0          # 5.11k 0.1% channel sense resistor
+# Defaults only — the ACTUAL sense-R value is read from the netlist (bias.yaml
+# R40/R41) and threaded explicitly through build + analysis so the deck and the
+# ideal-current formula can never disagree. These constants are the fallback /
+# default-arg values; functions take r_sense/vdd params and never read these
+# directly. See design_extract.sense_resistance() and service.run_block_sim.
+R_SENSE = 5110.0          # 5.11k 0.1% channel sense resistor (default/fallback)
 VDD = 3.3                 # +3V3 rail (DAC reference = VDD)
 
 _MODE_TO_SIMTYPE = {
@@ -46,13 +51,14 @@ _NET_TO_NODE = {
 }
 
 
-def _ideal_ibias(v_dac: float) -> float:
-    return max(0.0, (VDD - v_dac) / R_SENSE)
+def _ideal_ibias(v_dac: float, vdd: float, r_sense: float) -> float:
+    return max(0.0, (vdd - v_dac) / r_sense)
 
 
-def _core_topology(v_dac_src: str) -> list[str]:
+def _core_topology(v_dac_src: str, *, r_sense: float) -> list[str]:
     """The loop wiring, shared by every mode. `v_dac_src` is the SPICE line
-    that defines the DAC output node VDAC (a source — DC, swept, or PWL)."""
+    that defines the DAC output node VDAC (a source — DC, swept, or PWL).
+    `r_sense` is the channel sense-R value extracted from the netlist."""
     return [
         "* --- MCP4728 DAC output (behavioral: a programmed voltage) ---",
         v_dac_src,
@@ -61,8 +67,8 @@ def _core_topology(v_dac_src: str) -> list[str]:
         + (f" PARAMS:{param_map.params_string('OPA2388')}" if param_map.applied('OPA2388') else ""),
         "* --- PMOS pass element Q40: D=BIASD G=OPAOUT S=VSENSE ---",
         "MQ40 BIASD OPAOUT VSENSE V3V3 PMOS_PMZ1200",
-        "* --- sense R: VSENSE -> +3V3 (feedback samples VSENSE) ---",
-        f"RSENSE VSENSE V3V3 {R_SENSE}",
+        f"* --- sense R (netlist R40): VSENSE -> +3V3 (feedback samples VSENSE) ---",
+        f"RSENSE VSENSE V3V3 {r_sense:.6g}",
         "* --- 2N7002 isolator Q42: D=BIASD G=BIAS_ISO0 S=BIASO ---",
         "MQ42 BIASD BIAS_ISO0 BIASO 0 NMOS_2N7002",
         "* --- ammeter into the BIAS output node (current into the DUT) ---",
@@ -85,10 +91,14 @@ def _boundaries_for(sim_type: str, *, exclude=("BIAS0",)) -> list[str]:
     return lines
 
 
-def build_deck(*, mode: str, dac_mid: float = 1.65) -> tuple[str, dict[str, list[str]]]:
+def build_deck(*, mode: str, dac_mid: float = 1.65,
+               r_sense: float = R_SENSE, vdd: float = VDD,
+               ) -> tuple[str, dict[str, list[str]]]:
     """Build an opa_bias deck + trace specs.
 
     dac_mid: the DAC voltage used as the operating point for AC/settling.
+    r_sense: channel sense-R (ohms) from the netlist (design_extract); defaults
+             to the as-designed 5.11k. vdd: the +3V3 rail.
     """
     if mode not in _MODE_TO_SIMTYPE:
         raise ValueError(f"unknown mode: {mode!r}")
@@ -106,7 +116,7 @@ def build_deck(*, mode: str, dac_mid: float = 1.65) -> tuple[str, dict[str, list
     if mode == "dc_sweep":
         dac = "VDAC VDAC 0 DC 0"
         bnds = _boundaries_for(sim_type)
-        core = _core_topology(dac)
+        core = _core_topology(dac, r_sense=r_sense)
         analysis = """.control
 dc VDAC 0 3.3 0.033
 wrdata dc_sweep.dat i(vsns_bias) v(vsense) v(opaout)
@@ -119,7 +129,7 @@ wrdata dc_sweep.dat i(vsns_bias) v(vsense) v(opaout)
         # (loop forces VSENSE=VDAC); peaking near crossover ⇒ low phase margin.
         dac = f"VDAC VDAC 0 DC {dac_mid} AC 1"
         bnds = _boundaries_for(sim_type)
-        core = _core_topology(dac)
+        core = _core_topology(dac, r_sense=r_sense)
         analysis = """.control
 ac dec 60 10 100meg
 wrdata ac_stability.dat vdb(vsense) vp(vsense)
@@ -132,7 +142,7 @@ wrdata ac_stability.dat vdb(vsense) vp(vsense)
         lo, hi = dac_mid, dac_mid - 0.3   # lower DAC ⇒ higher current
         dac = f"VDAC VDAC 0 PWL(0 {lo} 100u {lo} 101u {hi})"
         bnds = _boundaries_for(sim_type)
-        core = _core_topology(dac)
+        core = _core_topology(dac, r_sense=r_sense)
         analysis = """.control
 tran 0.2u 400u uic
 wrdata transient_settling.dat i(vsns_bias) v(vsense) v(vdac)
@@ -143,9 +153,9 @@ wrdata transient_settling.dat i(vsns_bias) v(vsense) v(vdac)
     elif mode == "por":
         # Fail-safe: virgin MCP4728 powers up at code 0xFFF → VOUT = VDD, and
         # BIAS_ISO low → isolator open. Bias reaching the DUT must be ~0.
-        dac = f"VDAC VDAC 0 DC {VDD}"          # default full-scale code ⇒ I=0
+        dac = f"VDAC VDAC 0 DC {vdd:.6g}"      # default full-scale code ⇒ I=0
         bnds = _boundaries_for(sim_type)       # BIAS_ISO0 driven low by catalog
-        core = _core_topology(dac)
+        core = _core_topology(dac, r_sense=r_sense)
         analysis = """.control
 op
 print i(vsns_bias) v(vsense) v(biasd) v(bias_iso0)
@@ -160,8 +170,13 @@ print i(vsns_bias) v(vsense) v(biasd) v(bias_iso0)
 # Analyzers
 
 
-def analyze_dc_sweep(trace, *, err_limit_frac: float = 0.01) -> dict:
-    """V-to-I accuracy vs ideal (VDD - V_DAC)/R_sense.
+def analyze_dc_sweep(trace, *, r_sense: float = R_SENSE, vdd: float = VDD,
+                     err_limit_frac: float = 0.01) -> dict:
+    """V-to-I accuracy vs ideal (vdd - V_DAC)/r_sense.
+
+    `r_sense`/`vdd` MUST be the same values the deck was built with (the netlist
+    sense-R, threaded from service.run_block_sim) — the ideal-current reference
+    is computed from them, so a mismatch would silently miscompute the error.
 
     Scored only over the *regulated* range — where the op-amp output isn't
     railed. A single-supply op-amp can't drive the PMOS gate below ground, so
@@ -172,9 +187,9 @@ def analyze_dc_sweep(trace, *, err_limit_frac: float = 0.01) -> dict:
     v_dac = trace.col("time")              # DC sweep var = VDAC
     i_meas = trace.col("i(vsns_bias)")
     opaout = trace.col("v(opaout)")
-    ideal = np.array([_ideal_ibias(v) for v in v_dac])
-    # Regulated where the op-amp output is off both rails (0 .. VDD).
-    regulated = (opaout > 0.05) & (opaout < VDD - 0.05)
+    ideal = np.array([_ideal_ibias(v, vdd, r_sense) for v in v_dac])
+    # Regulated where the op-amp output is off both rails (0 .. vdd).
+    regulated = (opaout > 0.05) & (opaout < vdd - 0.05)
     worst = 0.0
     worst_at = None
     i_max_reg = 0.0
@@ -187,7 +202,8 @@ def analyze_dc_sweep(trace, *, err_limit_frac: float = 0.01) -> dict:
             worst, worst_at = frac, float(vd)
     return {
         "check": "dc_sweep_vtoi_accuracy",
-        "full_scale_A": float(VDD / R_SENSE),
+        "full_scale_A": float(vdd / r_sense),
+        "r_sense_ohm": float(r_sense),
         "i_max_regulated_A": float(i_max_reg),
         "worst_err_pct": round(float(worst) * 100, 3),
         "worst_at_vdac_V": worst_at,

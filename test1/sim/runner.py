@@ -23,7 +23,12 @@ from pathlib import Path
 import numpy as np
 
 
-NGSPICE = shutil.which("ngspice") or "/opt/homebrew/bin/ngspice"
+# Resolve the ngspice binary. Prefer PATH; allow an explicit override via the
+# NGSPICE env var (set it on machines where ngspice isn't on PATH). The previous
+# hardcoded "/opt/homebrew/bin/ngspice" fallback was a Mac/dev-era assumption and
+# is gone — this project runs on Windows now. If ngspice can't be found, run_deck
+# returns a clear "ngspice not found" result instead of raising a raw OSError.
+NGSPICE = os.environ.get("NGSPICE") or shutil.which("ngspice")
 
 
 @dataclass
@@ -114,6 +119,17 @@ def run_deck(deck: str, *, trace_specs: dict[str, list[str]] | None = None,
                   matching `wrdata <stem>.dat <vectors>` commands in the deck.
                   We read each .dat file after the run and attach to result.
     """
+    if not NGSPICE:
+        # ngspice isn't installed / not on PATH. Surface a clear, structured
+        # result rather than a raw FileNotFoundError so the service layer can
+        # report "simulator unavailable" cleanly. Install ngspice and put it on
+        # PATH (or set the NGSPICE env var to its full path) to run sims.
+        return SimResult(
+            ok=False, returncode=-1, stdout="", deck=deck,
+            stderr="ngspice not found: install it and add to PATH, or set the "
+                   "NGSPICE environment variable to the ngspice executable.",
+        )
+
     cleanup = False
     if workdir is None:
         workdir = Path(tempfile.mkdtemp(prefix="sim_"))
@@ -121,7 +137,11 @@ def run_deck(deck: str, *, trace_specs: dict[str, list[str]] | None = None,
     workdir.mkdir(parents=True, exist_ok=True)
 
     deck_path = workdir / "deck.cir"
-    deck_path.write_text(deck)
+    # Explicit UTF-8: deck text can contain non-ASCII (e.g. "→" in a block
+    # description copied into a header comment). Windows' default cp1252 would
+    # raise UnicodeEncodeError on write. ngspice ignores comment bytes, so UTF-8
+    # is safe for the engine.
+    deck_path.write_text(deck, encoding="utf-8")
 
     proc = subprocess.run(
         [NGSPICE, "-b", "-o", str(workdir / "log.txt"), str(deck_path)],
@@ -133,7 +153,7 @@ def run_deck(deck: str, *, trace_specs: dict[str, list[str]] | None = None,
 
     stdout = proc.stdout
     if (workdir / "log.txt").exists():
-        stdout = (workdir / "log.txt").read_text() + "\n" + stdout
+        stdout = (workdir / "log.txt").read_text(encoding="utf-8", errors="replace") + "\n" + stdout
 
     traces: dict[str, Trace] = {}
     if trace_specs:

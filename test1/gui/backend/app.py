@@ -1,15 +1,16 @@
 """FastAPI backend for the test1 GUI.
 
-Wraps the existing pipeline CLIs (gen_schematic.py, run_review.py) as
-subprocesses and exposes them over HTTP. Streams stdout/stderr line-by-line
-via Server-Sent Events so the React frontend can show a live console.
+Drives the Altium pipeline (`python -m test1.altium.build_project`, run_review.py)
+as subprocesses and exposes them over HTTP. Streams stdout/stderr line-by-line
+via Server-Sent Events so the React frontend can show a live console. (The
+original KiCad pipeline is still selectable via SCHEMA_BACKEND=kicad.)
 
 Endpoints
 ---------
 GET  /api/health              — liveness
 GET  /api/state               — snapshot: artifacts on disk, last run status
-GET  /api/sheets              — list of sheet PNGs available under kicad/render/
-GET  /api/png/{name}          — serve a sheet PNG by name (no extension)
+GET  /api/sheets              — list of rendered sheets (altium/out/render/*.svg)
+GET  /api/png/{name}          — serve a sheet render by name (no extension)
 GET  /api/lint                — parsed lint report from last gen run (cached)
 GET  /api/findings            — parsed review findings (JSON + error_log.md)
 GET  /api/library             — directory listing of Parts Library/<MPN>/
@@ -253,8 +254,9 @@ def freshness() -> dict:
       - any expected output is missing, OR
       - any input file has mtime > min(output mtimes).
 
-    Inputs:  netlist/*.yaml, gen/*.py, Parts Library/**/*.SchLib
-    Outputs: kicad/*.kicad_sch, kicad/render/*.png
+    Inputs:  netlist/*.yaml, altium/*.py (+ gen/*.py core), Parts Library/**/*.SchLib
+    Outputs (Altium backend): altium/out/*.SchDoc, altium/out/render/*.svg
+             (KiCad fallback, SCHEMA_BACKEND=kicad: kicad/*.kicad_sch + *.png)
 
     Returns: status (fresh|stale|never), reason, newest_input, oldest_output.
     """

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from . import catalog, simconfig
+from . import catalog, design_extract, simconfig
 from .decks import ldo_rail, opa_bias, pdn
 from .runner import run_deck
 
@@ -117,6 +117,15 @@ def run_block_sim(block_id: str, sim_type: str, *, vout_set: float | None = None
                 "message": reason + (f" Models needed: {block.get('models_needed')}."
                                      if block.get("models_needed") else "")}
 
+    # Simulator-availability gate: without ngspice on PATH (or $NGSPICE) the deck
+    # can't run. Report this distinctly so the GUI says "simulator unavailable"
+    # rather than showing a bogus FAIL on an empty result.
+    from .runner import NGSPICE
+    if not NGSPICE:
+        return {**base, "ok": False, "status": "no_simulator",
+                "message": "ngspice not found — install it and add to PATH, or "
+                           "set the NGSPICE environment variable to its path."}
+
     # ---- ldo_rail --------------------------------------------------------
     if block_id == "ldo_rail":
         if sim_type == "setpoint_coverage":
@@ -146,11 +155,16 @@ def run_block_sim(block_id: str, sim_type: str, *, vout_set: float | None = None
         mode = {"dc_sweep": "dc_sweep", "ac_stability": "ac_stability",
                 "transient_settling": "transient_settling",
                 "por_failsafe": "por"}[sim_type]
-        deck, specs = opa_bias.build_deck(mode=mode)
+        # Sense-R comes from the as-built netlist (bias.yaml R40), computed ONCE
+        # and threaded into BOTH the deck and the accuracy analyzer so the
+        # ideal-current reference matches the modeled resistor exactly.
+        r_sense = design_extract.sense_resistance(channel=0)
+        deck, specs = opa_bias.build_deck(mode=mode, r_sense=r_sense)
         res = run_deck(deck, trace_specs=specs)
         a = None
         if sim_type == "dc_sweep" and "dc_sweep" in res.traces:
-            a = opa_bias.analyze_dc_sweep(res.traces["dc_sweep"])
+            a = opa_bias.analyze_dc_sweep(res.traces["dc_sweep"],
+                                          r_sense=r_sense, vdd=opa_bias.VDD)
         elif sim_type == "ac_stability" and "ac_stability" in res.traces:
             a = opa_bias.analyze_ac_stability(res.traces["ac_stability"])
         elif sim_type == "transient_settling" and "transient_settling" in res.traces:

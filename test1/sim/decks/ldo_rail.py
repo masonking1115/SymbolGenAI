@@ -16,12 +16,9 @@ Three sim modes are exposed:
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
-import yaml
-
-from .. import param_map
+from .. import design_extract, param_map
 from ..catalog import resolve_boundaries
 from ..models import all_models
 from ..stubs import emit_stub
@@ -54,62 +51,10 @@ _NET_TO_NODE = {
 }
 
 
-# ---------------------------------------------------------------------------
-# YAML helpers
-
-
-_SI = {"f": 1e-15, "p": 1e-12, "n": 1e-9, "u": 1e-6, "m": 1e-3,
-       "k": 1e3, "meg": 1e6, "g": 1e9}
-
-
-def _parse_value(s: str) -> float:
-    """Parse an EE-style value like '10uF', '0.1uF', '10k', '0.038'."""
-    if s is None:
-        return 0.0
-    s = str(s).strip().rstrip("FfHhΩΩohmsOHMS").strip()
-    m = re.match(r"^([\d.]+)\s*([a-zA-Z]*)$", s)
-    if not m:
-        return float(s)  # raises if truly unparseable
-    num, suffix = m.group(1), m.group(2).lower()
-    if not suffix:
-        return float(num)
-    if suffix.lower() == "meg":
-        return float(num) * 1e6
-    return float(num) * _SI.get(suffix[0], 1.0)
-
-
-def _load_parts(sheet: str) -> dict:
-    path = NETLIST_DIR / f"{sheet}.yaml"
-    data = yaml.safe_load(path.read_text())
-    return data.get("parts", {})
-
-
-def _caps_with_net(sheet_parts: dict, top_net_pin_map: dict[str, str]) -> list[tuple[str, float]]:
-    """Pull caps where pin .1 sits on a named net.
-
-    top_net_pin_map maps "<refdes>.<pin>" → True membership. Returns list of
-    (refdes, capacitance_F) for caps with .1 in the set.
-    """
-    out: list[tuple[str, float]] = []
-    for ref, spec in sheet_parts.items():
-        if not ref.startswith("C"):
-            continue
-        if f"{ref}.1" not in top_net_pin_map:
-            continue
-        val = spec.get("value") if isinstance(spec, dict) else None
-        if val is None:
-            continue
-        try:
-            out.append((ref, _parse_value(val)))
-        except ValueError:
-            continue
-    return out
-
-
-def _net_members(yaml_path: Path, netname: str) -> set[str]:
-    data = yaml.safe_load(yaml_path.read_text())
-    members = data.get("nets", {}).get(netname, {}).get("members", []) or []
-    return set(members)
+# NOTE: EE-value parsing + cap-on-net collection now live in design_extract
+# (the single as-built extraction module) — this deck calls
+# design_extract.caps_on_net(sheet, net) instead of the former local
+# _parse_value/_load_parts/_caps_with_net/_net_members helpers.
 
 
 # ---------------------------------------------------------------------------
@@ -152,31 +97,15 @@ def build_deck(*, mode: str, vout_set: float = 1.8,
     if mode not in _MODE_TO_SIMTYPE:
         raise ValueError(f"unknown mode: {mode!r}")
     sim_type = _MODE_TO_SIMTYPE[mode]
-    power_parts = _load_parts("power")
-    bobcat_parts = _load_parts("bobcat")
-    power_yaml = NETLIST_DIR / "power.yaml"
-    bobcat_yaml = NETLIST_DIR / "bobcat.yaml"
 
-    # Input-side decoupling sits on +3V3
-    in_caps_members = _net_members(power_yaml, "+3V3")
-    in_caps = _caps_with_net(power_parts, in_caps_members)
-
-    # OUT bulk caps — sit on the internal LDO_OUT bus (we model that as
-    # node VOUT, which we will also tie to VADJ since the jumpers pass-
-    # through in normal operation).
-    out_caps_members = _net_members(power_yaml, "internal_LDO_OUT_bus")
-    out_caps = _caps_with_net(power_parts, out_caps_members)
-
-    # VADJ-side cap (C15 — between LDO_OUT and the load switch input)
-    vadj_caps_members = _net_members(power_yaml, "VADJ")
-    vadj_caps = _caps_with_net(power_parts, vadj_caps_members)
-
-    # +VDDIO caps — across both power.yaml (C16) and bobcat.yaml (C24-29)
-    vddio_caps: list[tuple[str, float]] = []
-    pm = _net_members(power_yaml, "+VDDIO")
-    bm = _net_members(bobcat_yaml, "+VDDIO")
-    vddio_caps.extend(_caps_with_net(power_parts, pm))
-    vddio_caps.extend(_caps_with_net(bobcat_parts, bm))
+    # Decoupling caps come straight from the as-built netlist (design_extract):
+    # input on +3V3, OUT bulk on the internal LDO_OUT bus, the VADJ cap, and the
+    # +VDDIO bank spread across power.yaml (C16) + bobcat.yaml (C24-29).
+    in_caps = design_extract.caps_on_net("power", "+3V3")
+    out_caps = design_extract.caps_on_net("power", "internal_LDO_OUT_bus")
+    vadj_caps = design_extract.caps_on_net("power", "VADJ")
+    vddio_caps = (design_extract.caps_on_net("power", "+VDDIO")
+                  + design_extract.caps_on_net("bobcat", "+VDDIO"))
 
     head = _preamble()
 
@@ -202,6 +131,8 @@ def build_deck(*, mode: str, vout_set: float = 1.8,
         + param_map.params_string("TPS7A8401A"),
         "VSNS_LDO VOUT_LDO VOUT 0",
         _output_caps_block(out_caps + vadj_caps, "VOUT"),
+        # The LDO_OUT→VADJ tie is a populated header jumper (not a netlist R),
+        # modeled as a near-wire. A small floor avoids a degenerate 0Ω node.
         "* Tie LDO_OUT to VADJ (jumper closed in normal use)",
         "RJUMP VOUT VADJ 0.001",
         f"* Load switch (TPS22916); datasheet params:{param_map.params_string('TPS22916CNYFPR') or ' (defaults)'}",

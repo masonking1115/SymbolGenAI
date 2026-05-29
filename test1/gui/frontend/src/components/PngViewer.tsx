@@ -121,12 +121,23 @@ function Toolbar({
  *  - Double-click                     → fit
  *  - + / - / 0 / F overlay buttons    → zoom in/out / 100% / fit
  */
+interface View {
+  zoom: number;
+  tx: number;
+  ty: number;
+}
+
 function Canvas({ src }: { src: string }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
-  const [zoom, setZoom] = useState(1);
-  const [tx, setTx] = useState(0);
-  const [ty, setTy] = useState(0);
+  // zoom/tx/ty live in ONE state object and are always updated together by a
+  // single pure updater. They are interdependent during zoom-toward-cursor, and
+  // nesting setTx/setTy inside a setZoom updater is an impure side-effect that
+  // React.StrictMode double-invokes in dev — that double-applied the zoom
+  // translation, so the focal point landed below-right of the cursor instead of
+  // under it. One object + one updater removes that whole class of bug.
+  const [view, setView] = useState<View>({ zoom: 1, tx: 0, ty: 0 });
+  const { zoom, tx, ty } = view;
   const [nat, setNat] = useState<{ w: number; h: number } | null>(null);
   const [grabbing, setGrabbing] = useState(false);
   const dragRef = useRef<{ x: number; y: number; tx: number; ty: number } | null>(null);
@@ -140,9 +151,11 @@ function Canvas({ src }: { src: string }) {
       (r.height - margin * 2) / nat.h,
     );
     const z = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, scale));
-    setZoom(z);
-    setTx((r.width - nat.w * z) / 2);
-    setTy((r.height - nat.h * z) / 2);
+    setView({
+      zoom: z,
+      tx: (r.width - nat.w * z) / 2,
+      ty: (r.height - nat.h * z) / 2,
+    });
   }, [nat]);
 
   // Fit on load and on container resize.
@@ -153,6 +166,21 @@ function Canvas({ src }: { src: string }) {
     if (wrapRef.current) obs.observe(wrapRef.current);
     return () => obs.disconnect();
   }, [nat, fit]);
+
+  // Zoom toward a point (px, py) given in the wrapper's local coordinate space
+  // (same space as tx/ty): keep the image point currently under (px, py) fixed.
+  const zoomAt = useCallback((factor: number, px: number, py: number) => {
+    setView((v) => {
+      const next = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, v.zoom * factor));
+      if (next === v.zoom) return v; // clamped — no change, avoid drift
+      const ratio = next / v.zoom;
+      return {
+        zoom: next,
+        tx: px - (px - v.tx) * ratio,
+        ty: py - (py - v.ty) * ratio,
+      };
+    });
+  }, []);
 
   // Attach non-passive wheel listener so we can preventDefault.
   useEffect(() => {
@@ -166,17 +194,11 @@ function Canvas({ src }: { src: string }) {
       // Exponential zoom feels smoother than linear. deltaY is +ve when
       // scrolling down → zoom out.
       const factor = Math.exp(-e.deltaY * 0.0015);
-      setZoom((prevZoom) => {
-        const next = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, prevZoom * factor));
-        // Zoom toward cursor: keep the image point under (cx, cy) stationary.
-        setTx((prevTx) => cx - (cx - prevTx) * (next / prevZoom));
-        setTy((prevTy) => cy - (cy - prevTy) * (next / prevZoom));
-        return next;
-      });
+      zoomAt(factor, cx, cy);
     };
     el.addEventListener("wheel", handler, { passive: false });
     return () => el.removeEventListener("wheel", handler);
-  }, []);
+  }, [zoomAt]);
 
   const onMouseDown = (e: React.MouseEvent) => {
     // Left button only.
@@ -190,8 +212,7 @@ function Canvas({ src }: { src: string }) {
     const onMove = (e: MouseEvent) => {
       const d = dragRef.current;
       if (!d) return;
-      setTx(d.tx + (e.clientX - d.x));
-      setTy(d.ty + (e.clientY - d.y));
+      setView((v) => ({ ...v, tx: d.tx + (e.clientX - d.x), ty: d.ty + (e.clientY - d.y) }));
     };
     const onUp = () => {
       if (!dragRef.current) return;
@@ -206,25 +227,17 @@ function Canvas({ src }: { src: string }) {
     };
   }, []);
 
+  // Overlay +/- buttons zoom toward the viewport center.
   const zoomBy = (factor: number) => {
     if (!wrapRef.current) return;
     const r = wrapRef.current.getBoundingClientRect();
-    const cx = r.width / 2;
-    const cy = r.height / 2;
-    setZoom((prev) => {
-      const next = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, prev * factor));
-      setTx((ptx) => cx - (cx - ptx) * (next / prev));
-      setTy((pty) => cy - (cy - pty) * (next / prev));
-      return next;
-    });
+    zoomAt(factor, r.width / 2, r.height / 2);
   };
 
   const reset100 = () => {
     if (!wrapRef.current || !nat) return;
     const r = wrapRef.current.getBoundingClientRect();
-    setZoom(1);
-    setTx((r.width - nat.w) / 2);
-    setTy((r.height - nat.h) / 2);
+    setView({ zoom: 1, tx: (r.width - nat.w) / 2, ty: (r.height - nat.h) / 2 });
   };
 
   return (

@@ -1,18 +1,32 @@
 # ============================================================================
 # Curated test-block catalog for the test1 schematic.
 #
-# This is the LIBRARY surfaced in the (future) Simulation tab. Each entry is
-# a testable sub-circuit: what sheet it comes from, which simulation types
-# apply (with the rationale + a concrete pass criterion), which behavioral
-# models it needs, and what boundary stub sits on each cut edge.
+# This is the LIBRARY surfaced in the Simulation tab. Each entry is a testable
+# sub-circuit: what sheet (netlist/<sheet>.yaml) it comes from, which simulation
+# types apply (rationale + a concrete pass criterion), which behavioral models
+# it needs, and what boundary stub sits on each cut edge.
 #
-# Reviewer notes (Mason): this is the curation to check. The numbers in
-# `pass` and boundary `params` are first-pass estimates from datasheets +
-# the YAML notes — flag any you want tightened or that look wrong. Stubs
-# reference shapes in stubs.py; models reference builders in models.py.
+# BOUNDARY vs EXTRACTED — what lives here vs what comes from the netlist:
+#   • This file holds ONLY the genuinely OFF-SHEET boundary: the world outside
+#     the slice being simulated. Those params are engineering estimates that are
+#     NOT in the schematic and so are curated here:
+#        R_src / L_src   — supply source impedance (board/LAYOUT estimate)
+#        t_on            — enable timing (FPGA FIRMWARE, off-schematic)
+#        I_base / I_step — downstream load current (the DUT's behavior)
+#        rail V          — the nominal incoming-rail voltage
+#        pass:           — the spec/acceptance criterion
+#   • COMPONENT VALUES that ARE in the design (decoupling caps, the bias sense
+#     resistor R40/R41, jumpers) are NOT duplicated here — the deck builders read
+#     them from netlist/<sheet>.yaml via test1/sim/design_extract.py, so a design
+#     change flows straight into the sim. (Caps were always extracted; the sense
+#     R moved from a hardcoded constant to extraction.)
+#
+# Reviewer notes (Mason): the numbers in `pass` and the BOUNDARY `params` are the
+# curation to check — first-pass estimates from datasheets + the YAML notes; flag
+# any to tighten. Stubs reference shapes in stubs.py; models in models.py.
 #
 # status values:
-#   implemented      — deck builder exists and runs today (PoC)
+#   implemented      — deck builder exists and runs today
 #   planned          — curated here, deck builder not yet written
 #   not_simulatable  — no useful SPICE behavior; documented so the tab can
 #                      show *why* rather than silently omitting the sheet.
@@ -35,6 +49,8 @@ blocks:
       - { mpn: TPS22916CNYFPR, file: TPS22916CNYFPR.pdf }
     # Base boundaries describe the steady, rails-already-up case (== op-point).
     # Each sim_type below overrides only the params that differ for its test.
+    # All params here are OFF-SHEET boundary values (see header) — the LDO/switch
+    # decoupling caps are read from power.yaml/bobcat.yaml by design_extract.
     boundaries:
       "+3V3":   { stub: RailIn,       params: { V: 3.3, R_src: 0.020 } }
       LDO_EN:   { stub: DigitalDrive, params: { t_on: 0 } }      # static-high
@@ -101,6 +117,8 @@ blocks:
       - { mpn: PMZ1200UPEYL, file: PMZ1200UPE.pdf }
       - { mpn: 2N7002, file: 2n7002.pdf }
       - { mpn: TNPW06035K11BEEA, file: tnpw_e3.pdf }
+    # OFF-SHEET boundary only. The 5.11k sense resistor (R40/R41) is NOT here —
+    # the deck reads it from bias.yaml via design_extract.sense_resistance().
     boundaries:
       "+3V3":      { stub: RailIn,        params: { V: 3.3, R_src: 0.020 } }
       BIAS0:       { stub: AnalogOutLoad, params: { R_load: 100, C_load: 20e-12 } }

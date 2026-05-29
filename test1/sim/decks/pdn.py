@@ -16,15 +16,8 @@ Modes:
 
 from __future__ import annotations
 
-from pathlib import Path
-
-import yaml
-
+from .. import design_extract
 from ..catalog import resolve_boundaries
-
-NETLIST_DIR = Path(__file__).resolve().parents[2] / "netlist"
-
-_SI = {"f": 1e-15, "p": 1e-12, "n": 1e-9, "u": 1e-6, "m": 1e-3, "k": 1e3}
 
 # Each PDN block id → (rail net name, SPICE node, sheets to scan for caps).
 RAIL_OF_BLOCK = {
@@ -33,29 +26,12 @@ RAIL_OF_BLOCK = {
 }
 
 
-def _parse_value(s: str) -> float:
-    s = str(s).strip().rstrip("Ff")
-    import re
-    m = re.match(r"^([\d.]+)\s*([a-zA-Z]*)$", s)
-    if not m:
-        return float(s)
-    num, suf = m.group(1), m.group(2).lower()
-    return float(num) * (_SI.get(suf[0], 1.0) if suf else 1.0)
-
-
 def _rail_caps(rail: str, sheets: list[str]) -> list[tuple[str, float]]:
-    """Collect (refdes, C) for caps whose pin .1 sits on `rail`."""
+    """Collect (refdes, C) for caps whose pin .1 sits on `rail`, across sheets —
+    via design_extract (the single as-built netlist extraction module)."""
     out: list[tuple[str, float]] = []
     for sheet in sheets:
-        data = yaml.safe_load((NETLIST_DIR / f"{sheet}.yaml").read_text())
-        members = set(data.get("nets", {}).get(rail, {}).get("members", []) or [])
-        parts = data.get("parts", {})
-        for ref, spec in parts.items():
-            if not ref.startswith("C") or f"{ref}.1" not in members:
-                continue
-            val = spec.get("value") if isinstance(spec, dict) else None
-            if val is not None:
-                out.append((ref, _parse_value(val)))
+        out.extend(design_extract.caps_on_net(sheet, rail))
     return out
 
 
