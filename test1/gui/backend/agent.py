@@ -632,6 +632,8 @@ class AgentRun:
     kind: str                        # "chat" | "apply" | "symbol-gen"
     events: list[dict] = field(default_factory=list)
     text: str = ""
+    stream_log: str = ""             # full concise stream (thinking/assistant/tool),
+                                     # never overwritten — persisted for after-the-fact audit
     status: str = "running"          # "running" | "ok" | "fail" | "cancelled"
     returncode: int | None = None
     subscribers: list[asyncio.Queue] = field(default_factory=list)
@@ -702,6 +704,13 @@ async def _spawn_claude(
     py_dir = str(Path(sys.executable).parent)
     env["PATH"] = py_dir + os.pathsep + env.get("PATH", "")
     env["PYTHONUTF8"] = "1"
+    # Enable extended thinking so the agent emits `thinking` blocks. We surface a
+    # concise line per block (see _summarize_event) so the user can watch the
+    # agent's reasoning live and verify it reaches conclusions for the RIGHT
+    # reason — not just the right outcome (the prior no-change run was opaque).
+    # Keep the budget modest: enough to reason about a topology/feasibility call,
+    # not so large it bloats latency. Respect an existing override if set.
+    env.setdefault("MAX_THINKING_TOKENS", "4000")
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         cwd=str(PROJECT_DIR),
@@ -727,7 +736,17 @@ def _summarize_event(ev: dict) -> str | None:
     if t == "assistant":
         msg = ev.get("message", {})
         for block in msg.get("content", []):
-            if block.get("type") == "text":
+            btype = block.get("type")
+            if btype == "thinking":
+                # The agent's private reasoning. Surfacing a concise line lets the
+                # user verify the agent UNDERSTANDS the problem and reaches its
+                # conclusion for the right reason (not just the right outcome).
+                txt = (block.get("thinking") or "").strip()
+                if txt:
+                    # collapse whitespace so multi-line reasoning is one tidy line
+                    one = " ".join(txt.split())
+                    return f"thinking: {one[:280]}"
+            elif btype == "text":
                 txt = block.get("text", "").strip()
                 if txt:
                     return f"assistant: {txt[:240]}"
@@ -761,6 +780,7 @@ async def _run_subprocess(run: AgentRun, proc: asyncio.subprocess.Process) -> No
 
     def push(line: str) -> None:
         run.text += line + "\n"
+        run.stream_log += line + "\n"   # preserved even after run.text is replaced
         for q in list(run.subscribers):
             try:
                 q.put_nowait(line)
@@ -816,6 +836,19 @@ async def _run_subprocess(run: AgentRun, proc: asyncio.subprocess.Process) -> No
     # The final assistant text is the canonical user-visible answer.
     if final_text:
         run.text = "\n".join(final_text)
+    # Persist the full concise stream (reasoning included) so a run — especially a
+    # "leave-the-design-unchanged" run — is auditable after the fact, not just live.
+    try:
+        runs_dir = STATE_DIR / "runs"
+        runs_dir.mkdir(parents=True, exist_ok=True)
+        log_body = (
+            f"# run {run.run_id} kind={run.kind} status={run.status} rc={run.returncode}\n\n"
+            f"## stream (thinking / assistant / tools)\n{run.stream_log}\n"
+            f"## final answer\n{run.text}\n"
+        )
+        (runs_dir / f"{run.run_id}.log").write_text(log_body, encoding="utf-8")
+    except Exception:
+        pass  # logging is best-effort; never let it break the run
     for q in list(run.subscribers):
         try:
             q.put_nowait(None)
