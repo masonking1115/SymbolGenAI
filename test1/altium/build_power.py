@@ -295,11 +295,15 @@ def build_power() -> tuple[AltiumSheet, object]:
     s.port("LDO_PG", LDO_PG_X, LDO_PG_Y,
            io=PortIOType.OUTPUT, style=PortStyle.LEFT_RIGHT, side="right")
 
-    # ---- GND pins (8, 18, 21) → GND power symbols --------------------------
-    for pn in ("8", "18", "21"):
-        px, py = U10[pn]
-        s.wire(px, py, px + 400, py)
-        s.power_at("GND", px + 400, py)
+    # ---- GND pins (8, 18, 21) → ONE shared GND symbol ----------------------
+    # These three GND pins sit in a 100-mil-pitch column (x=5800, y=4100/4200/
+    # 4300). Giving each its own GND symbol stacked them 100 mil apart so the
+    # glyph bars/labels collided (label_overlap). Bus them to a single vertical
+    # GND rail just right of the chip and hang ONE GND symbol below the lowest pin
+    # — tidier and the textbook way to ground a cluster. gnd_bus T's each pin into
+    # the rail (Altium auto-junctions), so connectivity is identical.
+    GND_RAIL_X = U10["8"][0] + 400      # 6200 — clear of the OUT bus at 6400
+    s.gnd_bus([U10["8"], U10["18"], U10["21"]], GND_RAIL_X)
 
     # =========================================================================
     # Cluster C: Output jumpers J10→+VDDD, J11→+VDDA1, J12→+VDDA2

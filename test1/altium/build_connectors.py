@@ -33,37 +33,49 @@ GRID = 100  # mil
 # ---------------------------------------------------------------------------
 # Layout constants (all mils)
 # ---------------------------------------------------------------------------
+# The four clusters are pulled together into a compact block so the sheet shrinks
+# from A2 to A3: the breakout banks (A/B/C) share a tight y-band and the GND test
+# clips (D) sit just below them (they used to hang ~7000 mil lower at y=2000,
+# leaving a huge empty gap that forced the larger sheet). Row pitch stays 1000 mil
+# so the SMA bodies + port labels read cleanly (not cluttered).
+
+# Common top row for the breakout banks; rows descend by ROW_PITCH.
+ROW_TOP   = 8000
+ROW_PITCH = 1000
 
 # Cluster A: CLK_OUT0–3 SMAs (J50–J53)  — left column
 A_SMA_X   = 3000    # SMA body placement x; pin 1 hot-spot at A_SMA_X + 500
 A_PORT_X  = 2200    # port anchor x (left of SMA)
-A_ROW_Y   = [9000, 10000, 11000, 12000]   # y rows for CLK_OUT0..3
+A_ROW_Y   = [ROW_TOP - i * ROW_PITCH for i in range(4)]   # CLK_OUT0..3 (4 rows)
 
 # Cluster B: OSC/WEIGHT/TRIG SMAs (J54–J56) + 0Ω (R50–R52) — centre column
 B_SMA_X   = 8000    # SMA body placement x; pin 1 at B_SMA_X + 500
 B_RES_X   = 6400    # R body x (orient=3 → pin1 at x+100, pin2 at x−100)
 B_PORT_X  = 5600    # port anchor x
-B_ROW_Y   = [9000, 10000, 11000]           # y rows for OSC_EN/WEIGHT_EN/SAMPLE_TRIG
+B_ROW_Y   = [ROW_TOP - i * ROW_PITCH for i in range(3)]   # OSC_EN/WEIGHT_EN/SAMPLE_TRIG
 
-# Cluster C: GPIO 1×4 header (J57)
+# Cluster C: GPIO 1×4 header (J57) — top-right, aligned with the bank top.
 C_HDR_X   = 12000
-C_HDR_Y   = 9500    # centre; pins 1/2 at y+500, pins 3/4 at y−500
+C_HDR_Y   = ROW_TOP - 500   # centre; pins 1/2 at y+500 (==ROW_TOP), 3/4 at y−500
 C_PORT_X  = 10800
 
-# Cluster D: GND test clips (TP50–TP52)
-D_ROW_Y   = 2000
+# Cluster D: GND test clips (TP50–TP52) — a row just BELOW the breakout banks
+# (was at y=2000, far below everything). Sits under cluster A's column so the
+# block is compact. Bottom bank row is ROW_TOP-3*PITCH=5000; clips a row under it.
+D_ROW_Y   = ROW_TOP - 4 * ROW_PITCH - 600   # 3400
 D_CLIP_X  = [1000, 3000, 5000]   # placement x; pin 1 at x+500
 
 
 def build_connectors() -> tuple[AltiumSheet, object]:
     nl = load_netlist("connectors")
     lib, lmap = get_library()
-    # A2: the breakout banks (CLK_OUT/SAMPLE_TRIG ports + J5x bodies) extend to
-    # X~17438 / Y~13595, ~900 / ~1900 mil past A3. A2 (23390x16535) frames it
-    # cleanly without repositioning dozens of placed parts.
+    # A3: the four clusters are now pulled into a compact block (breakout banks
+    # share a tight y-band, GND clips tucked just below) so the content fits the
+    # A3 drawable frame (15500x11100) instead of needing A2 — the old layout
+    # spread the GND clips ~7000 mil below the banks, forcing the larger sheet.
     s = AltiumSheet(name="connectors",
                     title="test1 — Connectors / Breakouts",
-                    paper="A2")
+                    paper="A3")
 
     def place(ref, x, y, orientation=0):
         return s.place_from_netlist(lib, lmap, nl, ref, x, y,

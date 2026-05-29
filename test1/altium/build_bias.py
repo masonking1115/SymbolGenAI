@@ -82,22 +82,32 @@ def build_bias() -> tuple[AltiumSheet, object]:
     s.no_connect(*U40["8"])
     s.no_connect(*U40["9"])
 
-    # C40 decoupling at (2600, 4000) with the shared +3V3 riser
-    V33_RAIL_Y = 6800
-    C40 = place("C40", 2600, 4000)
-    s.wire(*C40["1"], C40["1"][0], V33_RAIL_Y)      # C40 top → +3V3 riser
-    s.power_at("+3V3", C40["1"][0], V33_RAIL_Y)
-    s.wire(*C40["2"], C40["2"][0], 3600)            # C40 bot → GND
-    s.power_at("GND", C40["2"][0], 3600)
-
-    # VDD (pin1 @4400) → west, T into the C40 +3V3 riser (x=2600)
-    s.wire(*U40["1"], C40["1"][0], U40["1"][1])
-    s.junction(C40["1"][0], U40["1"][1])
+    # VDD (pin1 @4400) → west to its own +3V3 rail. (C40 — the VDD decoupling
+    # cap — now lives in the aligned decap bank below with C42/C43, connected by
+    # net name only, so the DAC no longer shares a riser with it.) The rail sits
+    # at the end of the horizontal stub (no vertical riser) so it neither crosses
+    # the SCL/SDA wires above (y=4700/4900) nor T's into the *LDAC→GND row 5000.
+    s.wire(*U40["1"], 3000, U40["1"][1])
+    s.power_at("+3V3", 3000, U40["1"][1])
 
     # VSS (pin10 @4200) → west to x=3200, down to GND
     s.wire(*U40["10"], 3200, U40["10"][1])
     s.wire(3200, U40["10"][1], 3200, 3600)
     s.power_at("GND", 3200, 3600)
+
+    # =========================================================
+    # Decoupling bank — C40 (DAC VDD), C42 (ch0), C43 (ch1) all hang between
+    # +3V3 (top) and GND (bottom) by net name only, so they group into one neat
+    # aligned row instead of scattering across the sheet (decap_grouping). Pitch
+    # 800 mil keeps them readable (>passive_declutter min pitch).
+    # =========================================================
+    DECAP_Y = 2400
+    for _ref, _x in (("C40", 2600), ("C42", 3400), ("C43", 4200)):
+        _C = place(_ref, _x, DECAP_Y)
+        s.wire(*_C["1"], _x, DECAP_Y + 300)         # top → +3V3 (rail above)
+        s.power_at("+3V3", _x, DECAP_Y + 300)
+        s.wire(*_C["2"], _x, DECAP_Y - 300)         # bottom → GND (below)
+        s.power_at("GND", _x, DECAP_Y - 300)
 
     # =========================================================
     # Single dual op-amp U41 (OPA2388, one 8-pin symbol)
@@ -110,11 +120,15 @@ def build_bias() -> tuple[AltiumSheet, object]:
     # --- Power pins (left side, below the signal pins) ---
     vp_x, vp_y = OPA["8"]   # V+  (8000, 4100)
     vm_x, vm_y = OPA["4"]   # V-  (8000, 4200)
-    # V+ → west, then down to a +3V3 symbol (clear below the body)
+    # V+ → west, then UP to a +3V3 symbol so the rail arrow sits ABOVE its net,
+    # pointing up OFF the net (was routed DOWN, which left the arrow below its own
+    # wire pointing up into it — the power_stub_side defect). Column x=7100 above
+    # y=4100 is clear (op-amp body starts at x=8000; no crossing wires), and the
+    # arrow at 4600 stays below the signal-pin rows (>=4700).
     s.wire(vp_x, vp_y, vp_x - 900, vp_y)
-    s.wire(vp_x - 900, vp_y, vp_x - 900, vp_y - 500)
-    s.power_at("+3V3", vp_x - 900, vp_y - 500)
-    # V- → west (shorter run), then down to GND
+    s.wire(vp_x - 900, vp_y, vp_x - 900, vp_y + 500)
+    s.power_at("+3V3", vp_x - 900, vp_y + 500)
+    # V- → west (shorter run), then down to GND (GND hangs below, points down).
     s.wire(vm_x, vm_y, vm_x - 500, vm_y)
     s.wire(vm_x - 500, vm_y, vm_x - 500, vm_y - 1000)
     s.power_at("GND", vm_x - 500, vm_y - 1000)
@@ -200,22 +214,23 @@ def build_bias() -> tuple[AltiumSheet, object]:
         s.wire(pd_bot_x, pd_bot_y, pd_bot_x, PD_GND_Y)
         s.power_at("GND", pd_bot_x, PD_GND_Y)
 
+        # Each channel's 3-line fail-safe note is ~2500 mil wide and the two
+        # PMOS columns are only 2500 mil apart, so per-column notes overlapped
+        # into an unreadable glob (label_overlap). Park both channels' note
+        # blocks in the open band below the DAC/op-amp instead, stacked so the
+        # two 3-line blocks never share a row.
+        note_x = 4400
+        note_base = 3000 - (ch_idx * 800)
         s.text(f"FAIL-SAFE: BIAS_ISO{ch_idx} default-LOW (R{int(pd_ref[1:])} pull-down)",
-               pd_bot_x - 600, PD_GND_Y - 300 - (ch_idx * 200))
+               note_x, note_base)
         s.text(f"-> {nmos_ref} OFF at POR -> no bias until FPGA asserts HIGH.",
-               pd_bot_x - 600, PD_GND_Y - 500 - (ch_idx * 200))
+               note_x, note_base - 200)
         s.text(f"{par_ref} is DNP -- populate ONLY to bypass FPGA control.",
-               pd_bot_x - 600, PD_GND_Y - 700 - (ch_idx * 200))
+               note_x, note_base - 400)
 
-        # --- Channel decoupling cap (+3V3/GND, connects by net name) ---
-        CAP_CX = pmos_cx - 700
-        CAP_CY = PMOS_CY + 2200
-        CAP = place(cap_ref, CAP_CX, CAP_CY)
-        s.wire(*CAP["1"], CAP_CX, CAP["1"][1] + 300)
-        s.power_at("+3V3", CAP_CX, CAP["1"][1] + 300)
-        s.wire(*CAP["2"], CAP_CX, CAP["2"][1] - 300)
-        s.power_at("GND", CAP_CX, CAP["2"][1] - 300)
-
+        # (Channel decoupling cap cap_ref is placed in the shared decap bank in
+        # the main body — it connects by +3V3/GND net name only, so grouping all
+        # three caps into one aligned row is purely a layout choice.)
         return {"gate": (gate_x, gate_y), "src_fb": src_fb}
 
     # =========================================================
@@ -231,8 +246,21 @@ def build_bias() -> tuple[AltiumSheet, object]:
     # =========================================================
     # Op-amp ↔ channel links
     # =========================================================
-    def link_near(pos, neg, out, dac_pin, gate, src_fb, route_y):
-        """Channel 0 (amp A): op-amp adjacent to its PMOS cluster."""
+    def link_near(pos, neg, out, dac_pin, gate, src_fb, route_y,
+                  out_riser_x, out_lane, fb_drop_x, fb_lane_y):
+        """Channel 0 (amp A): op-amp adjacent to its PMOS cluster.
+
+        The PMOS is placed ori=2 so its gate pin faces RIGHT (the body's right
+        edge). Driving it with a straight east wire from OUTA cut THROUGH the
+        transistor body (pin_wire_crosses_body); instead the gate drive rises to
+        a short lane ABOVE the sense-R/+3V3 column and drops onto the gate from
+        directly above — approaching the right-edge pin from outside the body
+        (same up-and-over the far channel uses).
+
+        The feedback is routed UNDER the op-amp (down the left, across below the
+        op-amp/PMOS bodies, up to the source-net tap) — a short, direct wrap that
+        clears the gate riser and the far channel's risers entirely, replacing
+        the old westward-jog-then-long-top-lane meander."""
         # +IN ← DAC VOUTx
         dac_x, dac_y = U40[dac_pin]
         in_x, in_y = pos
@@ -242,19 +270,25 @@ def build_bias() -> tuple[AltiumSheet, object]:
         s.wire(col, route_y, in_x, route_y)
         if route_y != in_y:
             s.wire(in_x, route_y, in_x, in_y)
-        # OUT → PMOS gate (straight east at the output y)
-        s.wire(out[0], out[1], gate[0], out[1])
-        if gate[1] != out[1]:
-            s.wire(gate[0], out[1], gate[0], gate[1])
-        # -IN ← source feedback: west of body, up to the source net, east to tap.
-        # Column offset chosen to clear the V+/V- power columns (7100/7500) and
-        # the channel-1 feedback column (7300).
+        # OUT → up-and-over → down onto the right-facing gate pin from above.
+        ox, oy = out
+        s.wire(ox, oy, out_riser_x, oy)
+        s.wire(out_riser_x, oy, out_riser_x, out_lane)
+        s.wire(out_riser_x, out_lane, gate[0], out_lane)
+        s.wire(gate[0], out_lane, gate[0], gate[1])
+        # -IN ← source feedback, routed UNDER the op-amp: west off the pin, down
+        # below the op-amp body, east below the bodies, up just LEFT of the PMOS
+        # body, then a short hop east onto the source-net tap.
         neg_x, neg_y = neg
-        fb_col = neg_x - 400        # 7600
-        fb_y = src_fb[1]
+        # 7000: LEFT of every op-amp left-side stub (V+ to 7100, -INB to 7300,
+        # V- to 7500) so the downward riser clears all of them.
+        fb_col = neg_x - 1000
+        tap_x, tap_y = src_fb
         s.wire(neg_x, neg_y, fb_col, neg_y)
-        s.wire(fb_col, neg_y, fb_col, fb_y)
-        s.wire(fb_col, fb_y, src_fb[0], fb_y)
+        s.wire(fb_col, neg_y, fb_col, fb_lane_y)
+        s.wire(fb_col, fb_lane_y, fb_drop_x, fb_lane_y)
+        s.wire(fb_drop_x, fb_lane_y, fb_drop_x, tap_y)
+        s.wire(fb_drop_x, tap_y, tap_x, tap_y)
 
     def link_far(pos, neg, out, dac_pin, gate, src_fb, route_y, out_lane, fb_lane):
         """Channel 1 (amp B): PMOS cluster is far right; route OUT and feedback
@@ -286,9 +320,15 @@ def build_bias() -> tuple[AltiumSheet, object]:
         s.wire(drop_x, fb_lane, drop_x, src_fb[1])
         s.wire(drop_x, src_fb[1], src_fb[0], src_fb[1])
 
-    # Channel 0: amp A (pins +INA=3, -INA=2, OUTA=1), DAC VOUTA=pin6
+    # Channel 0: amp A (pins +INA=3, -INA=2, OUTA=1), DAC VOUTA=pin6.
+    #   out_riser_x=10200  riser between the op-amp and the PMOS (left of the
+    #                      Q40 body at x=10730), up to out_lane.
+    #   out_lane=6800      above the ch0 +3V3 stub (6500); the gate drops here.
+    #   fb_drop_x=10600    feedback rises just LEFT of the Q40 body (10730).
+    #   fb_lane_y=3600     feedback runs east UNDER the op-amp/PMOS bodies.
     link_near(OPA["3"], OPA["2"], OPA["1"], "6", ch0["gate"], ch0["src_fb"],
-              route_y=5000)
+              route_y=5000, out_riser_x=10200, out_lane=6800,
+              fb_drop_x=10600, fb_lane_y=3600)
     # Channel 1: amp B (pins +INB=5, -INB=6, OUTB=7), DAC VOUTB=pin7.
     # Lane Y values must NOT coincide with any +3V3 power-port stub endpoint:
     # the previous values out_lane=7300, fb_lane=7100 landed exactly on the

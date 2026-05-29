@@ -371,6 +371,82 @@ class AltiumSheet:
             changes.append((lb.name, dx))
         return changes
 
+    def _wire_side_along_axis(self, x: int, y: int, vertical: bool,
+                              tol: float = 1.0) -> tuple[bool, bool]:
+        """For the column (vertical=True) or row through (x,y), report whether
+        wire material exists on the (lower/upper) or (left/right) side. Returns
+        (neg_side, pos_side): for vertical, (below, above); for horizontal,
+        (left, right). Coords are EMITTED (page) mils."""
+        neg = pos = False
+        for (a, b) in self._wires:
+            if vertical and abs(a[0] - x) < tol and abs(b[0] - x) < tol:
+                lo, hi = min(a[1], b[1]), max(a[1], b[1])
+                if lo - tol <= y <= hi + tol:
+                    pos |= hi > y + tol
+                    neg |= lo < y - tol
+            if (not vertical) and abs(a[1] - y) < tol and abs(b[1] - y) < tol:
+                lo, hi = min(a[0], b[0]), max(a[0], b[0])
+                if lo - tol <= x <= hi + tol:
+                    pos |= hi > x + tol
+                    neg |= lo < x - tol
+        return neg, pos
+
+    def auto_fix_power_stub_side(self, length: int = 400) -> list[tuple[str, int]]:
+        """Auto-correct a power glyph that sits on the WRONG side of its stub —
+        a supply rail (up-arrow) whose net is ABOVE it, or a GND (down-bar) whose
+        net is BELOW it, so the glyph points INTO its net instead of off it. The
+        fix branches a short stub to the clear side along the OTHER axis (so the
+        glyph terminates a stub that points away from the net) and relocates the
+        glyph there. The electrical net point is unchanged (the stub re-ties it).
+        Complements auto_fix_power (which handles the both-sides straddle) and is
+        the build-time counterpart to layout_lint.power_stub_side / ground_on_top.
+
+        Skips a glyph that already straddles (auto_fix_power's job) or that has no
+        clear perpendicular side. Returns (rail, dy) relocations."""
+        changes: list[tuple[str, int]] = []
+        for lb in [l for l in self._labels if l.kind == "power" and l.obj is not None]:
+            is_gnd = "GND" in lb.name.upper()
+            below, above = self._wire_side_along_axis(lb.x, lb.y, vertical=True)
+            # Wrong side: rail with net above (and not below), or GND with net
+            # below (and not above). If both sides have wire, it's a straddle
+            # (handled elsewhere) — skip.
+            if is_gnd:
+                wrong = below and not above
+            else:
+                wrong = above and not below
+            if not wrong:
+                continue
+            # Relocate the glyph onto a clear horizontal stub to one side, where it
+            # no longer points into the net. Pick a side whose stub path is clear.
+            def stub_clear(nx: int) -> bool:
+                l, r = self._wire_side_along_axis(nx, lb.y, vertical=True)
+                if l or r:
+                    return False  # would land on another vertical net
+                x0, x1 = min(lb.x, nx), max(lb.x, nx)
+                for (a, b) in self._wires:
+                    if abs(a[1] - lb.y) < 1.0 and abs(b[1] - lb.y) < 1.0:
+                        if min(a[0], b[0]) < x1 - 1.0 and max(a[0], b[0]) > x0 + 1.0:
+                            return False
+                return True
+            moved = None
+            for dx in (length, -length, 2 * length, -2 * length):
+                if stub_clear(lb.x + dx):
+                    moved = dx
+                    break
+            if moved is None:
+                continue
+            nx = lb.x + moved
+            self.doc.add_object(make_sch_wire(
+                points_mils=[SchPointMils.from_mils(lb.x, lb.y),
+                             SchPointMils.from_mils(nx, lb.y)],
+                color=_NET_BLUE, line_width=LineWidth.SMALL))
+            self._wires.append(((lb.x, lb.y), (nx, lb.y)))
+            lb.obj.location = SchPointMils.from_mils(nx, lb.y).to_coord_point()
+            lb.box = self._power_box(nx, lb.y, lb.name, is_gnd)
+            lb.x = nx
+            changes.append((lb.name, moved))
+        return changes
+
     def no_connect(self, x: int, y: int) -> None:
         x, y = self._t(x, y)
         self.doc.add_object(make_sch_no_erc(location_mils=SchPointMils.from_mils(x, y)))

@@ -103,6 +103,10 @@ def main() -> int:
             # 2026-05-28 was missed in the original build precisely because
             # validation ran too early.
             powerfixes = s.auto_fix_power()
+            # Then correct any rail/GND glyph sitting on the WRONG side of its
+            # stub (net on its pointing side) — relocates it to a clear stub that
+            # points off the net. Also emits stubs, so fold into the revalidation.
+            powerfixes += s.auto_fix_power_stub_side()
             if powerfixes:
                 _revalidate_post_autofix(s, nl)
             s.save(OUT_DIR / f"{name}.SchDoc")

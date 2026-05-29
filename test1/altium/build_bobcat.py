@@ -183,11 +183,15 @@ def build_bobcat() -> tuple[AltiumSheet, object]:
     px, py = U["22"]
     s.wire(px, py, px + 600, py)
     s.power_at("+VDDIO", px + 600, py)
-    # pins 33, 34 (top): stub up
-    for pn in ("33", "34"):
+    # pins 33, 34 (top): stub up. These two top pins are only 200 mil apart, so
+    # equal 600-mil stubs put both +VDDIO rail-name texts on the same row where
+    # they collide into a smear (label_overlap). Stagger the stub lengths (like
+    # pin 13 vs pin 12) so the two glyphs sit on different rows and their names
+    # clear each other vertically.
+    for pn, stub in (("33", 600), ("34", 1000)):
         px, py = U[pn]
-        s.wire(px, py, px, py + 600)
-        s.power_at("+VDDIO", px, py + 600)
+        s.wire(px, py, px, py + stub)
+        s.power_at("+VDDIO", px, py + stub)
 
     # VDDIO cap row (C24..C29) — the caps connect ONLY to local +VDDIO / GND
     # power symbols (no wired rail), so they live in an empty band well clear of
@@ -339,26 +343,38 @@ def build_bobcat() -> tuple[AltiumSheet, object]:
         ("37", "GPIO3", "R30", 4600),   # px=4700 -> farthest row
     ]
     GPIO_PORT_X = CHIP_LEFT_X - 2400   # 1200 (left side)
+    # All four pull-down bottoms collect onto ONE vertical GND rail (a clean comb)
+    # ending in a SINGLE GND symbol, instead of four GND glyphs stepped down in a
+    # ragged staircase (the user's "GND should be grounded neatly with the others"
+    # note). The collector sits just right of the pull columns at x=4800 — a clean
+    # gap between the GPIO3 pin drop (x=4700) and the CLK pin column (x=4900) — so
+    # each R-bottom reaches it with a short east stub at its own row.
+    GND_COLLECT_X = 4800
+    pd_bottoms = []
     for i, (pn, net, pull_ref, pull_x) in enumerate(GPIO):
         px, py = U[pn]
         row_y = CHIP_TOP_Y + 1400 + i * 400   # 7900, 8300, 8700, 9100
         s.wire(px, py, px, row_y)                   # up to own row
         s.wire(px, row_y, GPIO_PORT_X, row_y)       # LEFT to port (span [1200, px])
         s.port(net, GPIO_PORT_X, row_y, io=PortIOType.OUTPUT, style=PortStyle.LEFT_RIGHT)
-        # pull-down R30..R33: .1 on GPIO net (row side), .2 on GND. R orient0:
-        # pin1=top, pin2=bottom. Place R BELOW the row; pin1(top) taps the row,
-        # pin2(bottom) drops to GND. Tap stub from the horizontal at pull_x.
+        # pull-down R30..R33: .1 on GPIO net (row side), .2 to the shared GND rail.
+        # R orient0: pin1=top, pin2=bottom. Place R BELOW the row; pin1(top) taps
+        # the row, pin2(bottom) routes EAST to the GND collector.
         R_CY = row_y - 400                          # R centre below the row
         place(pull_ref, pull_x, R_CY)
         Rp = s.pins_of(pull_ref, 1)  # 1=(pull_x,R_CY+100) ; 2=(pull_x,R_CY-100)
         s.wire(pull_x, row_y, pull_x, Rp["1"][1])           # row tap -> R.1(top)
-        # Drop the GND to R_CY-700 (not -500): the columns are staggered only 200
-        # mil but the GND glyph is 220 wide, so a GND's TOP would clip the
-        # bottom-right corner of the previous column's resistor body. Hanging it
-        # 200 mil lower clears that neighbour without moving the columns (which
-        # are pinned to the GPIO row spans for connectivity).
-        s.wire(pull_x, Rp["2"][1], pull_x, R_CY - 700)      # R.2(bottom) -> GND
-        s.power_at("GND", pull_x, R_CY - 700)
+        s.wire(pull_x, Rp["2"][1], GND_COLLECT_X, Rp["2"][1])  # R.2(bot) -> collector
+        pd_bottoms.append(Rp["2"][1])
+    # Vertical GND collector tying all four R-bottoms, one GND symbol below the
+    # lowest. Interior taps are T-intersections (auto-junctioned), same net.
+    top_y, bot_y = max(pd_bottoms), min(pd_bottoms)
+    s.wire(GND_COLLECT_X, top_y, GND_COLLECT_X, bot_y)
+    for y in sorted(pd_bottoms)[1:-1]:
+        s.junction(GND_COLLECT_X, y)
+    gnd_y = bot_y - 300
+    s.wire(GND_COLLECT_X, bot_y, GND_COLLECT_X, gnd_y)
+    s.power_at("GND", GND_COLLECT_X, gnd_y)
 
     # Same strict validator as the KiCad backend.
     validate(s, nl)

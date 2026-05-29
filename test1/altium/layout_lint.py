@@ -77,12 +77,26 @@ RULES: list[dict] = [
                 "of sitting off to the side and terminating a stub"},
     {"id": "ground_on_top", "severity": "WARNING", "scope": "sheet",
      "summary": "GND symbol sits above its net (should hang at the bottom)"},
+    {"id": "power_stub_side", "severity": "WARNING", "scope": "sheet",
+     "summary": "Supply-rail up-arrow has its net ABOVE the glyph (points up into "
+                "the net instead of capping it from the top, off the net) — the "
+                "rail mirror of ground_on_top"},
     {"id": "wire_through_body", "severity": "WARNING", "scope": "sheet",
      "summary": "Net wire crosses a component body instead of a pin end"},
+    {"id": "pin_wire_crosses_body", "severity": "WARNING", "scope": "sheet",
+     "summary": "A wire reaches a part's OWN pin by crossing the drawn symbol "
+                "body (e.g. a gate wire cutting across a MOSFET glyph to a pin on "
+                "the far side) — approach the pin from outside, not through it"},
     {"id": "off_center", "severity": "WARNING", "scope": "sheet",
      "summary": "Content bunched against an edge rather than centered"},
     {"id": "cramped_spacing", "severity": "WARNING", "scope": "sheet",
      "summary": "Two components closer than the min readable gap"},
+    {"id": "decap_grouping", "severity": "WARNING", "scope": "sheet",
+     "summary": "Same-rail decoupling cells (GND<->passive<->rail) clustered in "
+                "one area but scattered instead of aligned into a neat bank"},
+    {"id": "passive_declutter", "severity": "WARNING", "scope": "sheet",
+     "summary": "Two aligned passives packed tighter than a readable pitch "
+                "(cramped bank — space them out)"},
     {"id": "label_overlap", "severity": "WARNING", "scope": "sheet",
      "summary": "Two drawn text/label boxes overlap (unreadable glob) — port-to-port "
                 "overlaps exempt (side-by-side layout like SCL/SDA is valid)"},
@@ -436,6 +450,43 @@ def _check_ground_on_top(s):
     return out
 
 
+def _check_power_stub_side(s):
+    """A supply-rail power glyph (the up-arrow: +3V3/+VDDx/+VDDIO/...) must sit at
+    the TOP of a short stub with the net BELOW it — it points UP, off the net,
+    terminating the stub. Flag a rail whose net continues ABOVE the arrow tip
+    (vertical wire material at the rail's column above its y): the arrow then sits
+    ON / points INTO its own net instead of capping it from the top — the "PWR
+    arrow overlapping the net, not facing up off it" defect.
+
+    This is the rail mirror of ground_on_top (which guards the GND-down case); the
+    two together require every power glyph to terminate its stub from the correct
+    side. Auto-corrected post-build by shared.auto_fix_power (relocates the glyph
+    to the clear end of its stub); flagged here when it can't be."""
+    out = []
+    for lb in s._labels:
+        if lb.kind != "power" or lb.orientation is None:
+            continue
+        if "GND" in lb.name.upper():
+            continue  # GND-down is ground_on_top's job
+        x, y = lb.x, lb.y
+        # Only meaningful for the conventional up-pointing rail (90deg). A rail
+        # drawn sideways is power_orientation's concern, not this.
+        if lb.orientation != 1:
+            continue
+        above = False
+        for (a, b) in s._wires:
+            if abs(a[0] - x) < _TOL and abs(b[0] - x) < _TOL:        # vertical at column x
+                lo, hi = min(a[1], b[1]), max(a[1], b[1])
+                if lo - _TOL <= y <= hi + _TOL and hi > y + _TOL:
+                    above = True
+        if above:
+            out.append(LintIssue("WARNING", "power_stub_side",
+                f"rail {lb.name!r} at ({x},{y}) has its net ABOVE the arrow (the "
+                f"glyph points up INTO its net); place it at the TOP of the stub "
+                f"so it points up OFF the net", [lb.name]))
+    return out
+
+
 def _check_wire_through_body(s):
     """A net should tap a pin END, not cross a component body. Flag a wire whose
     interior passes through a part's (inflated) pin-box without ending on one of
@@ -458,6 +509,56 @@ def _check_wire_through_body(s):
                 out.append(LintIssue("WARNING", "wire_through_body",
                     f"wire {a}->{b} crosses {part.refdes} body (route the net to a "
                     f"pin end, not through the symbol)", [part.refdes]))
+                break
+    return out
+
+
+# How far inside the DRAWN body a pin-terminating wire must travel before it
+# counts as "crossing the symbol" rather than just touching the body edge at the
+# pin. A pin sits on the body outline; a clean connection approaches from outside
+# so the wire's interior stays out of the body. We inset the body by this much so
+# a wire that merely grazes the edge to reach an edge-pin isn't flagged, but a
+# wire running deep across the glyph (e.g. a gate wire crossing a MOSFET body to
+# reach a pin on the far side) is.
+_BODY_CROSS_INSET = 120  # mil (> 1 grid step / 2)
+
+
+def _check_pin_wire_crosses_body(s):
+    """A wire that TERMINATES on a part's own pin but reaches it by travelling
+    THROUGH the part's drawn body — the "connected through the symbol" defect
+    (e.g. a MOSFET whose gate-drive wire crosses the transistor glyph to land on
+    a gate pin drawn on the far side). wire_through_body deliberately skips wires
+    ending on the part's own pin (that's a legal connection); this catches the
+    narrower case where that legal connection is drawn straight across the body
+    instead of approaching the pin from outside.
+
+    Measured against the TRUE drawn body (graphic_box) inset by
+    _BODY_CROSS_INSET so a wire grazing the outline to reach an edge pin is fine;
+    only a wire whose interior runs deep into the glyph is flagged. Applies to
+    every component with a real body (transistors, ICs, op-amps), generalizing
+    the user's MOSFET case."""
+    out = []
+    for (ref, unit), part in s._placed.items():
+        if part.is_power or not part.pins:
+            continue
+        gb = getattr(part, "graphic_box", None)
+        if not gb:
+            continue  # need the true drawn rect; pin-extent can't tell body from pin
+        inset = (gb[0] + _BODY_CROSS_INSET, gb[1] + _BODY_CROSS_INSET,
+                 gb[2] - _BODY_CROSS_INSET, gb[3] - _BODY_CROSS_INSET)
+        if inset[2] <= inset[0] or inset[3] <= inset[1]:
+            continue  # body too small to have a meaningful interior
+        own = {(round(px), round(py)) for (px, py) in part.pins.values()}
+        for (a, b) in s._wires:
+            ak, bk = (round(a[0]), round(a[1])), (round(b[0]), round(b[1]))
+            ends_on_pin = ak in own or bk in own
+            if not ends_on_pin:
+                continue  # wire_through_body / bridged_drop handle pass-through wires
+            if _seg_crosses_box(a, b, inset):
+                out.append(LintIssue("WARNING", "pin_wire_crosses_body",
+                    f"wire {a}->{b} reaches a {part.refdes} pin by crossing the "
+                    f"symbol body {gb} (approach the pin from outside, not through "
+                    f"the glyph)", [part.refdes]))
                 break
     return out
 
@@ -497,6 +598,133 @@ def _check_cramped_spacing(s):
                 out.append(LintIssue("WARNING", "cramped_spacing",
                     f"{pa.refdes} and {pb.refdes} are only {int(gap)} mil apart "
                     f"(<{MIN_SYMBOL_GAP}); add spacing", [pa.refdes, pb.refdes]))
+    return out
+
+
+# --- decoupling-cluster grouping + passive declutter ------------------------
+# A decoupling/bypass "cell" is a 2-pin passive (cap/resistor/inductor) whose two
+# ends go to a power rail and to GND (or two rails) — i.e. it hangs between power
+# symbols, carrying no signal. Several such cells for the SAME rail pair in one
+# region read best ALIGNED in a neat row/column at a uniform pitch. These checks
+# flag (a) same-rail decap cells clustered close but MISALIGNED (should be lined
+# up) and (b) such cells packed tighter than a readable pitch.
+DECAP_CLUSTER_RADIUS = 2500   # mil — cells within this of each other are "a group"
+DECAP_ALIGN_TOL = 60          # mil — share a row/column if centers within this
+DECAP_MIN_PITCH = 300         # mil — min center-to-center spacing in an aligned bank
+PASSIVE_PREFIXES = ("C", "R", "L")
+
+
+def _decap_cells(s):
+    """[(refdes, cx, cy, frozenset(rails))] for each 2-pin passive whose BOTH pin
+    nets terminate on power symbols (a pure decoupling/bypass/pull cell). rails is
+    the set of rail names the cell bridges (e.g. {'+3V3','GND'}). Detected
+    geometrically: a pin whose short stub ends at a power-glyph hot-spot."""
+    pwr_at = {}
+    for lb in s._labels:
+        if lb.kind == "power":
+            pwr_at.setdefault((round(lb.x), round(lb.y)), lb.name)
+
+    def rail_reached_from(px, py):
+        """Follow wires from pin (px,py); return a rail name if a short path of
+        wires ends on a power glyph (<=2 hops), else None."""
+        seen = {(round(px), round(py))}
+        frontier = [(px, py)]
+        for _hop in range(3):
+            nxt = []
+            for (cx, cy) in frontier:
+                if (round(cx), round(cy)) in pwr_at:
+                    return pwr_at[(round(cx), round(cy))]
+                for (a, b) in s._wires:
+                    for end, other in ((a, b), (b, a)):
+                        if abs(end[0] - cx) < _TOL and abs(end[1] - cy) < _TOL:
+                            ok = (round(other[0]), round(other[1]))
+                            if ok not in seen:
+                                seen.add(ok); nxt.append(other)
+            frontier = nxt
+        return None
+
+    out = []
+    for (ref, unit), p in s._placed.items():
+        if p.is_power or len(p.pins) != 2:
+            continue
+        if not p.refdes[:1].upper() in PASSIVE_PREFIXES:
+            continue
+        rails = set()
+        for (px, py) in p.pins.values():
+            r = rail_reached_from(px, py)
+            if r:
+                rails.add(r)
+        if len(rails) >= 2:   # both ends land on power -> a decoupling/bypass cell
+            xs = [c[0] for c in p.pins.values()]; ys = [c[1] for c in p.pins.values()]
+            out.append((p.refdes, sum(xs) / 2, sum(ys) / 2, frozenset(rails)))
+    return out
+
+
+def _check_decap_grouping(s):
+    """Same-rail decoupling cells that sit close together (a cluster) but are NOT
+    aligned into a neat row/column read as scattered. Flag a cluster of >=2 cells
+    sharing a rail-pair, within DECAP_CLUSTER_RADIUS, whose centers neither share
+    a row nor a column — they'd look tidier lined up at a uniform pitch (the
+    user's "groups of GND->cap->PWR that could be neatly grouped" rule)."""
+    out = []
+    cells = _decap_cells(s)
+    by_rail = {}
+    for (ref, cx, cy, rails) in cells:
+        by_rail.setdefault(rails, []).append((ref, cx, cy))
+    for rails, group in by_rail.items():
+        if len(group) < 2:
+            continue
+        # Build clusters of mutually-near cells (simple radius grouping).
+        used = set()
+        for i, (ri, xi, yi) in enumerate(group):
+            if ri in used:
+                continue
+            cluster = [(ri, xi, yi)]
+            for (rj, xj, yj) in group[i + 1:]:
+                if rj in used:
+                    continue
+                if any(abs(xi - cx) <= DECAP_CLUSTER_RADIUS and
+                       abs(yi - cy) <= DECAP_CLUSTER_RADIUS for (_, cx, cy) in cluster):
+                    cluster.append((rj, xj, yj)); used.add(rj)
+            if len(cluster) < 2:
+                continue
+            used.add(ri)
+            xs = {round(c[1]) for c in cluster}; ys = {round(c[2]) for c in cluster}
+            aligned_row = max(c[2] for c in cluster) - min(c[2] for c in cluster) <= DECAP_ALIGN_TOL
+            aligned_col = max(c[1] for c in cluster) - min(c[1] for c in cluster) <= DECAP_ALIGN_TOL
+            if not (aligned_row or aligned_col):
+                refs = sorted(c[0] for c in cluster)
+                out.append(LintIssue("WARNING", "decap_grouping",
+                    f"{', '.join(refs)} are {('/'.join(sorted(rails)))} decoupling "
+                    f"cells in one area but scattered (not aligned in a row/column); "
+                    f"group them into a neat bank", refs))
+    return out
+
+
+def _check_passive_declutter(s):
+    """Two aligned passives (same row or column) packed closer than
+    DECAP_MIN_PITCH center-to-center read as cluttered/cramped — distinct from
+    cramped_spacing (which measures body-edge gap between ANY parts); this guards
+    the readable PITCH of a passive bank specifically (the user's "resistors
+    placed too close to each other"). Only same-axis passive pairs are flagged so
+    a legitimately dense but mixed cluster isn't penalized twice."""
+    out = []
+    passives = [(p.refdes, sum(c[0] for c in p.pins.values()) / 2,
+                 sum(c[1] for c in p.pins.values()) / 2)
+                for (_r, _u), p in s._placed.items()
+                if not p.is_power and len(p.pins) == 2
+                and p.refdes[:1].upper() in PASSIVE_PREFIXES]
+    for i, (ra, xa, ya) in enumerate(passives):
+        for (rb, xb, yb) in passives[i + 1:]:
+            dx, dy = abs(xa - xb), abs(ya - yb)
+            same_col = dx <= DECAP_ALIGN_TOL and 0 < dy < DECAP_MIN_PITCH
+            same_row = dy <= DECAP_ALIGN_TOL and 0 < dx < DECAP_MIN_PITCH
+            if same_col or same_row:
+                d = dy if same_col else dx
+                out.append(LintIssue("WARNING", "passive_declutter",
+                    f"{ra} and {rb} are only {int(d)} mil apart center-to-center "
+                    f"(<{DECAP_MIN_PITCH}); space the bank for readability",
+                    [ra, rb]))
     return out
 
 
@@ -543,20 +771,32 @@ def _check_label_overlap(s):
     """Two drawn text/label boxes overlap — the unreadable "glob" the user sees
     (e.g. a value Comment sitting under a port name, or two values colliding).
     Port-to-port overlaps are exempt: intentional side-by-side layout (e.g., SCL/SDA)
-    is valid and readable; only flag when other label types collide."""
+    is valid and readable; only flag when other label types collide.
+
+    Power-to-power overlaps ARE flagged even when the two glyphs share a rail
+    name: two same-rail power symbols placed too close (e.g. the VDDIO stubs on
+    adjacent 200-mil-pitch chip pins) collide their rail-name text into an
+    unreadable smear. They're electrically the same net, but the DRAWN text still
+    overlaps — a real readability defect. (Net labels and value comments that
+    repeat a name are still self-exempt: a duplicate net label is the same net
+    drawn once, not two colliding glyphs.)"""
     out = []
     items = _label_boxes(s)
     for i, (ka, na, ba) in enumerate(items):
         for (kb, nb, bb) in items[i + 1:]:
-            if na == nb and ka == kb:
+            # Two power glyphs sharing a rail name still collide visually — keep them.
+            same_label = (na == nb and ka == kb and ka != "power")
+            if same_label:
                 continue
             # Port-to-port overlaps are intentional layout (e.g., SCL/SDA side-by-side)
             if ka == "port" and kb == "port":
                 continue
             if _overlap(ba, bb):
+                glob = ("rail-name text collides" if ka == "power" and kb == "power"
+                        else "unreadable glob")
                 out.append(LintIssue("WARNING", "label_overlap",
                     f"{ka} {na!r} and {kb} {nb!r} drawn text overlap "
-                    f"(unreadable glob - space them apart)", [na, nb]))
+                    f"({glob} - space them apart)", [na, nb]))
     return out
 
 
@@ -754,8 +994,11 @@ ALL_CHECKS = (_check_off_grid, _check_diagonal, _check_out_of_bounds,
               _check_component_overlap, _check_power_orientation,
               _check_visible_param_glob, _check_wire_through_label,
               _check_power_straddles_net, _check_stub_t_short,
-              _check_ground_on_top, _check_wire_through_body, _check_off_center,
-              _check_cramped_spacing, _check_label_overlap,
+              _check_ground_on_top, _check_power_stub_side,
+              _check_wire_through_body,
+              _check_pin_wire_crosses_body, _check_off_center,
+              _check_cramped_spacing, _check_decap_grouping,
+              _check_passive_declutter, _check_label_overlap,
               _check_label_over_symbol, _check_label_symbol_clearance,
               _check_wire_through_port,
               _check_offpage_text, _check_wire_overlap, _check_bridged_drop,
