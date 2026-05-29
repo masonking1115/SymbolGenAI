@@ -87,12 +87,64 @@ def validate(sheet: Sheet, netlist: Netlist) -> None:
     """Run inventory + connectivity checks. Raises ValidationError on failure."""
     errors: list[str] = []
     errors.extend(_check_inventory(sheet, netlist))
+    errors.extend(_check_shorted_components(netlist))
     errors.extend(_check_connectivity(sheet, netlist))
     if errors:
         raise ValidationError(
             f"Validation failed for sheet '{netlist.sheet}':\n  - "
             + "\n  - ".join(errors)
         )
+
+
+# ---------------------------------------------------------------------------
+# Shorted component: a 2-terminal part with BOTH pins on the same net.
+# ---------------------------------------------------------------------------
+# A resistor/cap/inductor/diode whose two terminals are declared on the same net
+# is a short across itself — electrically a no-op (or, for a 0R, a meaningless
+# loop). The connectivity validator + layout lint can't catch this: both pins ARE
+# on a valid net, so there's no dangling pin and no split net. But it's almost
+# always a mistake — e.g. a feed-forward cap placed "across" a strap whose two
+# sides are actually the same node (FB hard-tied to OUT). This is a pure netlist
+# property, so we check it from the YAML alone (no geometry needed). DNP parts
+# are exempt (intentionally unpopulated). Flagged as a hard error so the build
+# fails and the closed-loop fix/CLARIFY path can act on it.
+_TWO_TERM_PREFIXES = ("R", "C", "L", "D")   # passives + diode: inherently 2-terminal
+
+
+def _check_shorted_components(netlist: Netlist) -> list[str]:
+    # Map each part's pins -> the net each pin is declared on.
+    part_pin_net: dict[str, dict[str, str]] = {}
+    for net_name, net in netlist.nets.items():
+        for member in net.members:
+            try:
+                refdes, _unit, pin_num = parse_member(member)
+            except ValueError:
+                continue
+            part_pin_net.setdefault(refdes, {})[pin_num] = net_name
+
+    errors: list[str] = []
+    for refdes, pinmap in part_pin_net.items():
+        part = netlist.parts.get(refdes)
+        if part is None or getattr(part, "dnp", False):
+            continue
+        # Only judge inherently 2-terminal parts, and only when exactly two
+        # distinct pins are declared (so we don't misjudge a multi-pin device).
+        if not refdes[:1].upper() in _TWO_TERM_PREFIXES:
+            continue
+        if len(pinmap) != 2:
+            continue
+        nets_used = set(pinmap.values())
+        if len(nets_used) == 1:
+            (net_only,) = tuple(nets_used)
+            errors.append(
+                f"SHORTED COMPONENT: {refdes} ({getattr(part, 'value', '?')}) has "
+                f"both pins on net '{net_only}' — a 2-terminal part shorted across "
+                f"itself does nothing. If this is meant to bridge two nodes, those "
+                f"nodes are the same net here (e.g. a feed-forward cap across a "
+                f"strap where FB is tied to OUT); the edit isn't realizable without "
+                f"a topology change. Mark DNP only if intentionally unpopulated."
+            )
+    return errors
 
 
 # ---------------------------------------------------------------------------

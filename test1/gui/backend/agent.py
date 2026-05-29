@@ -207,14 +207,20 @@ def _load(path: Path, default):
     if not path.exists():
         return default
     try:
-        return json.loads(path.read_text())
-    except json.JSONDecodeError:
+        # Always UTF-8: changelog/chat carry EE glyphs (µ, ≥, Ω, –). Without an
+        # explicit encoding, read_text() uses the platform default (cp1252 on
+        # Windows) and mojibakes them (µF -> ÂµF), which would feed the apply
+        # agent corrupted text. Match _save's UTF-8 write.
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError):
         return default
 
 
 def _save(path: Path, value) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(value, indent=2))
+    # UTF-8 + ensure_ascii=False so the on-disk file holds real glyphs (round-
+    # trips cleanly with the UTF-8 _load above), not \uXXXX escapes.
+    path.write_text(json.dumps(value, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def load_chat() -> list[dict]:
@@ -702,6 +708,12 @@ async def _spawn_claude(
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
         env=env,
+        # stream-json emits ONE JSON object per line, and a single line can be
+        # large — a tool_use carrying file contents, or a long assistant message.
+        # asyncio's default StreamReader limit is 64 KB, so readline() raises
+        # LimitOverrunError ("Separator is found, but chunk is longer than limit")
+        # and the whole agent reader dies mid-pass. Give it generous headroom.
+        limit=16 * 1024 * 1024,   # 16 MB per line
     )
     return proc, cmd
 
@@ -757,7 +769,22 @@ async def _run_subprocess(run: AgentRun, proc: asyncio.subprocess.Process) -> No
 
     final_text: list[str] = []
     while True:
-        raw = await proc.stdout.readline()
+        try:
+            raw = await proc.stdout.readline()
+        except (asyncio.LimitOverrunError, ValueError):
+            # A single stream-json line blew past even the (large) reader limit.
+            # Don't let it kill the pass: drain the rest of this over-long line in
+            # chunks (until the newline) and skip it, then keep reading. Losing one
+            # giant event's detail is fine; aborting the whole agent run is not.
+            try:
+                while True:
+                    chunk = await proc.stdout.read(65536)
+                    if not chunk or chunk.endswith(b"\n"):
+                        break
+            except Exception:
+                pass
+            push("[raw] (skipped an over-long stream line)")
+            continue
         if not raw:
             break
         line = raw.decode("utf-8", errors="replace").rstrip("\n")

@@ -21,7 +21,9 @@ parts:
   C11: { lib_id: Lib:GRM155R71C104KA88D, value: 0.1uF,  footprint: Capacitor_SMD:C_0402_1005Metric }
   C12: { lib_id: Lib:GRM155R71H103KA88D, value: 10nF, footprint: Capacitor_SMD:C_0402_1005Metric, notes: "NR_SS to GND per TPS7A8401A datasheet (Murata X7R 50V 0402)" }
   C13: { lib_id: Lib:GRM21BR61A226ME44L, value: 22uF, footprint: Capacitor_SMD:C_0805_2012Metric, notes: "OUT-side bulk (Murata X5R 10V 0805 — X5R required at 22µF/0805 density)" }
+  C18: { lib_id: Lib:GRM21BR61A226ME44L, value: 22uF, footprint: Capacitor_SMD:C_0805_2012Metric, notes: "OUT-side bulk #2, parallel with C13 → COUT≈44µF (clears TPS7A8401A COUT_min_uF_for_stability=25; 0805 ceramic limits single-part value below the 47µF recommendation)" }
   C14: { lib_id: Lib:GRM155R71C104KA88D, value: 0.1uF,  footprint: Capacitor_SMD:C_0402_1005Metric, notes: "OUT-side HF decoupling" }
+  C19: { lib_id: Lib:GRM155R71H103KA88D, value: 10nF, footprint: Capacitor_SMD:C_0402_1005Metric, notes: "CFF=10nF per TPS7A8401A noise/PSRR test condition. ANY-OUT mode straps FB→OUT, so a true OUT→FB feed-forward cap would short across one node; placed here as a 10nF HF cap on OUT (the form the sim deck consumes as COUT)" }
   C17: { lib_id: Lib:GRM155R70J105KA12D, value: 1uF,    footprint: Capacitor_SMD:C_0402_1005Metric, notes: "W3 — BIAS pin bypass per SBVS210 §8.2.2.1" }
   R10: { lib_id: Lib:CR0402-FX-1002GLF, value: 10k,    footprint: Resistor_SMD:R_0402_1005Metric, notes: "EN pull-down (FPGA drives high to enable)" }
   R12: { lib_id: Lib:CR0402-FX-1002GLF, value: 10k,    footprint: Resistor_SMD:R_0402_1005Metric, notes: "E6 — LDO_PG open-drain pull-up to +3V3" }
@@ -58,7 +60,9 @@ nets:
       - C12.2    # NR_SS cap return
       - R10.2    # EN pull-down to GND
       - C13.2    # OUT bulk return
+      - C18.2    # OUT bulk #2 return
       - C14.2    # OUT HF return
+      - C19.2    # OUT CFF/HF return
       - U11.B1   # load-switch GND
       - C15.2    # VADJ cap return
       - C16.2    # VDDIO cap return
@@ -98,7 +102,9 @@ nets:
       - U10.2   # SNS (kelvin to post-cap point on the OUT trace)
       - U10.3   # FB (strapped to OUT)
       - C13.1   # 22µF bulk top
+      - C18.1   # 22µF bulk #2 top (parallel COUT)
       - C14.1   # 0.1µF HF top
+      - C19.1   # 10nF (CFF condition) top
       - J10.1   # jumper to VDDD
       - J11.1   # jumper to VDDA1
       - J12.1   # jumper to VDDA2

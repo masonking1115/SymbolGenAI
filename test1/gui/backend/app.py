@@ -1842,6 +1842,31 @@ async def run_apply_and_generate(opts: ApplyAndGenOpts = ApplyAndGenOpts()) -> d
         await _await_run(gid)
         return gid
 
+    def _spawn_chain(coro, label: str) -> None:
+        """Schedule a background chain task whose exceptions are NEVER swallowed.
+        A bare asyncio.create_task drops any exception silently — which is exactly
+        why a failed apply->generate chain vanished with no trace. Wrap it so any
+        failure prints a full traceback to the backend log (visible) AND is
+        recorded as a failed 'generate' run so the GUI shows an error instead of
+        hanging forever waiting for a build that never starts."""
+        async def _guarded() -> None:
+            try:
+                await coro
+            except Exception:
+                import traceback
+                tb = traceback.format_exc()
+                print(f"[apply-and-generate] {label} FAILED:\n{tb}", flush=True)
+                # Surface to the GUI: a failed generate run carries the error so
+                # the frontend's poll/stream resolves instead of spinning.
+                rid = uuid.uuid4().hex[:12]
+                r = Run(run_id=rid, kind="generate", cmd=["<chain>"], cwd=None)
+                r.status = "fail"
+                r.returncode = -1
+                for ln in (f"[chain-error] {label} failed:", *tb.splitlines()):
+                    r.lines.append(ln)
+                _RUNS[rid] = r
+        asyncio.create_task(_guarded())
+
     items = agent_mod.load_changelog()
     apply_run_id: str | None = None
     if items:
@@ -1868,7 +1893,7 @@ async def run_apply_and_generate(opts: ApplyAndGenOpts = ApplyAndGenOpts()) -> d
                 await _build_once()
                 failures = _read_lint_failures()
             # final state is whatever the last build left in lint.json / run registry
-        asyncio.create_task(chain_with_loop_review())
+        _spawn_chain(chain_with_loop_review(), "loop-review chain")
         return {
             "apply_run_id": apply_run_id,
             "generate_run_id": None,    # phases appear in the run registry as they start
@@ -1894,7 +1919,7 @@ async def run_apply_and_generate(opts: ApplyAndGenOpts = ApplyAndGenOpts()) -> d
         cmd, cwd = _generate_cmd()
         await _start_run("generate", cmd, cwd=cwd)
 
-    asyncio.create_task(chain_to_generate())
+    _spawn_chain(chain_to_generate(), "apply->generate chain")
     return {
         "apply_run_id": apply_run_id,
         "generate_run_id": None,  # Will be available via /api/run stream once apply finishes

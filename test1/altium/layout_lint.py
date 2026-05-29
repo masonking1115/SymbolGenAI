@@ -120,6 +120,13 @@ RULES: list[dict] = [
                 "class is now the validator's cross-net-contamination check "
                 "in gen.validator._check_connectivity, added 2026-05-28; this "
                 "lint catches a narrower geometric case as a secondary gate.)"},
+    {"id": "shorted_component", "severity": "ERROR", "scope": "netlist",
+     "summary": "A 2-terminal part (R/C/L/D, not DNP) has BOTH pins on the same "
+                "net — shorted across itself, electrically a no-op. Enforced by "
+                "the connectivity validator (gen.validator._check_shorted_"
+                "components) from the YAML; catches e.g. a feed-forward cap placed "
+                "across a strap whose two sides are the same node (FB tied to "
+                "OUT). Listed here so the GUI checklist + closed-loop fix see it."},
     {"id": "bridged_drop", "severity": "WARNING", "scope": "sheet",
      "summary": "Wire interior crosses a third part's pin (possible bridge)"},
     {"id": "duplicate_wire", "severity": "INFO", "scope": "sheet",

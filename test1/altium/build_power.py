@@ -197,28 +197,38 @@ def build_power() -> tuple[AltiumSheet, object]:
     s.wire(U10["3"][0], FB_Y, OUT_BUS_X, FB_Y)
     s.wire(OUT_BUS_X, U10["20"][1], OUT_BUS_X, FB_Y)   # extend bus down to FB
 
-    # ---- OUT-side bulk caps C13 (22µF) and C14 (0.1µF) --------------------
+    # ---- OUT-side cap bank: bulk C13∥C18 (22µF∥22µF≈44µF COUT), HF C14
+    #      (0.1µF), CFF condition C19 (10nF). Uniform 400-mil pitch on the OUT
+    #      row; pin1 tops T into the OUT bus, pin2 bottoms drop to one GND rail.
+    #      The window between the OUT bus (6400) and the J-cluster drop column
+    #      (COMMON_COL_X=8400) only holds four clean columns at ≥400 pitch:
+    #      6800 (clear of the LDO_PG riser at 6700) .. 8000 (clear of 8400).
     # Place caps at y = OUT_Y - 100 (pin1 top at OUT_Y, pin2 goes down).
     C_OUT_DEC_Y = OUT_Y - 100   # 5500
-    C13_X = OUT_BUS_X + 600     # 7000
-    C14_X = OUT_BUS_X + 1200    # 7600
+    OUT_CAP_BANK = [
+        ("C13", OUT_BUS_X + 400),    # 6800 — 22µF bulk
+        ("C18", OUT_BUS_X + 800),    # 7200 — 22µF bulk (parallel → raises COUT)
+        ("C14", OUT_BUS_X + 1200),   # 7600 — 0.1µF HF
+        ("C19", OUT_BUS_X + 1600),   # 8000 — 10nF (CFF noise/PSRR condition)
+    ]
+    for ref, cx in OUT_CAP_BANK:
+        place(ref, cx, C_OUT_DEC_Y)
+        s.wire(cx, C_OUT_DEC_Y + 100, cx, OUT_Y)        # pin1 → OUT row
+        s.wire(cx, C_OUT_DEC_Y - 100, cx, GND_RAIL_Y)   # pin2 → GND rail
 
-    place("C13", C13_X, C_OUT_DEC_Y)
-    s.wire(C13_X, C_OUT_DEC_Y + 100, C13_X, OUT_Y)   # pin1 → OUT row (endpoint at OUT_Y)
-    s.wire(C13_X, C_OUT_DEC_Y - 100, C13_X, GND_RAIL_Y)
+    # One GND rail under the bank; the GND symbol hangs at the right (east) end
+    # so it terminates the rail (not straddling) and stays clear of the J-cluster
+    # drop column at COMMON_COL_X.
+    BANK_L = OUT_CAP_BANK[0][1]    # 6800
+    BANK_R = OUT_CAP_BANK[-1][1]   # 8000
+    s.wire(BANK_L, GND_RAIL_Y, BANK_R, GND_RAIL_Y)
+    s.power_at("GND", BANK_R, GND_RAIL_Y)
 
-    place("C14", C14_X, C_OUT_DEC_Y)
-    s.wire(C14_X, C_OUT_DEC_Y + 100, C14_X, OUT_Y)   # pin1 → OUT row
-    s.wire(C14_X, C_OUT_DEC_Y - 100, C14_X, GND_RAIL_Y)
-
-    s.wire(C13_X, GND_RAIL_Y, C14_X, GND_RAIL_Y)
-    s.power_at("GND", C14_X, GND_RAIL_Y)
-
-    # OUT-row bus: from OUT_BUS_X to SNS_SENSE_X (C13/C14 tops tap as T-intersections)
-    # C13/C14 pin1 tops land on this bus — pin-on-wire auto-connects, no dots.
+    # OUT-row bus: OUT_BUS_X → SNS_SENSE_X (cap pin1 tops tap as T-intersections);
+    # C19 (8000) taps the SNS_SENSE_X→COMMON_COL_X extension added in cluster C.
     s.wire(OUT_BUS_X, OUT_Y, SNS_SENSE_X, OUT_Y)
 
-    s.text("LDO VOUT bypass", C13_X - 300, RAIL_3V3_Y + 300)
+    s.text("LDO VOUT bypass", BANK_L - 300, RAIL_3V3_Y + 300)
 
     # ---- PG (pin 4): pull-up R12 → +3V3; series R13 → LDO_PG port ----------
     # U10["4"] = (5700, 5800) — PG_Y=5800
