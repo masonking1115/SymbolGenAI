@@ -175,11 +175,42 @@ export interface SimBlock {
   sim_types: SimType[];
 }
 
+// Editable requirements for a block (pass criteria + boundary params).
+export interface SimRequirements {
+  block: string;
+  sim_types: { type: string; status: string; rationale: string; pass: string | null }[];
+  boundaries: Record<string, { stub: string | null; params: Record<string, string | number> }>;
+}
+
 export interface SimSeries {
   trace: string;
   signal: string;
   t: number[];
   v: number[];
+}
+
+// Parsed node-graph of the SPICE deck — what's actually simulated.
+export interface CircuitElement {
+  ref: string;                 // SPICE deck ref, e.g. "RSENSE", "XOPA", "MQ40"
+  kind: string;                // "resistor" | "mosfet" | "subckt" | …
+  nodes: string[];             // nets this element connects to
+  value: string;               // value / expr / model / subckt name
+  subckt: string | null;       // for X-instances: the referenced subckt
+  note: string;                // preceding deck comment (pinout hint)
+  refdes: string | null;       // corresponding netlist refdes (R40, U41) or null
+  //                              for behavioral scaffolding (ammeter, boundary)
+}
+
+export interface CircuitSubckt {
+  ports: string[];
+  params: Record<string, string>;
+}
+
+export interface Circuit {
+  title: string;
+  elements: CircuitElement[];
+  nets: string[];
+  subckts: Record<string, CircuitSubckt>;
 }
 
 export interface SimResult {
@@ -196,6 +227,7 @@ export interface SimResult {
   x_axis?: SimXAxis | null;
   y_label?: string;
   deck?: string;
+  circuit?: Circuit | null;
 }
 
 export interface FreshnessStamp {

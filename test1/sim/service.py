@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from . import catalog, design_extract, simconfig
+from . import catalog, circuit, design_extract, simconfig
 from .decks import ldo_rail, opa_bias, pdn
 from .runner import run_deck
 
@@ -79,6 +79,18 @@ def _package_traces(traces) -> list[dict]:
     return series
 
 
+def _refdes_map_for(block_id: str) -> dict | None:
+    """The deck's SPICE-ref → netlist-refdes map for `block_id`, so the parsed
+    circuit can tie each model element back to its real schematic part."""
+    if block_id == "ldo_rail":
+        return ldo_rail.refdes_map()
+    if block_id == "opa_bias":
+        return opa_bias.refdes_map(channel=0)
+    if block_id in pdn.RAIL_OF_BLOCK:
+        return pdn.refdes_map()
+    return None
+
+
 def _result(block_id, sim_type, *, ok, status, analysis=None, op=None,
             traces=None, deck=None, message=None) -> dict:
     return {
@@ -88,7 +100,12 @@ def _result(block_id, sim_type, *, ok, status, analysis=None, op=None,
         "analysis": analysis, "op_point": op or {},
         "plot": _package_traces(traces) if traces else [],
         "x_axis": _X_AXIS.get(sim_type), "y_label": _Y_LABEL.get(sim_type, "volts"),
-        "deck": deck, "message": message,
+        "deck": deck,
+        # Parsed node-graph of exactly this deck (what's simulated), for the
+        # GUI's "SPICE model" view. None if there's no deck or parsing failed.
+        # refdes_map ties each model element back to a netlist refdes.
+        "circuit": circuit.circuit_dict(deck, _refdes_map_for(block_id)),
+        "message": message,
     }
 
 
@@ -154,7 +171,7 @@ def run_block_sim(block_id: str, sim_type: str, *, vout_set: float | None = None
     if block_id == "opa_bias":
         mode = {"dc_sweep": "dc_sweep", "ac_stability": "ac_stability",
                 "transient_settling": "transient_settling",
-                "por_failsafe": "por"}[sim_type]
+                "por_failsafe": "por", "dc_compliance": "compliance"}[sim_type]
         # Sense-R comes from the as-built netlist (bias.yaml R40), computed ONCE
         # and threaded into BOTH the deck and the accuracy analyzer so the
         # ideal-current reference matches the modeled resistor exactly.
@@ -165,6 +182,9 @@ def run_block_sim(block_id: str, sim_type: str, *, vout_set: float | None = None
         if sim_type == "dc_sweep" and "dc_sweep" in res.traces:
             a = opa_bias.analyze_dc_sweep(res.traces["dc_sweep"],
                                           r_sense=r_sense, vdd=opa_bias.VDD)
+        elif sim_type == "dc_compliance" and "dc_compliance" in res.traces:
+            a = opa_bias.analyze_compliance(res.traces["dc_compliance"],
+                                            r_sense=r_sense, vdd=opa_bias.VDD)
         elif sim_type == "ac_stability" and "ac_stability" in res.traces:
             a = opa_bias.analyze_ac_stability(res.traces["ac_stability"])
         elif sim_type == "transient_settling" and "transient_settling" in res.traces:
@@ -175,16 +195,21 @@ def run_block_sim(block_id: str, sim_type: str, *, vout_set: float | None = None
                        status="ran", analysis=a, op=res.op_point,
                        traces=res.traces, deck=res.deck)
 
-    # ---- PDN (vddio_pdn / vddd_pdn) -------------------------------------
+    # ---- PDN (vddio_pdn / vddd_pdn / vdda1_pdn / vdda2_pdn) -------------
     if block_id in pdn.RAIL_OF_BLOCK:
-        _, node, _ = pdn.RAIL_OF_BLOCK[block_id]
+        rail, node, _ = pdn.RAIL_OF_BLOCK[block_id]
         mode = {"transient_load_step": "load_step",
                 "ac_pdn_impedance": "impedance"}[sim_type]
         deck, specs = pdn.build_deck(block_id=block_id, mode=mode)
         res = run_deck(deck, trace_specs=specs)
         a = None
         if sim_type == "transient_load_step" and "pdn_load_step" in res.traces:
-            a = pdn.analyze_load_step(res.traces["pdn_load_step"], node)
+            # per-rail droop budget from the block's boundary params
+            from .catalog import resolve_boundaries
+            limit = resolve_boundaries(block_id, sim_type).get(rail, {}) \
+                .get("params", {}).get("droop_limit_V", 0.030)
+            a = pdn.analyze_load_step(res.traces["pdn_load_step"], node,
+                                      droop_limit_V=limit)
         elif sim_type == "ac_pdn_impedance" and "pdn_impedance" in res.traces:
             a = pdn.analyze_impedance(res.traces["pdn_impedance"], node)
         return _result(block_id, sim_type, ok=res.ok and _verdict(a),
@@ -192,3 +217,50 @@ def run_block_sim(block_id: str, sim_type: str, *, vout_set: float | None = None
 
     return {**base, "ok": False, "status": "no_dispatch",
             "message": f"no deck dispatch for '{block_id}'"}
+
+
+# Mode maps, shared between run + build-only. (Kept here, mirroring the inline
+# dicts above, so the build-only path can't drift from what actually runs.)
+_LDO_MODE = {"dc_op_point": "op", "transient_powerup": "powerup",
+             "transient_load_step": "load_step", "line_regulation": "line_reg"}
+_OPA_MODE = {"dc_sweep": "dc_sweep", "ac_stability": "ac_stability",
+             "transient_settling": "transient_settling", "por_failsafe": "por",
+             "dc_compliance": "compliance"}
+_PDN_MODE = {"transient_load_step": "load_step", "ac_pdn_impedance": "impedance"}
+
+
+def build_deck_text(block_id: str, sim_type: str) -> str | None:
+    """Build (but DON'T run) the deck for one block/sim_type and return its
+    text — used to show the simulated circuit without invoking ngspice.
+
+    Returns None when the combo has no deck (a code-built analysis like
+    setpoint_coverage, a planned/not-simulatable sim, or an unknown block)."""
+    block = catalog.get_block(block_id)              # KeyError if unknown
+    st = next((s for s in block.get("sim_types", []) if s["type"] == sim_type), {})
+    if block.get("status") != "implemented" or st.get("status") == "planned":
+        return None
+    try:
+        if block_id == "ldo_rail":
+            if sim_type not in _LDO_MODE:            # e.g. setpoint_coverage
+                return None
+            vout = simconfig.primary_vout(block_id, 1.8)
+            return ldo_rail.build_deck(mode=_LDO_MODE[sim_type], vout_set=vout)[0]
+        if block_id == "opa_bias":
+            if sim_type not in _OPA_MODE:
+                return None
+            r_sense = design_extract.sense_resistance(channel=0)
+            return opa_bias.build_deck(mode=_OPA_MODE[sim_type], r_sense=r_sense)[0]
+        if block_id in pdn.RAIL_OF_BLOCK:
+            if sim_type not in _PDN_MODE:
+                return None
+            return pdn.build_deck(block_id=block_id, mode=_PDN_MODE[sim_type])[0]
+    except (KeyError, ValueError):
+        return None
+    return None
+
+
+def circuit_for(block_id: str, sim_type: str) -> dict | None:
+    """Parsed node-graph for one block/sim_type's deck (no ngspice run), with
+    each element tied back to its netlist refdes. None when there's no deck."""
+    return circuit.circuit_dict(build_deck_text(block_id, sim_type),
+                                _refdes_map_for(block_id))

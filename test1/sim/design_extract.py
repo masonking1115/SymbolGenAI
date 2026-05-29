@@ -88,6 +88,16 @@ def net_members(sheet: str, net: str) -> set[str]:
     return set(n.members) if n else set()
 
 
+def sheet_refdes(sheet: str) -> list[str]:
+    """All component designators on `sheet`.yaml — i.e. the parts that make up
+    the simulated portion of the design. Used to highlight them on the rendered
+    schematic. Empty if the sheet can't be loaded."""
+    try:
+        return sorted(load_netlist(sheet).parts.keys())
+    except (FileNotFoundError, OSError):
+        return []
+
+
 def _pin_refdes(member: str) -> tuple[str, str]:
     """('R40','2') from a member token, tolerating multi-unit ':uN'."""
     refdes, _unit, pin = parse_member(member)

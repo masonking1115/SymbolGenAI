@@ -69,6 +69,25 @@ def _preamble() -> str:
 """
 
 
+# SPICE deck element ref → netlist refdes. Only the elements whose deck name
+# DIFFERS from the netlist refdes (or that are model-only) need an entry; cap
+# elements are emitted with their netlist ref (C10, C13, …) and map to
+# themselves by default (see circuit.py refdes resolution). None = scaffolding.
+def refdes_map() -> dict[str, str | None]:
+    return {
+        "XU10": "U10",        # TPS7A8401A LDO
+        "XU11": "U11",        # TPS22916 load switch
+        # --- model-only ---
+        "VSNS_LDO": None,     # 0V ammeter on the LDO output
+        "RJUMP": None,        # LDO_OUT→VADJ header jumper (near-wire, not a netlist R)
+        "VV3V3_SRC": None,    # off-sheet +3V3 source (boundary)
+        "RV3V3_SRC": None,    # +3V3 source impedance (boundary)
+        "VLDO_EN_DRV": None,  # FPGA LDO-enable drive (boundary)
+        "VLSW_EN_DRV": None,  # FPGA switch-enable drive (boundary)
+        "IVDDIO_LOAD": None,  # downstream load (boundary / DUT)
+    }
+
+
 def _input_caps_block(caps: list[tuple[str, float]], node: str = "VIN") -> str:
     lines = [f"* Input decoupling on {node}"]
     for ref, val in caps:

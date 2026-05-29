@@ -149,6 +149,16 @@ export default function App() {
   // are fraction-based, so the panes scale together when the window/display
   // width changes.
   const canvasGrows = tab === "generator" || tab === "review" || tab === "simulation";
+  // On the Simulation tab the right pane can also show the SPICE model of the
+  // selected block (what's actually simulated), toggled inside the viewer.
+  const pngView = (
+    <PngViewer
+      bust={bust}
+      simMode={tab === "simulation"}
+      simBlocks={simBlocks}
+      selectedSimBlock={selectedSimBlock}
+    />
+  );
   const centerOrPair = !showPng ? (
     mainContent
   ) : canvasGrows ? (
@@ -160,7 +170,7 @@ export default function App() {
       minOther={320}
       storageKey="test1.gui.contentSplit"
       left={mainContent}
-      right={<PngViewer bust={bust} />}
+      right={pngView}
     />
   ) : (
     <Splitter
@@ -171,7 +181,7 @@ export default function App() {
       minOther={360}
       storageKey="test1.gui.pngSplit"
       left={mainContent}
-      right={<PngViewer bust={bust} />}
+      right={pngView}
     />
   );
 

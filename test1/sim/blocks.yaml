@@ -120,8 +120,8 @@ blocks:
     # OFF-SHEET boundary only. The 5.11k sense resistor (R40/R41) is NOT here —
     # the deck reads it from bias.yaml via design_extract.sense_resistance().
     boundaries:
-      "+3V3":      { stub: RailIn,        params: { V: 3.3, R_src: 0.020 } }
-      BIAS0:       { stub: AnalogOutLoad, params: { R_load: 100, C_load: 20e-12 } }
+      "+3V3": { stub: RailIn,        params: { V: 3.3, R_src: 0.020 } }
+      BIAS0: { stub: AnalogOutLoad, params: { R_load: 100, C_load: 20e-12 } }
       BIAS_ISO0:   { stub: DigitalDrive,  params: { t_on: 0, V_hi: 3.3 } }   # isolator ON
     sim_types:
       - type: dc_sweep
@@ -129,6 +129,14 @@ blocks:
           Sweep DAC 0..3.3V; the loop should force I_bias = (3V3-V_DAC)/5.11k.
           This is the headline spec — V-to-I accuracy across the output range.
         pass: "I_BIAS error vs ideal <= 1% from 10% to 100% of full-scale (646uA)."
+      - type: dc_compliance
+        rationale: >
+          Bobcat spec is "nominally 320uA at 0.5V" — the DUT pulls bias with its
+          BIASx pin near 0.5V. Hold BIAS0 at 0.5V (not a near-ground load) and
+          sweep the DAC: the loop must still deliver the ideal current across the
+          range and hit ~320uA at the nominal point, with the PMOS drain staying
+          above 0.5V (enough headroom through the isolation FET).
+        pass: "I_BIAS error vs ideal <= 1% (and within 1% of 320uA at nominal) with BIAS0 held at 0.5V; PMOS drain >= 0.5V."
       - type: ac_stability
         rationale: >
           opamp + PMOS gate (capacitive load) + sense-R form a feedback loop —
@@ -202,7 +210,7 @@ blocks:
       - { mpn: GRM155R70J105KA12D, file: GRM155R70J105KA12-01.pdf }
       - { mpn: Bobcat, file: Bobcat_preview.pdf }
     boundaries:
-      "+VDDIO": { stub: RailIn, params: { V: 1.8, R_src: 0.005, L_src: 10e-9 } }
+      "+VDDIO": { stub: RailIn, params: { V: 1.8, R_src: 0.005, L_src: 10e-9, droop_limit_V: 0.030 } }
     notes: >
       Caps modeled with ESR + ESL. Source modeled as R_src + L_src (inductive
       above the VRM bandwidth) so the cap bank actually determines the response
@@ -231,12 +239,72 @@ blocks:
       - { mpn: GRM155R70J105KA12D, file: GRM155R70J105KA12-01.pdf }
       - { mpn: Bobcat, file: Bobcat_preview.pdf }
     boundaries:
-      "+VDDD": { stub: RailIn, params: { V: 1.8, R_src: 0.010, L_src: 15e-9 } }
+      "+VDDD": { stub: RailIn, params: { V: 1.8, R_src: 0.010, L_src: 15e-9, droop_limit_V: 0.050 } }
     notes: >
       Only two caps (C20/C21), so the impedance target is looser than VDDIO.
-      VDDA1/VDDA2 are NOT covered: their single decoupling cap sits on a
-      post-series-0R internal node, which needs extra netlist plumbing to
-      collect — deferred (see notes), low value (one cap each).
+
+  # --------------------------------------------------------------------------
+  - id: vdda1_pdn
+    title: VDDA1 decoupling network (PDN)
+    sheet: bobcat.yaml
+    status: implemented
+    description: >
+      The Bobcat VDDA1 analog supply (pin 1): a single 0.1uF decap (C22) on the
+      chip side of the series 0Ω (R20). PDF requires decoupling on VDDA1/VDDA2.
+      Analog rails draw far less transient current than the digital rails, so
+      the load step + droop budget are scaled to an analog supply pin (not the
+      250mA digital step).
+    models_needed: []
+    sim_types:
+      - type: transient_load_step
+        rationale: >
+          Confirm the single 0.1uF VDDA1 decap holds the analog rail under a
+          modest analog-scale load step. With one small cap the rail relies on
+          the source path past the 0Ω, so this is the honest adequacy check the
+          PDF's "decoupling on VDDA1" requirement asks for.
+        pass: "Droop <= 50mV for a 5->25mA step (100ns edge)."
+      - type: ac_pdn_impedance
+        status: planned
+        rationale: Z(f) profile; peak dominated by layout supply inductance.
+        pass: "|Z(VDDA1)| peak <= 300mOhm (single cap; loosest target)."
+        defer_reason: "Anti-resonance peak is a layout (L_src) property; needs PCB extraction. Schematic gate is the load-step."
+    datasheets:
+      - { mpn: GRM155R71C104KA88D, file: GRM155R71C104KA88-01.pdf }
+      - { mpn: Bobcat, file: Bobcat_preview.pdf }
+    boundaries:
+      internal_VDDA1_path: { stub: RailIn, params: { V: 1.0, R_src: 0.010, L_src: 15e-9, I_base: 0.005, I_step: 0.020, droop_limit_V: 0.050 } }
+    notes: >
+      VDDA1 = LDO output (0.6-1.0V); V=1.0 is the worst case for droop headroom.
+      One decap (C22 0.1uF) on the chip side of R20 (series 0Ω). The 0Ω is
+      subsumed into the source path (RAIL_OF_BLOCK scans internal_VDDA1_path).
+
+  # --------------------------------------------------------------------------
+  - id: vdda2_pdn
+    title: VDDA2 decoupling network (PDN)
+    sheet: bobcat.yaml
+    status: implemented
+    description: >
+      The Bobcat VDDA2 analog supply (pins 26+27): a single 0.1uF decap (C23)
+      on the chip side of the series 0Ω (R21). Same analog-scale PDN treatment
+      as VDDA1.
+    models_needed: []
+    sim_types:
+      - type: transient_load_step
+        rationale: Confirm the single 0.1uF VDDA2 decap holds the analog rail under a modest load step.
+        pass: "Droop <= 50mV for a 5->25mA step (100ns edge)."
+      - type: ac_pdn_impedance
+        status: planned
+        rationale: Z(f) profile; peak dominated by layout supply inductance.
+        pass: "|Z(VDDA2)| peak <= 300mOhm (single cap; loosest target)."
+        defer_reason: "Anti-resonance peak is a layout (L_src) property; needs PCB extraction. Schematic gate is the load-step."
+    datasheets:
+      - { mpn: GRM155R71C104KA88D, file: GRM155R71C104KA88-01.pdf }
+      - { mpn: Bobcat, file: Bobcat_preview.pdf }
+    boundaries:
+      internal_VDDA2_path: { stub: RailIn, params: { V: 1.0, R_src: 0.010, L_src: 15e-9, I_base: 0.005, I_step: 0.020, droop_limit_V: 0.050 } }
+    notes: >
+      VDDA2 (pins 26+27 tied) = LDO output (0.6-1.0V); V=1.0 worst case for
+      droop. One decap (C23 0.1uF) on the chip side of R21 (series 0Ω).
 
   # --------------------------------------------------------------------------
   - id: system_sequencing

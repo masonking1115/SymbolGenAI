@@ -461,9 +461,11 @@ class AgentRun:
     kind: str                        # "chat" | "apply" | "symbol-gen"
     events: list[dict] = field(default_factory=list)
     text: str = ""
-    status: str = "running"          # "running" | "ok" | "fail"
+    status: str = "running"          # "running" | "ok" | "fail" | "cancelled"
     returncode: int | None = None
     subscribers: list[asyncio.Queue] = field(default_factory=list)
+    proc: asyncio.subprocess.Process | None = None   # the claude -p process
+    cancelled: bool = False
 
 
 _RUNS: dict[str, AgentRun] = {}
@@ -471,6 +473,24 @@ _RUNS: dict[str, AgentRun] = {}
 
 def get_run(run_id: str) -> AgentRun | None:
     return _RUNS.get(run_id)
+
+
+def cancel_run(run_id: str) -> bool:
+    """Terminate a running agent's `claude -p` process. The streaming loop in
+    _run_subprocess then ends naturally (stdout closes) and notifies subscribers,
+    so the SSE 'done' event reports status 'cancelled'. Returns False if the run
+    is unknown or already finished."""
+    run = _RUNS.get(run_id)
+    if not run or run.status != "running":
+        return False
+    run.cancelled = True
+    p = run.proc
+    if p is not None and p.returncode is None:
+        try:
+            p.terminate()           # SIGTERM; claude -p exits, stdout EOFs
+        except ProcessLookupError:
+            pass
+    return True
 
 
 async def _spawn_claude(
@@ -549,6 +569,7 @@ async def _run_subprocess(run: AgentRun, proc: asyncio.subprocess.Process) -> No
     """Stream the subprocess's stream-json output, parse each line, and
     fan out one-line summaries to SSE subscribers."""
     assert proc.stdout is not None
+    run.proc = proc                  # handle so cancel_run can terminate it
 
     def push(line: str) -> None:
         run.text += line + "\n"
@@ -586,7 +607,9 @@ async def _run_subprocess(run: AgentRun, proc: asyncio.subprocess.Process) -> No
                 push(f"[stderr] {el}")
 
     run.returncode = await proc.wait()
-    run.status = "ok" if run.returncode == 0 else "fail"
+    # A terminated proc has a nonzero/negative rc; report it as 'cancelled'
+    # (not 'fail') so the UI distinguishes a user cancel from an agent error.
+    run.status = "cancelled" if run.cancelled else ("ok" if run.returncode == 0 else "fail")
     # The final assistant text is the canonical user-visible answer.
     if final_text:
         run.text = "\n".join(final_text)

@@ -132,3 +132,51 @@ def is_fresh(block: dict) -> bool:
     cfg_mtime = CONFIG_FILE.stat().st_mtime
     newest_input = max((p.stat().st_mtime for p in _input_paths(block)), default=0.0)
     return cfg_mtime >= newest_input
+
+
+# ---- cache clearing (per block) --------------------------------------------
+# Backs the GUI "reset/clear cache" button. Scoped to one block so clearing one
+# sim doesn't blow away every block's hard-won datasheet extraction.
+
+def _write_json(path: Path, data: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2))
+
+
+def clear_scenario(block_id: str) -> bool:
+    """Drop a block's operating-point scenario from sim_config.json. Next Run
+    re-derives it (setup agent). Returns True if an entry was removed."""
+    data = load()
+    if block_id not in data:
+        return False
+    del data[block_id]
+    _write_json(CONFIG_FILE, data)
+    return True
+
+
+def clear_params(mpns: list[str]) -> list[str]:
+    """Drop the given MPNs from datasheet_params.json (a block's device parts).
+    Next Run re-extracts them from the datasheets (setup agent). Returns the
+    MPNs actually removed."""
+    try:
+        data = json.loads(PARAM_FILE.read_text())
+    except (json.JSONDecodeError, OSError, FileNotFoundError):
+        return []
+    removed = [m for m in mpns if m in data]
+    for m in removed:
+        del data[m]
+    if removed:
+        _write_json(PARAM_FILE, data)
+    return removed
+
+
+def clear_iter_counters(block_id: str) -> int:
+    """Delete the per-(block,sim_type) re-sim counter files (.iter_<block>_*).
+    Returns the count removed."""
+    n = 0
+    for p in CACHE_DIR.glob(f".iter_{block_id}_*.json"):
+        try:
+            p.unlink(); n += 1
+        except OSError:
+            pass
+    return n

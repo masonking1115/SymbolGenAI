@@ -1385,6 +1385,15 @@ async def agent_stream(run_id: str) -> StreamingResponse:
     )
 
 
+@app.post("/api/agent/{run_id}/cancel")
+def agent_cancel(run_id: str) -> dict:
+    """Cancel a running agent (terminates its claude -p process). Used by the
+    Simulation tab's Cancel button to abort a long setup/interpret pass. The
+    SSE stream then closes with status 'cancelled'. Idempotent: returns
+    cancelled=False if the run is unknown or already finished."""
+    return {"run_id": run_id, "cancelled": agent_mod.cancel_run(run_id)}
+
+
 @app.get("/api/changelog")
 def changelog_get() -> dict:
     return {"items": agent_mod.load_changelog()}
@@ -1424,6 +1433,75 @@ def sim_blocks() -> dict:
     return {"blocks": sim_service.list_blocks()}
 
 
+# ---- Edit per-sim requirements (pass criteria + boundary params) -----------
+class SimReqEdit(BaseModel):
+    block: str
+    # exactly one of these edit shapes:
+    sim_type: str | None = None       # for field edits
+    field: str | None = None          # "pass" | "rationale"
+    value: str | None = None
+    net: str | None = None            # for boundary-param edits
+    key: str | None = None
+    param_value: str | None = None
+
+
+@app.get("/api/sim/requirements")
+def sim_requirements(block: str) -> dict:
+    """The editable requirements for a block: each sim_type's pass/rationale +
+    the block's boundary params (the operating-point/load values)."""
+    from test1.sim import catalog_edit
+    try:
+        return catalog_edit.requirements(block)
+    except KeyError as e:
+        raise HTTPException(404, str(e))
+
+
+@app.post("/api/sim/requirements")
+def sim_requirements_edit(req: SimReqEdit) -> dict:
+    """Surgically edit blocks.yaml (comment-preserving, validated): set a
+    sim_type's pass/rationale, or set/add a boundary net's param."""
+    from test1.sim import catalog_edit
+    try:
+        if req.field is not None and req.sim_type is not None and req.value is not None:
+            catalog_edit.set_sim_field(req.block, req.sim_type, req.field, req.value)
+        elif req.net is not None and req.key is not None and req.param_value is not None:
+            catalog_edit.set_boundary_param(req.block, req.net, req.key, req.param_value)
+        else:
+            raise HTTPException(400, "specify (sim_type, field, value) or (net, key, param_value)")
+        return {"ok": True, "requirements": catalog_edit.requirements(req.block)}
+    except catalog_edit.CatalogEditError as e:
+        raise HTTPException(400, f"edit rejected: {e}")
+    except KeyError as e:
+        raise HTTPException(404, str(e))
+
+
+# ---- Clear a block's sim cache --------------------------------------------
+class SimCacheClear(BaseModel):
+    block: str
+    scope: str = "all"                # "scenario" | "params" | "all"
+
+
+@app.post("/api/sim/cache/clear")
+def sim_cache_clear(req: SimCacheClear) -> dict:
+    """Clear a block's cached sim state so the next Run re-derives it.
+      scenario → drop the operating-point scenario (sim_config) + iter counters
+      params   → drop the block's datasheet device params
+      all      → both."""
+    from test1.sim import simconfig as sc
+    blocks = {b["id"]: b for b in sim_service.list_blocks()}
+    blk = blocks.get(req.block)
+    if not blk:
+        raise HTTPException(404, f"no block {req.block!r}")
+    out: dict = {"block": req.block, "scope": req.scope}
+    if req.scope in ("scenario", "all"):
+        out["scenario_cleared"] = sc.clear_scenario(req.block)
+        out["counters_cleared"] = sc.clear_iter_counters(req.block)
+    if req.scope in ("params", "all"):
+        mpns = [d.get("mpn") for d in blk.get("datasheets", []) if d.get("mpn")]
+        out["params_cleared"] = sc.clear_params(mpns)
+    return out
+
+
 @app.post("/api/sim/run")
 def sim_run(req: SimRunReq) -> dict:
     """Run one (block, sim_type). Synchronous — sims finish in ~1s and
@@ -1435,6 +1513,84 @@ def sim_run(req: SimRunReq) -> dict:
         raise HTTPException(404, str(e))
     except ValueError as e:
         raise HTTPException(400, str(e))
+
+
+@app.get("/api/sim/circuit")
+def sim_circuit(block: str, sim_type: str) -> dict:
+    """Parsed node-graph of the deck for (block, sim_type) WITHOUT running it —
+    powers the Simulation tab's "SPICE model" view (what's being simulated).
+    Builds the deck and parses it; no ngspice needed, so it works even when the
+    simulator is absent. `circuit` is null when the combo has no deck (a
+    code-built analysis, or a planned sim)."""
+    try:
+        return {"block": block, "sim_type": sim_type,
+                "circuit": sim_service.circuit_for(block, sim_type)}
+    except KeyError as e:
+        raise HTTPException(404, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/sim/simulated-region")
+def sim_simulated_region(block: str) -> dict:
+    """Which parts of the real schematic this sim block covers, and WHERE they
+    are — ACROSS ALL SHEETS (a block's parts can span sheets, e.g. an LDO whose
+    VDDIO decaps live on the bobcat sheet). The block's real refdes come from the
+    deck's circuit (deck element → netlist refdes); each is then located on every
+    rendered sheet. Returns a per-sheet map so the GUI can highlight on the right
+    sheet and flag which sheet tabs contain a simulated part. Altium backend
+    only (needs the rendered SVGs)."""
+    empty = {"sheets": {}, "sheets_with_parts": [], "refdes": [], "primary": None}
+    if BACKEND != "altium":
+        return empty
+    blocks = {b["id"]: b for b in sim_service.list_blocks()}
+    blk = blocks.get(block)
+    if not blk:
+        raise HTTPException(404, f"no block {block!r}")
+
+    # the block's REAL schematic refdes, from the deck (a representative
+    # implemented sim type — topology/parts are shared across a block's sims).
+    st = next((s["type"] for s in blk.get("sim_types", [])
+               if s.get("status") == "implemented"), None)
+    circ = sim_service.circuit_for(block, st) if st else None
+    sim_refs = sorted({e["refdes"] for e in (circ or {}).get("elements", [])
+                       if e.get("refdes")})
+    if not sim_refs:
+        return empty
+
+    from test1.altium import refdes_locations
+    from test1.sim import design_extract
+    sim_set = set(sim_refs)
+    # Locate the sim refs on each rendered sheet. Refdes are NOT globally unique
+    # (each sheet has its own C20/C24 series), and the rendered SVG can contain
+    # off-sheet/cross-ref labels — so a refdes only counts on a sheet if that
+    # sheet's NETLIST actually declares it. (netlist = authority for which sheet
+    # a part lives on; SVG = where it sits.)
+    sheets: dict[str, dict] = {}
+    for svg in sorted(RENDER_DIR.glob("*.svg")):
+        stem = svg.stem
+        if stem in ("root", "test1"):
+            continue
+        on_sheet = set(design_extract.sheet_refdes(stem))   # netlist parts here
+        placed = refdes_locations.extract(svg)
+        located = {r: xy for r, xy in placed["refdes"].items()
+                   if r in sim_set and r in on_sheet}
+        if located:
+            sheets[stem] = {"viewBox": placed["viewBox"], "refdes": located}
+
+    with_parts = sorted(sheets.keys())
+    # primary = the block's declared sheet if it has parts, else the sheet with
+    # the most simulated parts (a sensible default to switch to).
+    decl = (blk.get("sheet") or "").strip()
+    decl = decl[:-5] if decl.endswith(".yaml") else decl
+    primary = decl if decl in sheets else (
+        max(sheets, key=lambda s: len(sheets[s]["refdes"])) if sheets else None)
+    return {
+        "sheets": sheets,                       # {stem: {viewBox, refdes:{x,y}}}
+        "sheets_with_parts": with_parts,        # tab-highlight list
+        "refdes": sim_refs,                     # all real refdes the block sims
+        "primary": primary,                     # sheet to switch to first
+    }
 
 
 @app.post("/api/sim/setup")

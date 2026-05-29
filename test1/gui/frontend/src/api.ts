@@ -2,6 +2,7 @@ import type {
   ChangelogItem,
   ChatSession,
   ChatSessionMeta,
+  Circuit,
   DatasheetItem,
   FindingsReport,
   FixQueueEntry,
@@ -14,6 +15,7 @@ import type {
   RunSummary,
   SheetMeta,
   SimBlock,
+  SimRequirements,
   SimResult,
   SkillItem,
   SymbolInfo,
@@ -244,6 +246,52 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ block, sim_type: simType, vout_set: voutSet }),
     }),
+  // Cancel a running agent (terminates its claude -p process) — backs the
+  // Simulation tab's Cancel button.
+  cancelAgent: (runId: string) =>
+    j<{ run_id: string; cancelled: boolean }>(`/api/agent/${runId}/cancel`, {
+      method: "POST",
+    }),
+
+  // --- per-sim requirements (editable pass criteria + boundary params) ------
+  simRequirements: (block: string) =>
+    j<SimRequirements>(`/api/sim/requirements?block=${encodeURIComponent(block)}`),
+  simEditField: (block: string, simType: string, field: "pass" | "rationale", value: string) =>
+    j<{ ok: boolean; requirements: SimRequirements }>("/api/sim/requirements", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ block, sim_type: simType, field, value }),
+    }),
+  simEditBoundary: (block: string, net: string, key: string, paramValue: string) =>
+    j<{ ok: boolean; requirements: SimRequirements }>("/api/sim/requirements", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ block, net, key, param_value: paramValue }),
+    }),
+  // --- clear a block's sim cache (scope: scenario | params | all) -----------
+  simClearCache: (block: string, scope: "scenario" | "params" | "all") =>
+    j<{ block: string; scope: string; scenario_cleared?: boolean; counters_cleared?: number; params_cleared?: string[] }>(
+      "/api/sim/cache/clear", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ block, scope }),
+      }),
+  // Parsed node-graph of the deck (no ngspice run) — for the "SPICE model" view.
+  simCircuit: (block: string, simType: string) =>
+    j<{ block: string; sim_type: string; circuit: Circuit | null }>(
+      `/api/sim/circuit?block=${encodeURIComponent(block)}&sim_type=${encodeURIComponent(simType)}`,
+    ),
+  // Which schematic parts the block simulates + where they sit, ACROSS sheets
+  // (a block can span sheets). Per-sheet {viewBox, refdes}, the list of sheets
+  // that contain a simulated part (for tab highlighting), and the sheet to
+  // switch to first.
+  simRegion: (block: string) =>
+    j<{
+      sheets: Record<string, { viewBox: [number, number]; refdes: Record<string, { x: number; y: number }> }>;
+      sheets_with_parts: string[];
+      refdes: string[];
+      primary: string | null;
+    }>(`/api/sim/simulated-region?block=${encodeURIComponent(block)}`),
 
   librarySymbol: (mpn: string) =>
     j<SymbolInfo>(`/api/library/${encodeURIComponent(mpn)}/symbol`),
@@ -271,6 +319,13 @@ export function subscribeAgent(
   onDone?: (status: { status: string; rc: number | null; text?: string }) => void,
 ): () => void {
   const es = new EventSource(`/api/agent/${runId}/stream`);
+  let settled = false;                 // ensure onDone fires exactly once
+  const finish = (status: { status: string; rc: number | null; text?: string }) => {
+    if (settled) return;
+    settled = true;
+    es.close();
+    onDone?.(status);
+  };
   es.onmessage = (e) => {
     try {
       const j = JSON.parse(e.data);
@@ -280,15 +335,18 @@ export function subscribeAgent(
     }
   };
   es.addEventListener("done", (e: MessageEvent) => {
-    try {
-      onDone?.(JSON.parse(e.data));
-    } catch {
-      // ignore
-    }
-    es.close();
+    let parsed: { status: string; rc: number | null; text?: string } = { status: "done", rc: null };
+    try { parsed = JSON.parse(e.data); } catch { /* keep default */ }
+    finish(parsed);
   });
-  es.onerror = () => es.close();
-  return () => es.close();
+  // A dropped/failed stream (e.g. the backend restarted mid-run) must NOT leave
+  // the caller waiting forever — resolve to a terminal state so the UI can move
+  // on. EventSource auto-reconnects on transient errors; only treat it as fatal
+  // once the connection is actually CLOSED.
+  es.onerror = () => {
+    if (es.readyState === EventSource.CLOSED) finish({ status: "stream_error", rc: null });
+  };
+  return () => { settled = true; es.close(); };
 }
 
 /** Subscribe to a run's SSE stream. Returns an unsubscribe function. */

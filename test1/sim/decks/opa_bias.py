@@ -40,7 +40,15 @@ _MODE_TO_SIMTYPE = {
     "ac_stability": "ac_stability",
     "transient_settling": "transient_settling",
     "por": "por_failsafe",
+    "compliance": "dc_compliance",
 }
+
+# Bobcat bias-input compliance point (PDF: "nominally 320µA at 0.5V"). The DUT
+# pulls bias current with its BIASx pin sitting near 0.5 V, so the loop must be
+# able to source the full range with the PMOS drain/isolator holding that 0.5 V
+# — a headroom check the generic 100Ω load (BIAS node ≈ 0.03 V) doesn't exercise.
+BIAS_COMPLIANCE_V = 0.5
+BIAS_NOMINAL_A = 320e-6      # PDF nominal operating current
 
 # Catalog net name → SPICE node. BIAS_ISO drives the isolator gate; +3V3 is
 # the supply; BIAS0 is the output into the DUT bias load.
@@ -49,6 +57,30 @@ _NET_TO_NODE = {
     "BIAS0": "BIAS0",
     "BIAS_ISO0": "BIAS_ISO0",
 }
+
+
+# SPICE deck element ref → netlist refdes on bias.yaml, so the GUI can tie a
+# model element back to the real schematic part. None = behavioral scaffolding
+# with no physical part (boundary source, ammeter, DUT load stub). Channel 0
+# uses R40/Q40/Q42; channel 1 would be R41/Q41/Q43 (the deck builds ch0 today).
+def refdes_map(channel: int = 0) -> dict[str, str | None]:
+    sense = {0: "R40", 1: "R41"}[channel]
+    pmos = {0: "Q40", 1: "Q41"}[channel]
+    iso = {0: "Q42", 1: "Q43"}[channel]
+    return {
+        "XOPA": "U41",            # OPA2388 op-amp
+        "MQ40": pmos,             # PMZ1200 pass FET
+        "MQ42": iso,              # 2N7002 isolator
+        "RSENSE": sense,          # 5.11k sense resistor
+        "VDAC": "U40",            # MCP4728 DAC — output modeled as a programmed V
+        # --- model-only (no schematic part) ---
+        "VSNS_BIAS": None,        # 0V ammeter into the DUT bias node
+        "RBIASLOAD": None,        # DUT bias-input load stand-in
+        "VBIASCOMP": None,        # DUT 0.5V compliance source (compliance sim)
+        "VV3V3_SRC": None,        # off-sheet +3V3 source (boundary)
+        "RV3V3_SRC": None,        # +3V3 source impedance (boundary)
+        "VBIAS_ISO0_DRV": None,   # FPGA isolator drive (boundary)
+    }
 
 
 def _ideal_ibias(v_dac: float, vdd: float, r_sense: float) -> float:
@@ -162,6 +194,25 @@ print i(vsns_bias) v(vsense) v(biasd) v(bias_iso0)
 .endc
 """
 
+    elif mode == "compliance":
+        # PDF requirement: BIASx delivers its programmed current with the DUT
+        # bias pin at ~0.5 V. Pin BIAS0 to 0.5 V (the DUT compliance point) via a
+        # source the ammeter feeds, and sweep the DAC: the loop must still hit the
+        # ideal current across the range (i.e. enough PMOS-drain/isolator headroom
+        # at 0.5 V), and in particular at the nominal 320 µA point. Overrides the
+        # generic 100Ω load below with the 0.5 V compliance source.
+        dac = "VDAC VDAC 0 DC 0"
+        bnds = _boundaries_for(sim_type)
+        core = _core_topology(dac, r_sense=r_sense)
+        bias_load = (f"* DUT bias-input compliance: hold BIAS0 at {BIAS_COMPLIANCE_V} V\n"
+                     f"VBIASCOMP BIAS0 0 DC {BIAS_COMPLIANCE_V:.6g}")
+        analysis = """.control
+dc VDAC 0 3.3 0.033
+wrdata dc_compliance.dat i(vsns_bias) v(vsense) v(opaout) v(biasd)
+.endc
+"""
+        trace_specs["dc_compliance"] = ["i(vsns_bias)", "v(vsense)", "v(opaout)", "v(biasd)"]
+
     deck = "\n".join([head, "", *bnds, "", *core, bias_load, "", analysis, ".end"])
     return deck, trace_specs
 
@@ -209,6 +260,61 @@ def analyze_dc_sweep(trace, *, r_sense: float = R_SENSE, vdd: float = VDD,
         "worst_at_vdac_V": worst_at,
         "err_limit_pct": err_limit_frac * 100,
         "overall": "OK" if worst <= err_limit_frac else "FAIL",
+    }
+
+
+def analyze_compliance(trace, *, r_sense: float = R_SENSE, vdd: float = VDD,
+                       err_limit_frac: float = 0.01,
+                       compliance_v: float = BIAS_COMPLIANCE_V,
+                       nominal_a: float = BIAS_NOMINAL_A) -> dict:
+    """Bias delivered with the DUT pin held at the 0.5 V compliance point.
+
+    Same V-to-I accuracy test as dc_sweep, but BIAS0 is pinned to 0.5 V so this
+    verifies the loop has the drain/isolator headroom to source current into a
+    real DUT bias node (not just a near-ground load). Also reports the current
+    at the PDF nominal point (ideal ≈ 320 µA) and confirms the pass FET drain
+    stays above the 0.5 V compliance over the regulated range."""
+    import numpy as np
+    v_dac = trace.col("time")                  # DC sweep var = VDAC
+    i_meas = trace.col("i(vsns_bias)")
+    opaout = trace.col("v(opaout)")
+    biasd = trace.col("v(biasd)")              # PMOS drain (must stay > 0.5 V)
+    ideal = np.array([_ideal_ibias(v, vdd, r_sense) for v in v_dac])
+    regulated = (opaout > 0.05) & (opaout < vdd - 0.05)
+
+    worst = 0.0
+    worst_at = None
+    i_max_reg = 0.0
+    drain_min = float("inf")
+    for vd, im, il, reg, bd in zip(v_dac, i_meas, ideal, regulated, biasd):
+        if not reg or il <= 0:
+            continue
+        i_max_reg = max(i_max_reg, il)
+        drain_min = min(drain_min, float(bd))
+        frac = abs(im - il) / il
+        if frac > worst:
+            worst, worst_at = frac, float(vd)
+
+    # current at the nominal operating point (V_DAC where ideal ≈ nominal_a)
+    v_nom = vdd - nominal_a * r_sense
+    j = int(np.argmin(np.abs(v_dac - v_nom)))
+    i_at_nominal = float(i_meas[j])
+    nom_err = abs(i_at_nominal - nominal_a) / nominal_a if nominal_a else 0.0
+
+    drain_ok = drain_min >= compliance_v if drain_min != float("inf") else False
+    ok = worst <= err_limit_frac and nom_err <= err_limit_frac and drain_ok
+    return {
+        "check": "dc_compliance_at_0v5",
+        "compliance_V": compliance_v,
+        "i_at_nominal_uA": round(i_at_nominal * 1e6, 2),
+        "nominal_target_uA": round(nominal_a * 1e6, 1),
+        "nominal_err_pct": round(nom_err * 100, 3),
+        "worst_err_pct": round(float(worst) * 100, 3),
+        "worst_at_vdac_V": worst_at,
+        "i_max_regulated_uA": round(i_max_reg * 1e6, 2),
+        "pmos_drain_min_V": None if drain_min == float("inf") else round(drain_min, 4),
+        "err_limit_pct": err_limit_frac * 100,
+        "overall": "OK" if ok else "FAIL",
     }
 
 

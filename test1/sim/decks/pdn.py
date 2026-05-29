@@ -20,9 +20,16 @@ from .. import design_extract
 from ..catalog import resolve_boundaries
 
 # Each PDN block id → (rail net name, SPICE node, sheets to scan for caps).
+# VDDA1/VDDA2 decouple on the CHIP side of the series 0Ω (R20/R21): the Bobcat
+# analog pin + its decap (C22/C23) sit on internal_VDDA{1,2}_path, fed from the
+# +VDDA{1,2} rail through the 0Ω. We model the rail at that chip-side node (the
+# 0Ω is subsumed into the source path), so the decap the pin actually sees is
+# what's simulated.
 RAIL_OF_BLOCK = {
     "vddio_pdn": ("+VDDIO", "VDDIO", ["power", "bobcat"]),
     "vddd_pdn":  ("+VDDD",  "VDDD",  ["bobcat"]),
+    "vdda1_pdn": ("internal_VDDA1_path", "VDDA1", ["bobcat"]),
+    "vdda2_pdn": ("internal_VDDA2_path", "VDDA2", ["bobcat"]),
 }
 
 
@@ -42,6 +49,19 @@ def _cap_esr(C: float) -> float:
     if C >= 1e-6:
         return 0.010
     return 0.030
+
+
+# SPICE deck element ref → netlist refdes. Each netlist cap Cxx is modeled as
+# three elements LCxx/RCxx/CCxx (its ESL/ESR/C) — all three map back to Cxx.
+# That L<ref>/R<ref>/C<ref> → <ref> pattern is resolved generically in
+# circuit.py; here we only flag the model-only source chain + load stub.
+def refdes_map() -> dict[str, str | None]:
+    return {
+        "VSRC": None,    # off-sheet rail source (VRM/switch output) — boundary
+        "RSRC": None,    # source R (layout/boundary)
+        "LSRC": None,    # source L (layout/boundary)
+        "BLOAD": None,   # DUT load step (boundary)
+    }
 
 
 def _cap_rlc(ref: str, C: float, node: str, esl: float = 0.5e-9) -> str:
@@ -87,13 +107,19 @@ def build_deck(*, block_id: str, mode: str) -> tuple[str, dict[str, list[str]]]:
     for ref, C in caps:
         cap_lines.append(_cap_rlc(ref, C, node))
 
+    # Load-step magnitude is per-rail (digital rails take a harsh 50->250mA step;
+    # analog VDDA pins take a modest 5->25mA step) — from the boundary params so
+    # the analog rails aren't judged against an unrealistic digital transient.
+    i_base = rail_params.get("I_base", 0.05)
+    i_step = rail_params.get("I_step", 0.20)
+
     trace_specs: dict[str, list[str]] = {}
     if mode == "load_step":
         # No `uic`: ngspice solves the DC op-point first so the rail starts
-        # pre-charged (load = 50mA baseline), then we step at 0.2ms. Edge is
+        # pre-charged (load = I_base baseline), then we step at 0.2ms. Edge is
         # 100ns, resolved by the 20ns max timestep.
-        load = ("* Harsh load step (exposes missing decoupling)\n"
-                f"BLOAD {node} 0 I=0.05 + 0.20*u(time-0.2m)"
+        load = ("* Load step (exposes missing decoupling)\n"
+                f"BLOAD {node} 0 I={i_base:.4g} + {i_step:.4g}*u(time-0.2m)"
                 f"*min(1,(time-0.2m)/100n)")
         analysis = f""".control
 tran 20n 0.4m
