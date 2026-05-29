@@ -66,8 +66,34 @@ const isGnd = (n: string) => GND.has(n.toLowerCase());
 interface Template {
   shape: GlyphShape;
   w: number; h: number;
-  // pins by index in the element's node list → local anchor + leave direction
-  pins: (nodes: string[]) => GlyphPin[];
+  // pins by index in the element's node list → local anchor + leave direction.
+  // `ports` are the subckt's declared port NAMES (parser: circuit.subckts[x].ports),
+  // index-aligned to nodes — used to label pins with the real schematic name
+  // (IN/OUT/EN/GND, IN+/IN-) instead of a bare number.
+  pins: (nodes: string[], ports?: string[]) => GlyphPin[];
+}
+
+// Normalize a subckt port name to the symbol's conventional pin label.
+function pinLabel(port: string | undefined, fallback: string): string {
+  if (!port) return fallback;
+  const p = port.toUpperCase();
+  if (p === "INP" || p === "IN+" || p === "VINP" || p === "NIN") return "IN+";
+  if (p === "INN" || p === "IN-" || p === "VINN" || p === "PIN") return "IN-";
+  if (p === "VCC" || p === "VDD" || p === "V+" || p === "VS+") return "V+";
+  if (p === "VEE" || p === "VSS" || p === "V-" || p === "VS-") return "V-";
+  return port;   // already a real name (IN, OUT, EN, GND, NR, VIN, VOUT, …)
+}
+
+// Which body side a named IC pin belongs on, by function: power up, ground down,
+// enable/inputs left, outputs right. Keeps a generic IC box reading like a real
+// symbol rather than pins dumped down both edges by index.
+type Side = "left" | "right" | "top" | "bottom";
+function portSide(port: string): Side {
+  const p = port.toUpperCase();
+  if (/^(VCC|VDD|VIN|IN|V\+|VS\+|AVDD|DVDD)$/.test(p)) return "top";
+  if (/^(GND|VEE|VSS|V-|VS-|AGND|DGND|PAD|EP)$/.test(p)) return "bottom";
+  if (/^(OUT|VOUT|DOUT|Q)$/.test(p)) return "right";
+  return "left";    // EN, NR, FB, SET, control, everything else → left
 }
 
 const TWO_TERM = (shape: GlyphShape): Template => ({
@@ -94,14 +120,17 @@ const MOSFET: Template = {
 // follows the X-line: nodes[0]=OUT nodes[1]=INP(+) nodes[2]=INN(-) nodes[3]=VCC nodes[4]=VEE.
 const OPAMP: Template = {
   shape: "opamp", w: 76, h: 72,
-  pins: (n) => {
+  // OPA2388 subckt ports: OUT INP INN VCC VEE (index-aligned to nodes). Label
+  // each pin with its real symbol name (IN+/IN-/OUT/V+/V-).
+  pins: (n, ports) => {
+    const nm = (i: number, fb: string) => pinLabel(ports?.[i], fb);
     const pins: GlyphPin[] = [
-      { name: "+", net: n[1] ?? "", x: 0, y: 22, dir: "left" },
-      { name: "-", net: n[2] ?? "", x: 0, y: 50, dir: "left" },
-      { name: "out", net: n[0] ?? "", x: 76, y: 36, dir: "right" },
+      { name: nm(1, "IN+"), net: n[1] ?? "", x: 0, y: 22, dir: "left" },
+      { name: nm(2, "IN-"), net: n[2] ?? "", x: 0, y: 50, dir: "left" },
+      { name: nm(0, "OUT"), net: n[0] ?? "", x: 76, y: 36, dir: "right" },
     ];
-    if (n[3]) pins.push({ name: "V+", net: n[3], x: 30, y: 0, dir: "up" });
-    if (n[4] && !isGnd(n[4])) pins.push({ name: "V-", net: n[4], x: 30, y: 72, dir: "down" });
+    if (n[3]) pins.push({ name: nm(3, "V+"), net: n[3], x: 30, y: 0, dir: "up" });
+    if (n[4] && !isGnd(n[4])) pins.push({ name: nm(4, "V-"), net: n[4], x: 30, y: 72, dir: "down" });
     return pins;
   },
 };
@@ -126,24 +155,49 @@ function classify(el: CircuitElement): GlyphShape {
   }
 }
 
-function template(el: CircuitElement): Template {
+function template(el: CircuitElement, subcktPorts?: string[]): Template {
   const shape = classify(el);
   if (shape === "mosfet") return MOSFET;
   if (shape === "opamp") return OPAMP;
   if (shape === "box") {
-    // generic IC: a box with pins down the left & right sides
+    // generic IC (e.g. the LDO / load switch): a box with FUNCTION-PLACED, NAMED
+    // pins — IN/VIN up top, GND/VEE on the bottom, OUT on the right, EN/control on
+    // the left — read from the subckt's declared ports. Reads like a real symbol
+    // instead of pins dumped down both edges by index.
     const n = el.nodes.length;
-    const h = Math.max(64, 20 + n * 22);
+    const W = 96;
+    const ports = subcktPorts;   // captured from buildSchematic (may be undefined)
+    const sideOf = (i: number): Side =>
+      ports?.[i] ? portSide(ports[i]) : (i < Math.ceil(n / 2) ? "left" : "right");
+    // size from the busiest vertical side so pins never crowd — computed ONCE
+    // here (not inside pins()) so the body box height matches the pin layout.
+    const groups0: Record<Side, number[]> = { left: [], right: [], top: [], bottom: [] };
+    el.nodes.forEach((_net, i) => groups0[sideOf(i)].push(i));
+    const maxVert = Math.max(groups0.left.length, groups0.right.length, 1);
+    const h = Math.max(64, 20 + maxVert * 22);
     return {
-      shape: "box", w: 96, h,
-      pins: (nodes) =>
-        nodes.map((net, i) => {
-          const left = i < Math.ceil(n / 2);
-          const row = left ? i : i - Math.ceil(n / 2);
-          const per = left ? Math.ceil(n / 2) : Math.floor(n / 2);
-          const y = ((row + 1) * h) / (per + 1);
-          return { name: String(i + 1), net, x: left ? 0 : 96, y, dir: left ? "left" : "right" } as GlyphPin;
-        }),
+      shape: "box", w: W, h,
+      pins: (nodes, ports) => {
+        const groups: Record<Side, number[]> = { left: [], right: [], top: [], bottom: [] };
+        nodes.forEach((_net, i) => groups[(ports?.[i] ? portSide(ports[i]) : (i < Math.ceil(n / 2) ? "left" : "right"))].push(i));
+        const out: GlyphPin[] = [];
+        const place = (idxs: number[], side: Side) => {
+          idxs.forEach((i, k) => {
+            const name = pinLabel(ports?.[i], String(i + 1));
+            const net = nodes[i] ?? "";
+            if (side === "left" || side === "right") {
+              const y = ((k + 1) * h) / (idxs.length + 1);
+              out.push({ name, net, x: side === "left" ? 0 : W, y, dir: side });
+            } else {
+              const x = ((k + 1) * W) / (idxs.length + 1);
+              out.push({ name, net, x, y: side === "top" ? 0 : h, dir: side === "top" ? "up" : "down" });
+            }
+          });
+        };
+        place(groups.left, "left"); place(groups.right, "right");
+        place(groups.top, "top"); place(groups.bottom, "bottom");
+        return out;
+      },
     };
   }
   return TWO_TERM(shape);
@@ -219,6 +273,24 @@ export function buildSchematic(circuit: Circuit): Schematic {
   const placed: PlacedGlyph[] = [];
   const colInfo: { x0: number; x1: number }[] = [];
 
+  // A subckt instance's declared port names (index-aligned to its nodes), so a
+  // box/op-amp glyph can label its pins with the real schematic name. Undefined
+  // for non-subckt elements (they have their own fixed pin names).
+  const portsOf = (el: CircuitElement): string[] | undefined =>
+    el.subckt ? circuit.subckts[el.subckt]?.ports : undefined;
+  // Build the placed glyph for one element at (gx,gy) — single source of truth
+  // for template + named pins, used by both the comb and generic placers.
+  const placeGlyph = (el: CircuitElement, gx: number, gy: number, t: Template): PlacedGlyph => {
+    const ports = portsOf(el);
+    const pins = t.pins(el.nodes, ports).map((p) => ({ ...p, x: gx + p.x, y: gy + p.y }));
+    return {
+      ref: el.ref, shape: t.shape, value: el.value, note: el.note, el,
+      x: gx, y: gy, w: t.w, h: t.h, pins,
+      label: t.shape === "box" ? (el.subckt ?? el.ref) : undefined,
+    };
+  };
+  const tmpl = (el: CircuitElement): Template => template(el, portsOf(el));
+
   // --- detect comb groups (parallel legs sharing the same {top,bot}) --------
   const chains = findChains(circuit);
   const groupKey = (c: Chain) => [c.top, c.bot].sort().join("|");
@@ -234,17 +306,12 @@ export function buildSchematic(circuit: Circuit): Schematic {
     if (grp.length < 2) continue;            // singles → generic region
     for (const leg of grp) {
       const parts = leg.chain.map((rr) => byRef.get(rr)!);
-      const colW = Math.max(...parts.map((p) => template(p).w));
+      const colW = Math.max(...parts.map((p) => tmpl(p).w));
       let y = MARGIN + 30;
       for (const el of parts) {
-        const t = template(el);
+        const t = tmpl(el);
         const gx = x + (colW - t.w) / 2, gy = y;
-        const pins = t.pins(el.nodes).map((p) => ({ ...p, x: gx + p.x, y: gy + p.y }));
-        placed.push({
-          ref: el.ref, shape: t.shape, value: el.value, note: el.note, el,
-          x: gx, y: gy, w: t.w, h: t.h, pins,
-          label: t.shape === "box" ? (el.subckt ?? el.ref) : undefined,
-        });
+        placed.push(placeGlyph(el, gx, gy, t));
         y += t.h + GLYPH_GAP;
       }
       legH = Math.max(legH, y - MARGIN - 30);
@@ -287,7 +354,7 @@ export function buildSchematic(circuit: Circuit): Schematic {
     for (let i = 0; i < els.length; i += MAX_PER_COL) cols.push(els.slice(i, i + MAX_PER_COL));
   }
   const colHeight = (els: CircuitElement[]) =>
-    els.reduce((h, el) => h + template(el).h + REST_GAP, -REST_GAP);
+    els.reduce((h, el) => h + tmpl(el).h + REST_GAP, -REST_GAP);
   const heights = cols.map(colHeight);
   const maxH = Math.max(legH, ...heights, 0);
   if (x > MARGIN) x += 40;                  // gap between comb and the rest
@@ -297,17 +364,12 @@ export function buildSchematic(circuit: Circuit): Schematic {
     // extra space BEFORE an op-amp/IC column too, so the previous column's
     // right-side ref labels don't run into the triangle/box.
     if (colHasWide(els) && ci > 0) x += OPAMP_CLEARANCE;
-    const colW = Math.max(...els.map((el) => template(el).w));
+    const colW = Math.max(...els.map((el) => tmpl(el).w));
     let y = MARGIN + (maxH - heights[ci]) / 2;
     for (const el of els) {
-      const t = template(el);
+      const t = tmpl(el);
       const gx = x + (colW - t.w) / 2, gy = y;
-      const pins = t.pins(el.nodes).map((p) => ({ ...p, x: gx + p.x, y: gy + p.y }));
-      placed.push({
-        ref: el.ref, shape: t.shape, value: el.value, note: el.note, el,
-        x: gx, y: gy, w: t.w, h: t.h, pins,
-        label: t.shape === "box" ? (el.subckt ?? el.ref) : undefined,
-      });
+      placed.push(placeGlyph(el, gx, gy, t));
       y += t.h + REST_GAP;
     }
     colInfo.push({ x0: x, x1: x + colW });
@@ -401,6 +463,22 @@ function routeSchematic(
     labels.push({ x: s.x, y: s.y, text: net });
   }
 
+  // Sanity: after ALL routing, every non-ground pin must have a wire endpoint AT
+  // it. A dogleg/lane that failed to land on its pin is exactly the "disconnect"
+  // defect the user saw — give any such pin a short fallback stub so it's never
+  // left floating. (Runs last so it can't double-stub a single-pin net.)
+  for (const g of placed)
+    for (const p of g.pins) {
+      if (isGnd(p.net)) continue;
+      const touched = wires.some((w) =>
+        (Math.abs(w.x1 - p.x) < 1.5 && Math.abs(w.y1 - p.y) < 1.5) ||
+        (Math.abs(w.x2 - p.x) < 1.5 && Math.abs(w.y2 - p.y) < 1.5));
+      if (!touched) {
+        const s = stubEnd(p, 12);
+        wires.push({ x1: p.x, y1: p.y, x2: s.x, y2: s.y, net: p.net });
+      }
+    }
+
   const totalW = x - GUTTER_PAD * 2 + MARGIN + LABEL_PAD;
   return { glyphs: placed, wires, junctions, grounds, labels, W: totalW, H: totalH };
 }
@@ -457,8 +535,12 @@ function stubEnd(p: GlyphPin, len: number): { x: number; y: number } {
 // Route a pin to a vertical lane at laneX. A straight horizontal stub is used
 // when it stays clear of the pin's own body; otherwise (e.g. an op-amp + input
 // faces LEFT but its net's lane is to the RIGHT) we dogleg: exit in the pin's
-// `dir` to clear the body, jog vertically out of the body's y-span, then run
-// across to the lane. This keeps leads from cutting through the triangle.
+// `dir` to clear the body, jog vertically clear of it, then run across to the
+// lane. CRITICAL: two pins on the SAME body (the op-amp's + and - inputs) must
+// get DISTINCT corridors, or their doglegs overlap and read as one shorted wire.
+// We stagger the exit-x and the jog-y by the pin's index among its same-side
+// siblings, and jog a top-half pin UP / a bottom-half pin DOWN so the two never
+// share a path.
 function routePinToLane(
   p: GlyphPin, laneX: number, placed: PlacedGlyph[], wires: Wire[],
 ): void {
@@ -469,16 +551,27 @@ function routePinToLane(
       : owner && crossesBody(p.x, p.y, laneX, p.y, owner);
   // If a straight stub would cut through the pin's own body, dogleg around it.
   if (owner && (straightCrosses || sideMismatch(p, laneX, owner))) {
-    const clear = 14;                           // exit distance past the body edge
+    // siblings facing the SAME way that ALSO have to dogleg to the same side —
+    // index this pin among them so each gets its own corridor.
+    const sibs = owner.pins
+      .filter((q) => q.dir === p.dir)
+      .sort((a, b) => a.y - b.y);
+    const k = Math.max(0, sibs.indexOf(p));     // 0,1,2… distinct per same-side pin
+    const clear = 14 + k * 12;                  // staggered exit distance past the edge
     const exitX = p.dir === "left" ? owner.x - clear
                 : p.dir === "right" ? owner.x + owner.w + clear
                 : p.x;
-    // 1) out along the pin direction
+    // jog ABOVE the body for a top-half pin, BELOW for a bottom-half pin, each at
+    // a per-pin offset so sibling corridors never coincide.
+    const mid = owner.y + owner.h / 2;
+    const jogY = p.y <= mid
+      ? owner.y - 12 - k * 12
+      : owner.y + owner.h + 12 + k * 12;
+    // 1) out along the pin direction to its own corridor x
     wires.push({ x1: p.x, y1: p.y, x2: exitX, y2: p.y, net: p.net });
-    // 2) vertical jog to just below the body, clear of it
-    const jogY = owner.y + owner.h + 12;
+    // 2) vertical jog clear of the body (up or down, per-pin level)
     wires.push({ x1: exitX, y1: p.y, x2: exitX, y2: jogY, net: p.net });
-    // 3) across to the lane x, then up to the lane (the lane spans the y-range)
+    // 3) across to the lane x at that level, then back to the pin's y on the lane
     wires.push({ x1: exitX, y1: jogY, x2: laneX, y2: jogY, net: p.net });
     wires.push({ x1: laneX, y1: jogY, x2: laneX, y2: p.y, net: p.net });
     return;

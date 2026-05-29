@@ -24,9 +24,27 @@ export function Glyph({ g, lit }: { g: PlacedGlyph; lit: boolean }) {
   const tx = above ? g.x : g.x + g.w + 8;
   const refY = above ? g.y - 6 : g.y + 12;
   const valY = above ? g.y - 6 + 12 : g.y + 25;
+  // Pin NAME labels: show the real schematic pin name (IN/OUT/EN/GND, IN+/IN-,
+  // D/G/S) just inside the body at each pin anchor — so an IC/op-amp reads like
+  // its symbol. Two-terminal parts (R/C/L/diode/source) carry only "1"/"2",
+  // which is noise on a schematic, so we suppress those.
+  const showPinNames = g.shape === "opamp" || g.shape === "box" || g.shape === "mosfet";
   return (
     <g>
       {body}
+      {showPinNames && g.pins.map((p, i) => {
+        // nudge the label INTO the body from the pin anchor, per leave-direction
+        const dx = p.dir === "left" ? 6 : p.dir === "right" ? -6 : 0;
+        const dy = p.dir === "up" ? 10 : p.dir === "down" ? -10 : 3;
+        const anchor = p.dir === "left" ? "start" : p.dir === "right" ? "end" : "middle";
+        return (
+          <text key={i} x={p.x + dx} y={p.y + dy} fontSize={8}
+                textAnchor={anchor} fontFamily="ui-monospace, monospace"
+                fill={lit ? "#2563eb" : "#64748B"}>
+            {p.name}
+          </text>
+        );
+      })}
       {/* designator (+ value) over a backing rect so it reads over wires */}
       <rect x={tx - 2} y={(above ? g.y - 16 : g.y + 2)} width={rw} height={showVal && !above ? 26 : 14}
             fill="#FCFCFD" opacity={0.8} />
@@ -158,13 +176,23 @@ function renderBody(g: PlacedGlyph, stroke: string) {
     }
     case "box":
     default: {
+      // Title sits in the UPPER part of the box so it never collides with the
+      // function-placed pin names (IN/OUT sit at vertical center on the sides).
+      // Long subckt names are split onto two lines to stay inside the body.
+      const raw = g.label ?? g.ref;
+      const lines = raw.length > 14 ? [raw.slice(0, raw.lastIndexOf("_", 14) > 0 ? raw.lastIndexOf("_", 14) : 14),
+                                       raw.slice((raw.lastIndexOf("_", 14) > 0 ? raw.lastIndexOf("_", 14) : 14)).replace(/^_/, "")]
+                                    : [raw];
+      const ty = y + 16;
       return (
         <>
           <rect x={x} y={y} width={w} height={h} rx={3} fill="#EEF2FF" stroke={stroke} strokeWidth={LW} />
-          <text x={x + w / 2} y={y + h / 2} textAnchor="middle" dominantBaseline="central"
-                fontSize={10} fontWeight={600} fontFamily="ui-monospace, monospace" fill="#3730A3">
-            {g.label ?? g.ref}
-          </text>
+          {lines.map((ln, i) => (
+            <text key={i} x={x + w / 2} y={ty + i * 11} textAnchor="middle"
+                  fontSize={9} fontWeight={600} fontFamily="ui-monospace, monospace" fill="#3730A3">
+              {ln}
+            </text>
+          ))}
         </>
       );
     }
