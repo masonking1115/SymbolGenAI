@@ -72,6 +72,9 @@ def _memory_dir() -> Path:
 MEMORY_DIR = _memory_dir()
 
 CLAUDE = "claude"
+# This backend's interpreter (the spike venv) — has PyMuPDF (fitz), so the sim
+# agents can render datasheet PDFs to images via sim/read_pdf.py.
+PY = sys.executable
 MODEL = os.environ.get("TEST1_AGENT_MODEL", "sonnet")
 MAX_HISTORY_TURNS = 30
 
@@ -520,6 +523,15 @@ async def _spawn_claude(
     if add_dir:
         cmd.extend(["--add-dir", str(add_dir)])
     env = os.environ.copy()
+    # Put THIS backend's interpreter dir (the spike venv, which has PyMuPDF/fitz)
+    # first on the agent's PATH, so a plain `python sim/read_pdf.py` resolves to
+    # the fitz-having python. This lets the agent use a simple, quote-free command
+    # (matches the Bash allow-list cleanly) instead of an absolute path it tends
+    # to quote/slash-vary — which previously got denied and made it thrash into
+    # PowerShell + scratch scripts. Also force UTF-8 so PDF text never crashes.
+    py_dir = str(Path(sys.executable).parent)
+    env["PATH"] = py_dir + os.pathsep + env.get("PATH", "")
+    env["PYTHONUTF8"] = "1"
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         cwd=str(PROJECT_DIR),
@@ -824,6 +836,23 @@ Current design (as-built):   {netlist_path}
 Device-param cache:          {_SIM_PARAM_CACHE}
 Sim-scenario cache:          {_SIM_CONFIG}
 
+READING DATASHEET PDFs — the Read tool CANNOT rasterize these PDFs (no poppler),
+so do NOT Read the .pdf directly and do NOT write your own pdf script. Use the
+provided helper via BASH (not PowerShell). You are ALREADY in the test1/
+directory — do NOT cd; do NOT write your own pdf script.
+
+STEP 1 — TEXT FIRST (fast, reliable). Get the text layer of the EC-table pages:
+    python sim/read_pdf.py "<pdf path>" --pages 4-9 --text-only
+This prints the page text — most electrical specs (VOS, GBW, AOL, dropout, RON,
+tON with their conditions) are readable straight from the text. Extract what you
+can from text.
+STEP 2 — IMAGES ONLY IF NEEDED (slower). If a value lives in a table whose layout
+is garbled in the text, or in a graph, render JUST those 1-2 pages and Read the
+PNGs:
+    python sim/read_pdf.py "<pdf path>" --pages 6,7
+Keep the page count tiny (1-2) — reading many high-res PNGs is slow. Prefer text;
+reach for images only for the specific unreadable value.
+
 Parts whose datasheet numbers FEED the sim (must be cached): {model_mpns or "(none — this block has no model-param parts)"}
 Already in the param cache: {sorted(cached)}
 You MUST extract these now (missing model parts): {must_extract or "(none — all model parts cached)"}
@@ -863,8 +892,20 @@ Your job — gain context, then establish ALL parameters before the sim runs:
         prompt=instructions,
         system_suffix="",
         permission_mode="acceptEdits",   # writes the two cache files
+        # Allow python (the venv is first on PATH → has fitz) + pdftotext so the
+        # agent can run the PDF-render helper to read datasheet diagrams. A
+        # narrowly-pinned prefix proved brittle — the agent quotes the path and
+        # prepends `cd … &&`, which a `Bash(python sim/read_pdf.py:*)` matcher
+        # rejects, making it thrash into PowerShell + ad-hoc pdf scripts. These
+        # agents have tightly-scoped prompts, so allowing `python`/bash plumbing
+        # is the pragmatic, non-thrashing choice (acceptEdits still governs writes).
+        allowed_tools=[
+            "Read", "Edit", "Write", "Glob", "Grep",
+            "Bash(python:*)", "Bash(python3:*)", "Bash(pdftotext:*)",
+            "Bash(cd:*)", "Bash(ls:*)", "Bash(cat:*)",
+        ],
     )
-    run = _register("sim-setup")
+    run = _register("Sim setup")
     asyncio.create_task(_run_subprocess(run, proc))
     return run
 
@@ -896,7 +937,12 @@ Device-param cache (already populated by setup — READ-ONLY here): {_SIM_PARAM_
 The device parameters this sim used were extracted by the setup pass and are
 in the param cache above. Do NOT re-extract or rewrite them. Read the cache and
 the datasheets to ground your judgement; cite the datasheet number you compare
-the result against.
+the result against. To read a datasheet (the Read tool can't rasterize these
+PDFs — no poppler), use the helper via BASH (plain `python`, no cd, no absolute
+path, don't write your own pdf script). TEXT FIRST:
+    python sim/read_pdf.py "<pdf path>" --pages 4-9 --text-only
+and only render an image if a specific value is unreadable as text:
+    python sim/read_pdf.py "<pdf path>" --pages 6,7   (then Read the PNGs)
 
 The GUI already ran the ngspice sim. Raw result JSON:
 {result_json}
@@ -927,7 +973,7 @@ Your job:
    operating point or load was used — you MAY fix it and re-run:
      a) update the scenario in {_SIM_CONFIG} (e.g. primary_vout_set_V, keyed by
         '{block_id}'),
-     b) re-run:  python3 sim/iterate_sim.py --block {block_id} --sim-type {sim_type}
+     b) re-run (use bash):  python sim/iterate_sim.py --block {block_id} --sim-type {sim_type}
         (it prints the new result JSON). Re-read the result and continue.
    The CLI enforces a hard limit of 3 re-sims; once it returns limit_reached,
    STOP iterating and emit the verdict on the best result so far. ONLY iterate
@@ -958,15 +1004,17 @@ circuit edits, one per line; "- none" if no circuit change is warranted):
         prompt=instructions,
         system_suffix="",
         permission_mode="acceptEdits",   # auto-approves cache/scenario edits
-        # Whitelist the bounded iterate CLI so the agent can actually re-sim
-        # (acceptEdits alone blocks arbitrary Bash in non-interactive -p mode).
+        # Allow python (venv first on PATH → fitz) + pdftotext + plumbing so the
+        # agent can run the bounded iterate CLI and the PDF-render helper without
+        # a brittle pinned prefix (it quotes paths / prepends `cd &&`). Tightly-
+        # scoped prompt; acceptEdits still governs writes.
         allowed_tools=[
             "Read", "Edit", "Write", "Glob", "Grep",
-            "Bash(python3 sim/iterate_sim.py:*)",
-            "Bash(python sim/iterate_sim.py:*)",
+            "Bash(python:*)", "Bash(python3:*)", "Bash(pdftotext:*)",
+            "Bash(cd:*)", "Bash(ls:*)", "Bash(cat:*)",
         ],
     )
-    run = _register("sim-interpret")
+    run = _register("Sim interpret")
     asyncio.create_task(_run_subprocess(run, proc))
     return run
 

@@ -19,6 +19,12 @@ function workflowSteps(res: SimResult | undefined, it: Interp | undefined, isRun
   // reload, persisted state must never read as active (that produced phantom
   // "running" sims with no result). `active` is only ever shown when isRunning.
   const liveActive = (cond: boolean): StepState => (isRunning && cond ? "active" : "pending");
+  // When the feedback loop starts a NEW pass, the run loop walks the phase back
+  // to "setup". The previous pass's `res`/`verdict` still linger in state, so a
+  // downstream step must NOT show last pass's outcome while this pass is re-running
+  // upstream of it — each step resets to pending/active until it re-completes.
+  // (`reran` = actively running and still upstream of that step's stage.)
+  const rerunningBefore = (stage: number): boolean => isRunning && p >= 0 && p < stage;
 
   // 1 + 2: context read + param apply both happen in the setup stage.
   const setupState: StepState =
@@ -28,14 +34,19 @@ function workflowSteps(res: SimResult | undefined, it: Interp | undefined, isRun
   const parHint = setupState === "done" ? (fresh ? "from cache" : "applied")
     : setupState === "active" ? "…" : "";
 
-  // 3: simulate.
-  const sim: StepState = res
-    ? (res.status !== "ran" ? "done" : res.ok ? "pass" : "fail")
-    : liveActive(p >= 1);
+  // 3: simulate. While a new pass is re-running setup, don't keep showing the
+  // prior pass's pass/fail — reset to active/pending for this pass.
+  const sim: StepState = rerunningBefore(ord.sim)
+    ? liveActive(false) /* pending: this pass hasn't reached Simulate yet */
+    : res
+      ? (res.status !== "ran" ? "done" : res.ok ? "pass" : "fail")
+      : liveActive(p >= 1);
 
-  // 4: interpret.
+  // 4: interpret. Likewise, a lingering verdict from the prior pass must not show
+  // while this pass is still upstream of interpret.
   let interp: StepState = "pending";
-  if (verdict) interp = verdict === "MEETS_SPEC" ? "pass" : verdict === "OUT_OF_SPEC" ? "fail" : "warn";
+  if (rerunningBefore(ord.interpret)) interp = liveActive(false);
+  else if (verdict) interp = verdict === "MEETS_SPEC" ? "pass" : verdict === "OUT_OF_SPEC" ? "fail" : "warn";
   else if (phase === "interpret") interp = liveActive(true);
   else if (phase === "done") interp = "done";
 
@@ -49,7 +60,10 @@ function workflowSteps(res: SimResult | undefined, it: Interp | undefined, isRun
 
 function StepIcon({ state }: { state: StepState }) {
   const base = "w-5 h-5 rounded-full grid place-items-center shrink-0";
-  if (state === "pass") return <span className={base + " bg-ok/15 text-ok"}><I.Check size={12} /></span>;
+  // A finished step always reads the SAME green check, whether it merely
+  // completed ("done") or passed a spec gate ("pass") — uniform completion
+  // color across the loop. Only failure (red) and in-progress (spinner) differ.
+  if (state === "pass" || state === "done") return <span className={base + " bg-ok/15 text-ok"}><I.Check size={12} /></span>;
   if (state === "fail") return <span className={base + " bg-err/15 text-err"}><I.X size={12} /></span>;
   if (state === "warn") return <span className={base + " bg-warn/15 text-warn"}><I.Dot size={12} /></span>;
   if (state === "active") return (
@@ -57,14 +71,41 @@ function StepIcon({ state }: { state: StepState }) {
       <span className="w-3 h-3 rounded-full border-2 border-ink-300 border-t-ink-700 animate-spin" />
     </span>
   );
-  if (state === "done") return <span className={base + " bg-ink-100 text-ink-500"}><I.Check size={12} /></span>;
   return <span className={base + " border border-edge text-ink-300"}><I.Dot size={10} /></span>;
+}
+
+// Which pass the workflow is on. Prefer an explicit `pass` from the run loop;
+// otherwise infer from the re-sim count the verdict reported (a second pass only
+// exists once at least one re-sim happened). Clamped to the hard loop cap.
+function currentPass(it?: Interp): number {
+  if (it?.pass && it.pass > 0) return Math.min(it.pass, MAX_LOOPS);
+  const m = it?.iterations?.match(/\d+/);   // "2 re-sims, changed primary_vout"
+  const resims = m ? parseInt(m[0], 10) : 0;
+  return Math.min(1 + (resims > 0 ? Math.min(resims, MAX_LOOPS - 1) : 0), MAX_LOOPS);
 }
 
 function WorkflowSteps({ res, it, isRunning }: { res?: SimResult; it?: Interp; isRunning: boolean }) {
   const steps = workflowSteps(res, it, isRunning);
+  const pass = currentPass(it);
   return (
     <div className="flex items-center gap-1.5 mb-3 pb-3 border-b border-edge/60">
+      {/* Loop badge: only when the feedback loop has gone past the first pass.
+          The reviewer's feedback re-tunes setup and the sequence re-runs, up to
+          MAX_LOOPS. */}
+      {pass > 1 && (
+        <span
+          className={
+            "shrink-0 inline-flex items-center gap-1 text-[9.5px] font-mono px-1.5 py-0.5 rounded-full border " +
+            (isRunning
+              ? "border-violet-300 bg-violet-100 text-violet-700"
+              : "border-edge bg-ink-100 text-ink-500")
+          }
+          title={`reviewer feedback re-tuned the setup; pass ${pass} of ${MAX_LOOPS}`}
+        >
+          <I.Refresh size={9} className={isRunning ? "animate-spin" : ""} />
+          loop {pass}/{MAX_LOOPS}
+        </span>
+      )}
       {steps.map((s, i) => (
         <Fragment key={s.label}>
           <div className="flex items-center gap-1.5">
@@ -109,7 +150,15 @@ interface Interp {
   iterations?: string;   // "N re-sims, changed X" (bounded to 3)
   interpretError?: string;  // set when the AI interpret step ended without a
   //                           verdict (stream dropped / timed out / unavailable)
+  // Outer feedback loop: when a pass comes up incomplete, the reviewer's
+  // feedback is handed back to the setup agent which re-tunes parameters and the
+  // whole setup→sim→interpret sequence re-runs (hard-capped at MAX_LOOPS). `pass`
+  // is the 1-based current pass; the workflow row shows a "loop N/MAX" badge once
+  // it exceeds 1.
+  pass?: number;
 }
+
+const MAX_LOOPS = 3;
 
 function parseVerdict(text: string): Partial<Interp> {
   const grab = (k: string) => {
@@ -231,7 +280,10 @@ export function Simulation({ setHealth, blocks, selected }: Props) {
         // rehydrating as phantom "running" cards.
         if (!v.verdict) continue;
         strip[k] = { running: false, lines: [], verdict: v.verdict, margin: v.margin,
-                     clarify: v.clarify, suggestions: v.suggestions };
+                     clarify: v.clarify, suggestions: v.suggestions,
+                     // keep how many passes the loop took so the "loop N/MAX"
+                     // badge survives a reload
+                     iterations: v.iterations, pass: v.pass };
       }
       localStorage.setItem(LS_INTERP, JSON.stringify(strip));
     } catch { /* quota */ }
@@ -863,8 +915,8 @@ function AgentActivityLog({ it, isRunning }: { it?: Interp; isRunning: boolean }
   // The live-agent header pulses ONLY while actually running — never from a
   // restored phase on reload.
   const agentLabel = !isRunning ? null
-    : phase === "setup" ? "setup agent (claude -p) — reading datasheets + requirements"
-    : phase === "interpret" ? "interpret agent (claude -p) — judging result vs spec"
+    : phase === "setup" ? "Datasheet & scenario agent — extracting device params + operating point"
+    : phase === "interpret" ? "Verdict agent — checking the result against datasheets + spec"
     : null;
 
   return (
