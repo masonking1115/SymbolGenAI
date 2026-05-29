@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, subscribeAgent, subscribeRun } from "../api";
+import { ChangelogPanel } from "../components/ChangelogPanel";
 import { Console } from "../components/Console";
 import { I } from "../components/Icon";
 import type {
+  AgentDecision,
   Freshness,
   LintReport,
   PhaseEvent,
@@ -53,6 +55,14 @@ export function Generator({
   const [netlistFiles, setNetlistFiles] = useState<string[]>([]);
   const [fresh, setFresh] = useState<Freshness | null>(null);
   const [queuedCount, setQueuedCount] = useState(0);
+  // Bumped to force the embedded ChangelogPanel to re-fetch immediately (e.g.
+  // right after an apply pass drains the queue), instead of waiting for its poll.
+  const [changelogTick, setChangelogTick] = useState(0);
+  // Per-item agent outcomes from the last apply/fix pass (APPLIED/STOPPED/CLARIFY)
+  // + an optional expanded reasoning log, so a run's "why" is auditable in-GUI.
+  const [decisions, setDecisions] = useState<AgentDecision[]>([]);
+  const [reasoningOpen, setReasoningOpen] = useState(false);
+  const [reasoningLog, setReasoningLog] = useState<string>("");
   // Closed-loop review: after apply+build, read the gates (validator + lint) and
   // if the build failed, spawn a bounded fix pass and rebuild (up to 3 rounds),
   // so Generate lands a gate-clean change instead of shipping a broken build.
@@ -105,6 +115,27 @@ export function Generator({
     const t = setInterval(refreshChangelogCount, 2500);
     return () => clearInterval(t);
   }, [refreshLint, refreshFresh, refreshChangelogCount, refreshTrigger]);
+
+  // When a run finishes, pull the apply/fix pass's per-item decisions so the
+  // user sees each changelog item's outcome (APPLIED/STOPPED/CLARIFY) and why.
+  useEffect(() => {
+    if (runState !== "ok" && runState !== "fail") return;
+    api.agentDecisions()
+      .then((d) => setDecisions(d.decisions ?? []))
+      .catch(() => setDecisions([]));
+  }, [runState]);
+
+  const openReasoning = useCallback(async () => {
+    setReasoningOpen((v) => !v);
+    if (reasoningLog) return;
+    try {
+      const runs = await api.agentRuns();
+      const latest = runs.runs.find((r) => /kind=apply|kind=lint_fix/.test(r.header)) ?? runs.runs[0];
+      if (latest) setReasoningLog((await api.agentRunLog(latest.run_id)).body);
+    } catch {
+      setReasoningLog("(could not load reasoning log)");
+    }
+  }, [reasoningLog]);
 
   const startGenerate = async (opts: { force?: boolean } = {}) => {
     // If outputs are fresh AND nothing is queued, ask before regenerating.
@@ -212,7 +243,7 @@ export function Generator({
           lastBuildStatus === "ok"
             ? "[LOOP] Closed-loop review complete — build passes the gates (lint ERRORs = 0)."
             : "[LOOP] Closed-loop review ended — build still failing after the fix rounds; see the linter."]);
-        setTimeout(() => { refreshLint(); refreshFresh(); refreshChangelogCount(); }, 250);
+        setTimeout(() => { refreshLint(); refreshFresh(); refreshChangelogCount(); setChangelogTick((t) => t + 1); }, 250);
         return;
       }
 
@@ -275,6 +306,7 @@ export function Generator({
             refreshLint();
             refreshFresh();
             refreshChangelogCount();
+            setChangelogTick((t) => t + 1);
             // Pull the structured phases so the dropdown updates.
             api.runPhases(genRunId)
               .then((r) => setPhases(r.phases ?? []))
@@ -412,6 +444,52 @@ export function Generator({
             sources: {netlistFiles.length ? netlistFiles.join(" · ") : "—"}
           </span>
         </div>
+
+        {/* Changelog — add + view queued changes directly here, under Regenerate
+            and above the linter checklist. Styled like the linter SubSection;
+            shares state with the Agent rail's copy via the backend. */}
+        <ChangelogPanel variant="tab" refreshKey={changelogTick} onCountChange={setQueuedCount} />
+
+        {decisions.length > 0 && (
+          <div className="mb-3 rounded-md border border-edge bg-surface-50 p-3">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[12px] font-medium text-ink-700">
+                Agent decisions ({decisions.length})
+              </span>
+              <button
+                onClick={openReasoning}
+                className="text-[11px] text-ink-500 hover:text-ink-800 underline decoration-dotted"
+              >
+                {reasoningOpen ? "hide reasoning" : "view reasoning"}
+              </button>
+            </div>
+            <ul className="space-y-1">
+              {decisions.map((d, i) => (
+                <li key={i} className="flex items-start gap-2 text-[12px]">
+                  <span
+                    className={
+                      "mt-[1px] px-1.5 py-[1px] rounded text-[10px] font-semibold shrink-0 " +
+                      (d.outcome === "APPLIED"
+                        ? "bg-ok/15 text-ok"
+                        : d.outcome === "STOPPED"
+                        ? "bg-warn/15 text-warn"
+                        : "bg-ink-200 text-ink-700")
+                    }
+                  >
+                    {d.outcome}
+                  </span>
+                  <span className="text-ink-500 shrink-0">{d.item}</span>
+                  <span className="text-ink-700">{d.reason}</span>
+                </li>
+              ))}
+            </ul>
+            {reasoningOpen && (
+              <pre className="mt-2 max-h-64 overflow-auto thin-scroll rounded border border-edge bg-white text-ink-800 text-[11px] leading-snug p-2 whitespace-pre-wrap">
+                {reasoningLog || "loading…"}
+              </pre>
+            )}
+          </div>
+        )}
 
         <SubSection
           title="Linter checklist"

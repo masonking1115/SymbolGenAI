@@ -54,6 +54,7 @@ STATE_DIR = HERE.parent / "state"         # test1/gui/state/
 CHAT_FILE = STATE_DIR / "chat.json"       # legacy single transcript (migrated)
 CHATS_FILE = STATE_DIR / "chats.json"     # multi-session chat store
 CHANGELOG_FILE = STATE_DIR / "changelog.json"
+DECISIONS_FILE = STATE_DIR / "decisions.json"   # last apply/fix run's per-item outcomes
 STATUS_FILE = STATE_DIR / "status.json"
 
 # Claude Code auto-memory dir for this project. The `claude -p` subprocess loads
@@ -402,7 +403,18 @@ def save_changelog(items: list[dict]) -> None:
     _save(CHANGELOG_FILE, items)
 
 
-def append_changelog(summary: str, source: str = "agent") -> dict:
+def append_changelog(
+    summary: str,
+    source: str = "agent",
+    sim_block: str | None = None,
+    sim_type: str | None = None,
+) -> dict:
+    """Queue a changelog item. `source` records ORIGIN: "user" (manual add),
+    "sim" (a simulation-interpret suggestion), or "agent". For sim-originated
+    items, sim_block/sim_type identify which (block, sim_type) raised the
+    suggestion — used to re-run ONLY that sim after the apply lands, so a
+    user/manual edit never triggers a simulation (see app.py apply-and-generate).
+    """
     items = load_changelog()
     entry = {
         "id": uuid.uuid4().hex[:8],
@@ -410,6 +422,10 @@ def append_changelog(summary: str, source: str = "agent") -> dict:
         "source": source,
         "ts": time.time(),
     }
+    if sim_block:
+        entry["sim_block"] = sim_block
+    if sim_type:
+        entry["sim_type"] = sim_type
     items.append(entry)
     save_changelog(items)
     return entry
@@ -453,6 +469,10 @@ Key files:
   - gen/validator.py          backend-neutral strict connectivity check (reused)
   - review/rules.py           deterministic design rules
   - design_requirements.md    spec
+  - design_intent.md          CROSS-SHEET gotchas you can't derive from one sheet
+                              (e.g. U10's LDO_SET_* pins are an FPGA-programmed
+                              dynamic-VOUT feature) — READ THIS before any change
+                              that touches a part's mode/topology, not just its value
   - Parts Library/<MPN>/      datasheets + symbols
 
 Memory (cross-session facts about the user + project) lives under
@@ -479,6 +499,7 @@ How to behave:
      - netlist/*.yaml            as-built parts + nets
      - altium/build_<sheet>.py   placement/routing code per sheet
      - design_requirements.md    spec / intent
+     - design_intent.md          cross-sheet gotchas (mode/topology decisions)
      - review/ findings + rules  design-review state
      - sim/cache/*, sim/results/ simulation params + outputs
      - Parts Library/<MPN>/      datasheets + symbols
@@ -551,13 +572,24 @@ This is an APPLY-CHANGELOG pass. The user just clicked Generate.
 
 You will receive a list of changelog items the user accumulated. Your job:
 
+0. FIRST read design_intent.md — it lists cross-sheet gotchas you can't see from
+   one sheet (e.g. U10's LDO_SET_* pins are an FPGA-programmed dynamic-VOUT
+   feature, so do NOT convert it to a fixed divider). If an item conflicts with a
+   documented design-intent fact, STOP that item and report it (don't auto-apply).
 1. Implement each item by editing the relevant files (netlist/*.yaml,
    altium/build_<sheet>.py, design_requirements.md). Use Read, Edit, Write.
    (This is the Altium pipeline — edit altium/build_*.py, NOT gen/build_*.py,
    which no longer exists.)
 2. Be conservative: make the smallest change that satisfies the bullet.
    If a bullet is ambiguous, do the most reasonable interpretation and
-   note your assumption in the final summary.
+   note your assumption in the final summary. When a change depends on a
+   part's datasheet behavior (a mode-select pin state, a min/max rating, a
+   recommended component value), VERIFY it from the datasheet before editing —
+   you can read datasheet TEXT with:
+     python sim/read_pdf.py "<pdf path>" --pages <page-range> --text-only
+   (datasheets live under library/<MPN>/). If the datasheet can't confirm a
+   topology change is safe, STOP that item and report it for human approval
+   rather than guessing — a documented STOP is better than a wrong edit.
 3. Write edits that will PASS THE GATES (below). A value-only change (e.g. a
    resistor/cap value in netlist/*.yaml) is connectivity-safe; but adding,
    removing, or rewiring a PART changes geometry + connectivity, so place and
@@ -568,6 +600,19 @@ You will receive a list of changelog items the user accumulated. Your job:
    list [] so the next chat turn starts clean.
 6. Finish with a terse summary block, one bullet per item, of what you
    actually changed.
+7. BEFORE the prose summary, emit a machine-readable DECISIONS block so the GUI
+   can show each item's outcome at a glance. Use EXACTLY this format, one line
+   per changelog item, nothing else inside the fences:
+
+   ```decisions
+   <item-id-or-short-tag> | APPLIED | <one-line: what changed + value>
+   <item-id-or-short-tag> | STOPPED | <one-line: why not applied / what's blocking>
+   <item-id-or-short-tag> | CLARIFY | <one-line: the open question>
+   ```
+
+   Use APPLIED when you edited files for that item, STOPPED when you deliberately
+   did not (e.g. infeasible/topology-conflict/needs human approval), CLARIFY when
+   the item needs a decision before any edit. Keep each reason to one line.
 
 {_lint_expectations()}
 """
@@ -772,6 +817,27 @@ def _summarize_event(ev: dict) -> str | None:
     return None
 
 
+async def _parse_decisions(text: str) -> list[dict]:
+    """Extract the ```decisions ... ``` block the apply pass emits into a list of
+    {item, outcome, reason}. Tolerant: accepts the fenced block, or — as a
+    fallback — bare 'id | OUTCOME | reason' lines anywhere in the text."""
+    if not text:
+        return []
+    out: list[dict] = []
+    # Prefer the fenced block.
+    m = re.search(r"```decisions\s*(.*?)```", text, re.DOTALL | re.IGNORECASE)
+    body = m.group(1) if m else text
+    for line in body.splitlines():
+        parts = [p.strip() for p in line.split("|")]
+        if len(parts) >= 2 and parts[1].upper() in ("APPLIED", "STOPPED", "CLARIFY"):
+            out.append({
+                "item": parts[0],
+                "outcome": parts[1].upper(),
+                "reason": parts[2] if len(parts) >= 3 else "",
+            })
+    return out
+
+
 async def _run_subprocess(run: AgentRun, proc: asyncio.subprocess.Process) -> None:
     """Stream the subprocess's stream-json output, parse each line, and
     fan out one-line summaries to SSE subscribers."""
@@ -847,6 +913,18 @@ async def _run_subprocess(run: AgentRun, proc: asyncio.subprocess.Process) -> No
             f"## final answer\n{run.text}\n"
         )
         (runs_dir / f"{run.run_id}.log").write_text(log_body, encoding="utf-8")
+        # Parse the machine-readable DECISIONS block (apply/lint_fix only) into a
+        # structured per-item outcome record the GUI can show without scraping prose.
+        if run.kind in ("apply", "lint_fix"):
+            decisions = _parse_decisions(run.text or run.stream_log)
+            if decisions:
+                _save(DECISIONS_FILE, {
+                    "run_id": run.run_id,
+                    "kind": run.kind,
+                    "status": run.status,
+                    "ts": run.events[-1].get("ts") if run.events else None,
+                    "decisions": decisions,
+                })
     except Exception:
         pass  # logging is best-effort; never let it break the run
     for q in list(run.subscribers):
@@ -923,6 +1001,19 @@ async def start_compact(session_id: str) -> AgentRun | None:
     return run
 
 
+# Tool allowance for the design-editing agents (apply + lint-fix). Mirrors the
+# sim agents' read-only datasheet capability so the agent can VERIFY a part's
+# behavior from its datasheet (e.g. confirm an LDO's adjustable-mode pin state)
+# instead of stalling on a permission-gated PDF read — the exact gap that made
+# the CFF/adjustable-mode decision unverifiable. read_pdf.py is text-only and
+# read-only; acceptEdits still governs all file writes.
+_DESIGN_AGENT_TOOLS = [
+    "Read", "Edit", "Write", "Glob", "Grep",
+    "Bash(python:*)", "Bash(python3:*)", "Bash(pdftotext:*)",
+    "Bash(cd:*)", "Bash(ls:*)", "Bash(cat:*)",
+]
+
+
 async def start_apply_pass() -> AgentRun:
     """Hand the queued changelog to the agent for implementation."""
     items = load_changelog()
@@ -931,6 +1022,7 @@ async def start_apply_pass() -> AgentRun:
         prompt=prompt,
         system_suffix=_APPLY_INSTRUCTIONS,
         permission_mode="acceptEdits",
+        allowed_tools=_DESIGN_AGENT_TOOLS,
         model=model_for("apply"),
     )
     run = _register("apply")
@@ -998,9 +1090,10 @@ async def start_lint_fix_pass(failures: dict, round_no: int, max_rounds: int) ->
         prompt=prompt,
         system_suffix=_LINT_FIX_INSTRUCTIONS,
         permission_mode="acceptEdits",
+        allowed_tools=_DESIGN_AGENT_TOOLS,
         model=model_for("lint_fix"),
     )
-    run = _register("lint-fix")
+    run = _register("lint_fix")
     asyncio.create_task(_run_subprocess(run, proc))
     return run
 

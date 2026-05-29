@@ -25,8 +25,8 @@ export function Console({ lines, status }: Props) {
     if (ref.current) ref.current.scrollTop = ref.current.scrollHeight;
   }, [lines.length]);
   return (
-    <div className="border border-edge rounded-md bg-[#0F1115] text-[#D6DAE0] flex flex-col overflow-hidden">
-      <div className="h-7 px-3 flex items-center gap-2 text-[11px] text-ink-300 bg-[#181B22] border-b border-black/30">
+    <div className="border border-edge rounded-md bg-white text-ink-800 flex flex-col overflow-hidden">
+      <div className="h-7 px-3 flex items-center gap-2 text-[11px] text-ink-500 bg-surface-50 border-b border-edge">
         <span>console</span>
         <span className={STATUS_TONE[status] + " ml-auto"}>{STATUS_LABEL[status]}</span>
       </div>
@@ -35,9 +35,11 @@ export function Console({ lines, status }: Props) {
         className="thin-scroll flex-1 overflow-auto px-3 py-2 font-mono text-[11.5px] leading-[1.55]"
       >
         {lines.length === 0 ? (
-          <div className="text-ink-500 italic">No output yet.</div>
+          <div className="text-ink-400 italic">No output yet.</div>
         ) : (
-          lines.map((l, i) => <div key={i} className="whitespace-pre">{l}</div>)
+          lines.map((l, i) => (
+            <div key={i} className="whitespace-pre-wrap break-words">{l}</div>
+          ))
         )}
       </div>
     </div>

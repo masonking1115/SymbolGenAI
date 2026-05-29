@@ -1285,6 +1285,12 @@ class SessionRename(BaseModel):
 
 class ChangelogAdd(BaseModel):
     summary: str
+    # Origin. Defaults to a manual user add. The Simulation tab passes
+    # source="sim" + the block/sim_type so the post-apply chain can re-run ONLY
+    # the originating sim (a user/manual item never triggers a simulation).
+    source: str = "user"
+    sim_block: str | None = None
+    sim_type: str | None = None
 
 
 @app.get("/api/chat/sessions")
@@ -1360,6 +1366,43 @@ async def chat_send(msg: ChatMessage) -> dict:
     return {"run_id": run.run_id, "kind": run.kind, "session_id": sid}
 
 
+# NOTE: static "/api/agent/runs" + "/decisions" must precede the dynamic
+# "/api/agent/{run_id}" route — FastAPI matches in declaration order.
+@app.get("/api/agent/runs")
+def agent_runs() -> dict:
+    """List persisted run-reasoning logs (newest first) so the GUI can show an
+    auditable history of what each apply/fix run reasoned and decided."""
+    runs_dir = agent_mod.STATE_DIR / "runs"
+    out = []
+    if runs_dir.is_dir():
+        for f in sorted(runs_dir.glob("*.log"), key=lambda p: p.stat().st_mtime, reverse=True):
+            try:
+                head = f.read_text(encoding="utf-8", errors="replace").splitlines()[:1]
+            except OSError:
+                head = []
+            out.append({"run_id": f.stem, "header": head[0] if head else "",
+                        "mtime": f.stat().st_mtime})
+    return {"runs": out[:50]}
+
+
+@app.get("/api/agent/decisions")
+def agent_decisions() -> dict:
+    """The most recent apply/fix run's per-item outcomes (APPLIED/STOPPED/CLARIFY)
+    so the GUI can show each changelog item's fate at a glance."""
+    return agent_mod._load(agent_mod.DECISIONS_FILE, {}) or {}
+
+
+@app.get("/api/agent/runs/{run_id}/log")
+def agent_run_log(run_id: str) -> dict:
+    """Full reasoning log (thinking + assistant + tools + final) for one run."""
+    if not re.fullmatch(r"[0-9a-f]{6,32}", run_id):
+        raise HTTPException(400, "bad run_id")
+    f = agent_mod.STATE_DIR / "runs" / f"{run_id}.log"
+    if not f.exists():
+        raise HTTPException(404, "no such run log")
+    return {"run_id": run_id, "body": f.read_text(encoding="utf-8", errors="replace")}
+
+
 @app.get("/api/agent/{run_id}")
 def agent_status(run_id: str) -> dict:
     run = agent_mod.get_run(run_id)
@@ -1403,7 +1446,15 @@ def changelog_get() -> dict:
 def changelog_add(item: ChangelogAdd) -> dict:
     if not item.summary.strip():
         raise HTTPException(400, "empty summary")
-    return agent_mod.append_changelog(item.summary, source="user")
+    # Only honor sim origin when source is explicitly "sim"; otherwise treat as
+    # a manual/user item with no sim linkage (so it can't trigger a re-sim).
+    src = item.source if item.source in ("sim", "user", "agent") else "user"
+    return agent_mod.append_changelog(
+        item.summary,
+        source=src,
+        sim_block=item.sim_block if src == "sim" else None,
+        sim_type=item.sim_type if src == "sim" else None,
+    )
 
 
 @app.delete("/api/changelog/{item_id}")
@@ -1801,6 +1852,70 @@ def _gates_passed(failures: dict) -> bool:
     return int(failures.get("counts", {}).get("ERROR", 0)) == 0
 
 
+def _sim_targets_from_items(items: list[dict]) -> list[tuple[str, str | None]]:
+    """From a changelog snapshot, return the DISTINCT (block, sim_type) pairs of
+    SIM-ORIGINATED items only. This is the gate for the post-apply re-sim: a
+    user/manual item (source != "sim") contributes NOTHING here, so it can never
+    trigger a simulation. Backward-compatible fallback: an older item lacking the
+    structured fields but whose summary starts with the historical "[sim block/sim_type]"
+    prefix is also recognized as sim-originated (the Simulation tab tagged items
+    that way before source/sim_block were first-class)."""
+    targets: list[tuple[str, str | None]] = []
+    seen: set[tuple[str, str | None]] = set()
+    for it in items:
+        block = it.get("sim_block")
+        stype = it.get("sim_type")
+        if it.get("source") != "sim":
+            # legacy fallback: parse "[sim <block>/<sim_type>] ..." prefix
+            if not block:
+                m = re.match(r"\s*\[sim\s+([^/\]\s]+)(?:/([^\]\s]+))?\]", it.get("summary", ""))
+                if m:
+                    block = m.group(1)
+                    stype = stype or m.group(2)
+            if not block:
+                continue  # genuinely not sim-originated → never re-sim
+        if not block:
+            continue
+        key = (block, stype)
+        if key not in seen:
+            seen.add(key)
+            targets.append(key)
+    return targets
+
+
+async def _resim_blocks(targets: list[tuple[str, str | None]]) -> list[dict]:
+    """Re-run each sim-originated (block, sim_type) after the apply landed, so the
+    loop is closed back to the sim that asked for the change. Best-effort and
+    non-fatal: a sim error is recorded, never raised (it must not break the build
+    chain). Returns a list of {block, sim_type, status, ...} verdicts that the GUI
+    can surface as before/after. Runs in a thread since run_block_sim is sync."""
+    results: list[dict] = []
+    for block, stype in targets:
+        # Resolve a concrete sim_type if the item didn't carry one.
+        st = stype
+        if not st:
+            try:
+                blk = next((b for b in sim_service.list_blocks() if b["id"] == block), None)
+                sts = (blk or {}).get("sim_types", [])
+                st = sts[0]["type"] if sts else None
+            except Exception:
+                st = None
+        if not st:
+            results.append({"block": block, "sim_type": None, "status": "skipped",
+                            "reason": "no sim_type resolvable"})
+            continue
+        try:
+            res = await asyncio.to_thread(sim_service.run_block_sim, block, st)
+            results.append({"block": block, "sim_type": st,
+                            "status": res.get("status", "ran"),
+                            "verdict": res.get("verdict")})
+            print(f"[apply-and-generate] re-sim {block}/{st} -> {res.get('status')}", flush=True)
+        except Exception as e:
+            results.append({"block": block, "sim_type": st, "status": "error", "reason": str(e)})
+            print(f"[apply-and-generate] re-sim {block}/{st} FAILED: {e}", flush=True)
+    return results
+
+
 @app.post("/api/run/apply-and-generate")
 async def run_apply_and_generate(opts: ApplyAndGenOpts = ApplyAndGenOpts()) -> dict:
     """Three-stage pipeline:
@@ -1868,6 +1983,11 @@ async def run_apply_and_generate(opts: ApplyAndGenOpts = ApplyAndGenOpts()) -> d
         asyncio.create_task(_guarded())
 
     items = agent_mod.load_changelog()
+    # Snapshot the SIM-ORIGINATED targets NOW, before the apply pass clears the
+    # changelog. Only these (block, sim_type) pairs get re-simulated after a
+    # clean build — user/manual items contribute nothing here, so they never
+    # trigger a sim (the specific requirement).
+    sim_targets = _sim_targets_from_items(items)
     apply_run_id: str | None = None
     if items:
         apply_run = await agent_mod.start_apply_pass()
@@ -1892,6 +2012,10 @@ async def run_apply_and_generate(opts: ApplyAndGenOpts = ApplyAndGenOpts()) -> d
                 await _await_agent(fix.run_id)
                 await _build_once()
                 failures = _read_lint_failures()
+            # Close the loop back to the sim: ONLY for sim-originated items, and
+            # ONLY once the build is gate-clean (no point re-simming a broken design).
+            if sim_targets and _gates_passed(failures):
+                await _resim_blocks(sim_targets)
             # final state is whatever the last build left in lint.json / run registry
         _spawn_chain(chain_with_loop_review(), "loop-review chain")
         return {
@@ -1917,7 +2041,12 @@ async def run_apply_and_generate(opts: ApplyAndGenOpts = ApplyAndGenOpts()) -> d
         """Wait for apply to complete, then start generate."""
         await _await_agent(apply_run_id)
         cmd, cwd = _generate_cmd()
-        await _start_run("generate", cmd, cwd=cwd)
+        gid = await _start_run("generate", cmd, cwd=cwd)
+        await _await_run(gid)
+        # Close the loop back to the sim for sim-originated items only, once the
+        # build is gate-clean. (Plain path has no fix loop; re-sim if it passed.)
+        if sim_targets and _gates_passed(_read_lint_failures()):
+            await _resim_blocks(sim_targets)
 
     _spawn_chain(chain_to_generate(), "apply->generate chain")
     return {

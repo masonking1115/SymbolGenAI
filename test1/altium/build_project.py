@@ -20,7 +20,7 @@ from .build_root import build_root
 from .build_symbols import get_library
 from .config import OUT_DIR, RENDER_DIR
 from .layout_lint import counts as lint_counts
-from .layout_lint import lint, lint_library
+from .layout_lint import lint, lint_library, lint_netlist_semantics
 from .shared import set_build_offset
 
 PROJECT = "test1"
@@ -113,6 +113,13 @@ def main() -> int:
             s.render_svg(RENDER_DIR / f"{name}.svg")
             docs.append(f"{name}.SchDoc")
             issues = lint(s)
+            # Advisory semantic intent checks over the netlist (WARNING/INFO only;
+            # never ERROR → never fails the build). Surfaces decoupling/DNP-path
+            # gaps the connectivity+layout gates can't see.
+            try:
+                issues = issues + lint_netlist_semantics(nl)
+            except Exception as _sem_e:
+                print(f"             ~ (semantic checks skipped: {_sem_e})")
             _record(name, issues)
             c = lint_counts(issues)
             lint_str = f"{c['ERROR']}/{c['WARNING']}/{c['INFO']}"

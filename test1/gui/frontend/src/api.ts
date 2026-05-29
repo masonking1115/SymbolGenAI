@@ -1,4 +1,5 @@
 import type {
+  AgentDecision,
   ChangelogItem,
   ChatSession,
   ChatSessionMeta,
@@ -157,11 +158,14 @@ export const api = {
     }),
 
   changelog: () => j<{ items: ChangelogItem[] }>("/api/changelog"),
-  changelogAdd: (summary: string) =>
+  changelogAdd: (
+    summary: string,
+    origin?: { source?: "sim" | "user"; sim_block?: string; sim_type?: string },
+  ) =>
     j<ChangelogItem>("/api/changelog", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ summary }),
+      body: JSON.stringify({ summary, ...(origin ?? {}) }),
     }),
   changelogDelete: (id: string) =>
     j<{ ok: boolean }>(`/api/changelog/${id}`, { method: "DELETE" }),
@@ -182,6 +186,16 @@ export const api = {
       `/api/library/${encodeURIComponent(mpn)}/generate-symbol`,
       { method: "POST" },
     ),
+
+  // Agent reasoning audit: per-item decisions + persisted reasoning logs.
+  agentDecisions: () =>
+    j<{ run_id?: string; kind?: string; status?: string; decisions?: AgentDecision[] }>(
+      "/api/agent/decisions",
+    ),
+  agentRuns: () =>
+    j<{ runs: { run_id: string; header: string; mtime: number }[] }>("/api/agent/runs"),
+  agentRunLog: (runId: string) =>
+    j<{ run_id: string; body: string }>(`/api/agent/runs/${runId}/log`),
 
   pngUrl: (sheet: string, bust?: number | string) =>
     `/api/png/${encodeURIComponent(sheet)}${bust !== undefined ? `?t=${bust}` : ""}`,

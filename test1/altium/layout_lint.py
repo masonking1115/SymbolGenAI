@@ -127,6 +127,14 @@ RULES: list[dict] = [
                 "components) from the YAML; catches e.g. a feed-forward cap placed "
                 "across a strap whose two sides are the same node (FB tied to "
                 "OUT). Listed here so the GUI checklist + closed-loop fix see it."},
+    {"id": "decap_coverage", "severity": "INFO", "scope": "netlist",
+     "summary": "A supply rail powers an IC but carries no bypass cap on the net "
+                "— advisory: confirm decoupling sits on an adjacent rail/node. "
+                "Semantic intent check (gen netlist), never fails the build."},
+    {"id": "dnp_path", "severity": "WARNING", "scope": "netlist",
+     "summary": "A signal/global/hier net whose every active part (U/Q/D/J) is "
+                "DNP — the path may be orphaned (intended driver/receiver "
+                "unpopulated). Semantic intent check; advisory only."},
     {"id": "bridged_drop", "severity": "WARNING", "scope": "sheet",
      "summary": "Wire interior crosses a third part's pin (possible bridge)"},
     {"id": "duplicate_wire", "severity": "INFO", "scope": "sheet",
@@ -1016,6 +1024,93 @@ def lint(sheet):
     out = []
     for c in ALL_CHECKS:
         out.extend(c(sheet))
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Semantic electrical-intent checks — NETLIST scope (advisory).
+# ---------------------------------------------------------------------------
+# These read the YAML netlist (not geometry) to catch DESIGN-intent gaps the
+# connectivity + layout gates can't see: an IC power rail with no local bypass
+# cap, or a signal net whose only real members are unpopulated (DNP). They are
+# intentionally WARNING/INFO (never ERROR) so they NEVER fail the build — the
+# hard gates are unchanged; this only surfaces "is this what you meant?" hints
+# in the checklist. Conservative by design (no aggressive floating-input guess).
+_POWER_PREFIXES_FOR_DECAP = ("U",)          # ICs that warrant local bypassing
+_BYPASS_NET_HINTS = ("VDD", "VCC", "VBAT", "VIN", "VOUT", "VBIAS", "+", "3V3",
+                     "1V8", "2V5", "5V", "VDDA", "VDDIO", "VREF", "AVDD", "DVDD")
+
+
+def lint_netlist_semantics(netlist):
+    """Advisory semantic checks over a loaded gen.netlist.Netlist. Returns
+    LintIssues (WARNING/INFO only). Safe to run on any sheet — if a heuristic
+    can't decide, it stays silent rather than guess."""
+    from .layout_lint import LintIssue  # local import; same module, keeps top clean
+    out = []
+    try:
+        nets = netlist.nets
+        parts = netlist.parts
+    except AttributeError:
+        return out
+
+    def _refs_on(net):
+        refs = {}
+        for m in net.members:
+            r = m.split(".")[0].split(":")[0]
+            refs.setdefault(r, []).append(m)
+        return refs
+
+    # --- (1) Decap coverage: an IC tied to a supply rail should have >=1 cap on
+    #     that same rail. Only fires for clearly power-like rails (name hints) so
+    #     signal nets never trip it. INFO — purely advisory.
+    cap_rails = set()
+    for nm, net in nets.items():
+        for m in net.members:
+            if m.split(".")[0].startswith("C"):
+                cap_rails.add(nm)
+                break
+    # Signal-net markers — names that look power-ish by substring but are really
+    # routed signal paths (op-amp inputs, sense/feedback, DAC outs). Excluded so
+    # decap_coverage only judges actual supply rails (avoids false positives like
+    # 'internal_VOUTA_to_OPA_pos').
+    _SIGNAL_MARKERS = ("_TO_", "_POS", "_NEG", "OPA", "SNS", "_FB", "FB_",
+                       "SENSE", "DAC", "REF_", "_IN_", "OUT_TO")
+    for nm, net in nets.items():
+        up = nm.upper()
+        # Only judge a TRUE supply rail: a declared power-type net, OR a name that
+        # matches a rail hint AND is not an internal routed signal net.
+        looks_signal = up.startswith("INTERNAL_") or any(s in up for s in _SIGNAL_MARKERS)
+        is_powerish = (
+            (net.net_type == "power" or any(h in up for h in _BYPASS_NET_HINTS))
+            and "GND" not in up and "VSS" not in up
+            and not looks_signal
+        )
+        if not is_powerish:
+            continue
+        refs = _refs_on(net)
+        ic_here = [r for r in refs
+                   if r[:1] in _POWER_PREFIXES_FOR_DECAP
+                   and not getattr(parts.get(r), "dnp", False)]
+        if ic_here and nm not in cap_rails:
+            out.append(LintIssue(
+                "INFO", "decap_coverage",
+                f"rail '{nm}' powers IC(s) {sorted(ic_here)} but has no bypass "
+                f"cap on the net - confirm decoupling is on an adjacent rail/node"))
+
+    # --- (2) DNP-path sanity: a signal/global/hier net whose only non-power, non-
+    #     passive members are ALL marked DNP is likely an orphaned/broken path
+    #     (the active part was depopulated). WARNING — connectivity intent.
+    for nm, net in nets.items():
+        if net.net_type == "power":
+            continue
+        refs = _refs_on(net)
+        actives = [r for r in refs if r[:1] in ("U", "Q", "D", "J")]
+        if len(actives) >= 1 and all(getattr(parts.get(r), "dnp", False) for r in actives):
+            out.append(LintIssue(
+                "WARNING", "dnp_path",
+                f"net '{nm}': every active part on it ({sorted(actives)}) is DNP — "
+                f"the path may be orphaned (intended driver/receiver unpopulated)"))
+
     return out
 
 

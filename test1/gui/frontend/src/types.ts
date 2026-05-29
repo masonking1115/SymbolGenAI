@@ -303,8 +303,16 @@ export interface ChatSession extends ChatSessionMeta {
 export interface ChangelogItem {
   id: string;
   summary: string;
-  source: "agent" | "user";
+  source: "agent" | "user" | "sim";
+  sim_block?: string;
+  sim_type?: string;
   ts: number;
+}
+
+export interface AgentDecision {
+  item: string;
+  outcome: "APPLIED" | "STOPPED" | "CLARIFY";
+  reason: string;
 }
 
 export type StagePhase =

@@ -250,6 +250,16 @@ export function Simulation({ setHealth, blocks, selected, onBlocksChanged }: Pro
   // run() loop checks between stages so it bails out promptly.
   const runCtl = useRef<{ key: string; runId: string | null; cancelled: boolean } | null>(null);
   const [logged, setLogged] = useState<Record<string, boolean>>({});
+  // Mirror of `logged` for the changelog-status poller (avoids re-arming the
+  // interval whenever `logged` changes).
+  const loggedRef = useRef<Record<string, boolean>>({});
+  useEffect(() => { loggedRef.current = logged; }, [logged]);
+  // Lifecycle of sim-originated changelog items, keyed by "<block>:<sim_type>":
+  //   "pending"  → added to the changelog, not yet applied (still queued)
+  //   "applied"  → the apply pass implemented it (no longer queued)
+  // Derived by polling the live changelog (still-queued sim items for this
+  // block/sim = pending) so a Run-suggestion reflects its real state.
+  const [clStatus, setClStatus] = useState<Record<string, "pending" | "applied">>({});
   const [reqOpen, setReqOpen] = useState(false);
   const [modelsOpen, setModelsOpen] = useState(false);
   // Pass criteria edited in the Requirements panel are also shown (read-only) on
@@ -446,6 +456,39 @@ export function Simulation({ setHealth, blocks, selected, onBlocksChanged }: Pro
     setResults((prev) => prune(prev));
     setInterp((prev) => prune(prev));
     setLogged((prev) => prune(prev));
+    setClStatus((prev) => prune(prev));
+  }, []);
+
+  // Derive each sim's changelog lifecycle from the live changelog: if this
+  // (block, sim_type) still has a queued sim-originated item → pending; if we
+  // had marked it logged but it's no longer queued → applied. Polls cheaply.
+  useEffect(() => {
+    let alive = true;
+    const tick = async () => {
+      try {
+        const { items } = await api.changelog();
+        if (!alive) return;
+        const queued = new Set(
+          items
+            .filter((it) => it.source === "sim" && it.sim_block && it.sim_type)
+            .map((it) => `${it.sim_block}:${it.sim_type}`),
+        );
+        setClStatus(() => {
+          const next: Record<string, "pending" | "applied"> = {};
+          // anything we've logged is either still pending or now applied
+          for (const k of Object.keys(loggedRef.current)) {
+            if (!loggedRef.current[k]) continue;
+            next[k] = queued.has(k) ? "pending" : "applied";
+          }
+          return next;
+        });
+      } catch {
+        // ignore
+      }
+    };
+    tick();
+    const id = setInterval(tick, 2500);
+    return () => { alive = false; clearInterval(id); };
   }, []);
 
   const toggleSuggestion = useCallback((key: string, idx: number) => {
@@ -468,15 +511,30 @@ export function Simulation({ setHealth, blocks, selected, onBlocksChanged }: Pro
       try {
         if (sel.length > 0) {
           for (const s of sel) {
-            await api.changelogAdd(`[sim ${res.block}/${res.sim_type}] ${s.text}`);
+            // Circuit-edit suggestions are sim-originated: tag source + block so
+            // the post-apply chain re-runs THIS sim (and only sim items) to
+            // confirm the fix landed.
+            await api.changelogAdd(`[sim ${res.block}/${res.sim_type}] ${s.text}`, {
+              source: "sim",
+              sim_block: res.block,
+              sim_type: res.sim_type,
+            });
           }
         } else {
+          // A bare PASS/FAIL record is NOT a circuit change — log it as a plain
+          // user note so it never triggers a (pointless, circular) re-sim.
           const verdict = res.ok ? "PASS" : "FAIL";
           await api.changelogAdd(
             `Sim ${verdict}: ${res.block} / ${res.sim_type}. Criterion: ${res.pass_criterion ?? "n/a"}.`,
+            { source: "user" },
           );
         }
         setLogged((prev) => ({ ...prev, [key]: true }));
+        // Sim circuit-edits enter the changelog as PENDING immediately; the
+        // poller flips it to APPLIED once the apply pass drains the queue.
+        if (sel.length > 0) {
+          setClStatus((prev) => ({ ...prev, [key]: "pending" }));
+        }
       } catch {
         // ignore
       }
@@ -685,6 +743,23 @@ export function Simulation({ setHealth, blocks, selected, onBlocksChanged }: Pro
                                         ? `Add ${nSel} selected to changelog`
                                         : "Add result to changelog"}
                                   </button>
+                                  {logged[key] && (
+                                    <span
+                                      className={
+                                        "px-1.5 py-[1px] rounded text-[10px] font-semibold " +
+                                        (clStatus[key] === "applied"
+                                          ? "bg-ok/15 text-ok"
+                                          : "bg-warn/15 text-warn")
+                                      }
+                                      title={
+                                        clStatus[key] === "applied"
+                                          ? "The apply pass implemented this change."
+                                          : "Queued in the changelog — runs when you Generate."
+                                      }
+                                    >
+                                      {clStatus[key] === "applied" ? "APPLIED" : "PENDING"}
+                                    </span>
+                                  )}
                                 </div>
                               </>
                             );
