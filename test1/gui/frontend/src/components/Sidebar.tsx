@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { I } from "./Icon";
-import type { SimBlock, TabKey } from "../types";
+import type { SimBlock, SimGroup, TabKey } from "../types";
 
 interface Props {
   active: TabKey;
@@ -8,6 +8,8 @@ interface Props {
   projectLabel: string;
   /** Test-block catalog for the Simulation dropdown. */
   simBlocks: SimBlock[];
+  /** Functional groups (ordered labels) the blocks are organized under. */
+  simGroups: SimGroup[];
   selectedSimBlock: string;
   onSelectSimBlock: (id: string) => void;
 }
@@ -31,6 +33,7 @@ export function Sidebar({
   onChange,
   projectLabel,
   simBlocks,
+  simGroups,
   selectedSimBlock,
   onSelectSimBlock,
 }: Props) {
@@ -39,6 +42,26 @@ export function Sidebar({
   useEffect(() => {
     if (active === "simulation") setSimOpen(true);
   }, [active]);
+
+  // Bucket the blocks into their functional groups, in the backend's group
+  // order. A block whose group isn't in the list (or when no groups loaded yet)
+  // falls into a trailing "other" bucket so nothing is ever hidden.
+  const grouped = useMemo(() => {
+    const order = simGroups.length ? simGroups : [{ id: "other", label: "Other", blurb: "" }];
+    const byId = new Map(order.map((g) => [g.id, g]));
+    const buckets = new Map<string, SimBlock[]>();
+    for (const b of simBlocks) {
+      const gid = byId.has(b.group) ? b.group : "other";
+      (buckets.get(gid) ?? buckets.set(gid, []).get(gid)!).push(b);
+    }
+    // emit in group order; include a synthetic "other" at the end if it has blocks
+    const out = order
+      .filter((g) => buckets.has(g.id))
+      .map((g) => ({ group: g, blocks: buckets.get(g.id)! }));
+    if (buckets.has("other") && !byId.has("other"))
+      out.push({ group: { id: "other", label: "Other", blurb: "" }, blocks: buckets.get("other")! });
+    return out;
+  }, [simBlocks, simGroups]);
 
   return (
     <aside className="h-full w-full bg-rail border-r border-edge flex flex-col">
@@ -96,32 +119,17 @@ export function Sidebar({
               </button>
 
               {isSim && simOpen && simBlocks.length > 0 && (
-                <div className="mt-0.5 ml-3 pl-2 border-l border-edge space-y-0.5">
-                  {simBlocks.map((b) => {
-                    const sel = active === "simulation" && b.id === selectedSimBlock;
-                    return (
-                      <button
-                        key={b.id}
-                        onClick={() => onSelectSimBlock(b.id)}
-                        title={b.title}
-                        className={
-                          "w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[13px] transition " +
-                          (sel
-                            ? "bg-white text-ink-900 shadow-[0_0_0_1px_rgb(230,232,236)]"
-                            : "text-ink-700 hover:bg-white/70")
-                        }
-                      >
-                        <span
-                          className={
-                            "w-1.5 h-1.5 rounded-full shrink-0 " +
-                            (STATUS_DOT[b.status] ?? STATUS_DOT.not_simulatable)
-                          }
-                          title={b.status}
-                        />
-                        <span className="truncate">{b.title}</span>
-                      </button>
-                    );
-                  })}
+                <div className="mt-0.5 ml-3 pl-2 border-l border-edge space-y-1.5">
+                  {grouped.map(({ group, blocks }) => (
+                    <SimGroupSection
+                      key={group.id}
+                      group={group}
+                      blocks={blocks}
+                      active={active === "simulation"}
+                      selectedSimBlock={selectedSimBlock}
+                      onSelectSimBlock={onSelectSimBlock}
+                    />
+                  ))}
                 </div>
               )}
             </div>
@@ -133,5 +141,72 @@ export function Sidebar({
         test1 · Bobcat carrier
       </div>
     </aside>
+  );
+}
+
+// One functional group in the Simulation sidebar: a small header (label + block
+// count) over its blocks. Collapsible; auto-opens when it holds the selected
+// block, and the "not_simulatable" group starts collapsed (least-actionable).
+function SimGroupSection({
+  group,
+  blocks,
+  active,
+  selectedSimBlock,
+  onSelectSimBlock,
+}: {
+  group: SimGroup;
+  blocks: SimBlock[];
+  active: boolean;
+  selectedSimBlock: string;
+  onSelectSimBlock: (id: string) => void;
+}) {
+  const hasSelected = blocks.some((b) => b.id === selectedSimBlock);
+  const [open, setOpen] = useState(group.id !== "not_simulatable");
+  // If the selection moves into this (collapsed) group, reveal it.
+  useEffect(() => {
+    if (active && hasSelected) setOpen(true);
+  }, [active, hasSelected]);
+
+  return (
+    <div>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        title={group.blurb}
+        className="w-full flex items-center gap-1 px-1 py-0.5 text-[10px] uppercase tracking-wide text-ink-400 hover:text-ink-700"
+      >
+        <I.Caret size={10} className={open ? "" : "-rotate-90 transition-transform"} />
+        <span className="truncate">{group.label}</span>
+        <span className="ml-auto text-ink-300 normal-case">{blocks.length}</span>
+      </button>
+      {open && (
+        <div className="space-y-0.5 mt-0.5">
+          {blocks.map((b) => {
+            const sel = active && b.id === selectedSimBlock;
+            return (
+              <button
+                key={b.id}
+                onClick={() => onSelectSimBlock(b.id)}
+                title={b.title}
+                className={
+                  "w-full flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-md text-[13px] transition " +
+                  (sel
+                    ? "bg-white text-ink-900 shadow-[0_0_0_1px_rgb(230,232,236)]"
+                    : "text-ink-700 hover:bg-white/70")
+                }
+              >
+                <span
+                  className={
+                    "w-1.5 h-1.5 rounded-full shrink-0 " +
+                    (STATUS_DOT[b.status] ?? STATUS_DOT.not_simulatable)
+                  }
+                  title={b.status}
+                />
+                <span className="truncate">{b.title}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }

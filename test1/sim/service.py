@@ -45,6 +45,7 @@ def list_blocks() -> list[dict]:
             "id": b.get("id"),
             "title": b.get("title"),
             "sheet": b.get("sheet"),
+            "group": b.get("group") or "other",   # functional domain (GUI grouping)
             "status": b.get("status"),
             "description": b.get("description") or b.get("reason") or "",
             "models_needed": b.get("models_needed", []),

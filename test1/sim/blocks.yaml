@@ -30,6 +30,18 @@
 #   planned          — curated here, deck builder not yet written
 #   not_simulatable  — no useful SPICE behavior; documented so the tab can
 #                      show *why* rather than silently omitting the sheet.
+#
+# group — the FUNCTIONAL domain a block belongs to, used to organize the
+# Simulation tab + sidebar into named, collapsible sections (the signal chain as
+# an engineer reads it). The GUI orders + labels groups via SIM_GROUPS in
+# test1/gui/backend/app.py (canonical order + display name + one-line blurb); a
+# block with no `group` falls into "other". Current groups:
+#   power_generation     — how a rail is MADE (LDO + load switch)
+#   power_distribution   — how a rail is DELIVERED to the chip (decap/PDN banks)
+#   analog_bias          — precision analog signal-conditioning (the V-to-I loop)
+#   system_integration   — multi-block / whole-board composition tests
+#   not_simulatable      — documented gaps (connectors, digital-only, EEPROM)
+# To add a group: pick a snake_case id, tag the blocks, and add it to SIM_GROUPS.
 # ============================================================================
 
 blocks:
@@ -38,6 +50,7 @@ blocks:
   - id: ldo_rail
     title: LDO power rail (TPS7A8401A + TPS22916)
     sheet: power.yaml
+    group: power_generation
     status: implemented
     description: >
       +3V3 → TPS7A8401A ANY-OUT LDO → VADJ → TPS22916 load switch → +VDDIO,
@@ -103,6 +116,7 @@ blocks:
   - id: opa_bias
     title: V-to-I bias loop (OPA2388 + PMZ1200 PMOS)
     sheet: bias.yaml
+    group: analog_bias
     status: implemented
     description: >
       Per-channel precision current source: MCP4728 DAC voltage → OPA2388
@@ -184,6 +198,7 @@ blocks:
   - id: vddio_pdn
     title: VDDIO decoupling network (PDN)
     sheet: bobcat.yaml
+    group: power_distribution
     status: implemented
     description: >
       The +VDDIO decoupling bank (C24-C29 row + power-sheet bulk). Tests the
@@ -220,6 +235,7 @@ blocks:
   - id: vddd_pdn
     title: VDDD decoupling network (PDN)
     sheet: bobcat.yaml
+    group: power_distribution
     status: implemented
     description: >
       The +VDDD decoupling (C20 0.1uF + C21 1uF, per-pin caps on the SPI-exit
@@ -247,6 +263,7 @@ blocks:
   - id: vdda1_pdn
     title: VDDA1 decoupling network (PDN)
     sheet: bobcat.yaml
+    group: power_distribution
     status: implemented
     description: >
       The Bobcat VDDA1 analog supply (pin 1): a single 0.1uF decap (C22) on the
@@ -282,6 +299,7 @@ blocks:
   - id: vdda2_pdn
     title: VDDA2 decoupling network (PDN)
     sheet: bobcat.yaml
+    group: power_distribution
     status: implemented
     description: >
       The Bobcat VDDA2 analog supply (pins 26+27): a single 0.1uF decap (C23)
@@ -310,6 +328,7 @@ blocks:
   - id: system_sequencing
     title: System-level multi-rail sequencing
     sheet: (power + bias + bobcat)
+    group: system_integration
     status: planned
     description: >
       The pass-2 integration test: full 3V3 -> LDO -> {VDDD/VDDA1/VDDA2 +
@@ -330,6 +349,7 @@ blocks:
   - id: eeprom
     title: I2C EEPROM (24AA08)
     sheet: eeprom.yaml
+    group: not_simulatable
     status: not_simulatable
     reason: >
       Digital I2C device on +3V3 with a decoupling cap. No analog behavior
@@ -340,6 +360,7 @@ blocks:
   - id: fmc
     title: VITA 57.1 FMC connector (ASP-134606-01)
     sheet: fmc.yaml
+    group: not_simulatable
     status: not_simulatable
     reason: >
       Pure connector + 0R routing network. No active devices; "correctness"
@@ -350,6 +371,7 @@ blocks:
   - id: connectors
     title: SMAs / GPIO header / GND clips
     sheet: connectors.yaml
+    group: not_simulatable
     status: not_simulatable
     reason: >
       Passive coaxial + header connectors with 0R series elements. Nothing to

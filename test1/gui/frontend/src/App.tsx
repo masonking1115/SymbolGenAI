@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import { Sidebar } from "./components/Sidebar";
 import { TopBar } from "./components/TopBar";
@@ -10,7 +10,7 @@ import { Library } from "./tabs/Library";
 import { Resources } from "./tabs/Resources";
 import { Review } from "./tabs/Review";
 import { Simulation } from "./tabs/Simulation";
-import type { PhaseEvent, SimBlock, StagePhase, TabKey } from "./types";
+import type { PhaseEvent, SimBlock, SimGroup, StagePhase, TabKey } from "./types";
 
 const TAB_TITLES: Record<TabKey, string> = {
   resources: "Design Resources / test1",
@@ -22,6 +22,10 @@ const TAB_TITLES: Record<TabKey, string> = {
 
 export default function App() {
   const [tab, setTab] = useState<TabKey>("generator");
+  // Live mirror of `tab` for callbacks that must read the CURRENT tab without
+  // re-binding (e.g. the gated setHealth handed to the always-mounted Simulation).
+  const tabRef = useRef(tab);
+  tabRef.current = tab;
   const [pngOpen, setPngOpen] = useState(true);
   const [bust, setBust] = useState(0);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
@@ -45,11 +49,13 @@ export default function App() {
   // Simulation test-block catalog + selection, owned here so the sidebar
   // dropdown and the Simulation detail pane stay in sync.
   const [simBlocks, setSimBlocks] = useState<SimBlock[]>([]);
+  const [simGroups, setSimGroups] = useState<SimGroup[]>([]);
   const [selectedSimBlock, setSelectedSimBlock] = useState<string>("");
   useEffect(() => {
     api.simBlocks()
       .then((r) => {
         setSimBlocks(r.blocks);
+        setSimGroups(r.groups ?? []);
         const first = r.blocks.find((b) => b.status === "implemented") ?? r.blocks[0];
         if (first) setSelectedSimBlock((s) => s || first.id);
       })
@@ -99,24 +105,42 @@ export default function App() {
     setHealth(undefined);
   }, [tab]);
 
-  const mainContent =
+  // The Simulation tab runs long-lived background work — the setup/interpret
+  // `claude -p` agents stream over SSE and the sequential run() loop lives in
+  // component state. Unmounting it on a tab switch would tear down those
+  // subscriptions and the in-flight UI (the run keeps going on the backend, but
+  // the frontend stops listening — so the sim appears to "stop"). To retain it
+  // across tabs, Simulation stays PERSISTENTLY MOUNTED and is hidden with CSS
+  // when another tab is active, instead of being conditionally rendered.
+  const simActive = tab === "simulation";
+  // Simulation stays mounted while hidden, so its run() loop keeps calling
+  // setHealth as a background sim progresses. Swallow those when it isn't the
+  // active tab, so a background sim doesn't overwrite another tab's status bar.
+  const simSetHealth = useCallback<typeof setHealth>(
+    (h) => { if (tabRef.current === "simulation") setHealth(h); },
+    [setHealth],
+  );
+  const simPanel = (
+    <Simulation
+      setHealth={simSetHealth}
+      blocks={simBlocks}
+      selected={selectedSimBlock}
+    />
+  );
+
+  // The other tabs have no background work, so they mount on demand as usual.
+  const otherContent =
     tab === "resources" ? (
       <Resources />
     ) : tab === "library" ? (
       <Library />
-    ) : tab === "simulation" ? (
-      <Simulation
-        setHealth={setHealth}
-        blocks={simBlocks}
-        selected={selectedSimBlock}
-      />
     ) : tab === "review" ? (
       <Review
         onArtifactsChanged={onArtifactsChanged}
         setHealth={setHealth}
         onAutofixCompleted={() => setTab("generator")}
       />
-    ) : (
+    ) : tab === "generator" ? (
       <Generator
         onArtifactsChanged={onArtifactsChanged}
         setHealth={setHealth}
@@ -127,7 +151,18 @@ export default function App() {
         setSubPhase={setSubPhase}
         refreshTrigger={refreshTrigger}
       />
-    );
+    ) : null;   // simulation: rendered via the persistent simPanel below
+
+  // Center content: the active tab's content, PLUS the always-mounted Simulation
+  // panel (visible only on its tab, hidden — and so taking no layout space —
+  // otherwise). A `display:none` sibling keeps the subscriptions + run loop alive
+  // without affecting the active tab's layout.
+  const mainContent = (
+    <div className="h-full min-h-0">
+      {!simActive && otherContent}
+      <div className={simActive ? "h-full min-h-0" : "hidden"}>{simPanel}</div>
+    </div>
+  );
 
   // Layout matrix:
   //   Generator/Library + pngOpen  → content | PNG | AgentRail
@@ -236,6 +271,7 @@ export default function App() {
             onChange={setTab}
             projectLabel="SCH-EVAL..."
             simBlocks={simBlocks}
+            simGroups={simGroups}
             selectedSimBlock={selectedSimBlock}
             onSelectSimBlock={selectSimBlock}
           />

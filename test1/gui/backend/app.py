@@ -1428,9 +1428,32 @@ class SimRunReq(BaseModel):
     vout_set: float | None = None
 
 
+# Functional grouping for the Simulation tab + sidebar. The `group` id on each
+# block (blocks.yaml) keys into this ordered list — it gives the section its
+# display label, a one-line blurb, and (by position) its order. A block whose
+# group isn't listed here falls into the trailing "other" bucket. Order = how an
+# engineer reads the signal chain: make a rail → distribute it → condition analog
+# → integrate → (gaps). To add a group: append it here and tag the blocks.
+SIM_GROUPS = [
+    {"id": "power_generation", "label": "Power generation",
+     "blurb": "How a rail is made — regulator + load switch."},
+    {"id": "power_distribution", "label": "Power distribution (PDN)",
+     "blurb": "How a rail is delivered to the chip — decoupling / PDN banks."},
+    {"id": "analog_bias", "label": "Analog & bias",
+     "blurb": "Precision analog signal-conditioning."},
+    {"id": "system_integration", "label": "System integration",
+     "blurb": "Multi-block / whole-board composition tests."},
+    {"id": "not_simulatable", "label": "Not simulatable",
+     "blurb": "Documented gaps — connectors, digital-only, EEPROM."},
+    {"id": "other", "label": "Other", "blurb": ""},
+]
+
+
 @app.get("/api/sim/blocks")
 def sim_blocks() -> dict:
-    return {"blocks": sim_service.list_blocks()}
+    """Block catalog + the functional-group taxonomy (ordered labels/blurbs) the
+    GUI uses to organize the Simulation tab and sidebar into named sections."""
+    return {"blocks": sim_service.list_blocks(), "groups": SIM_GROUPS}
 
 
 # ---- Edit per-sim requirements (pass criteria + boundary params) -----------

@@ -168,11 +168,20 @@ export interface SimBlock {
   id: string;
   title: string;
   sheet: string;
+  group: string;          // functional-domain id (keys into SimGroup)
   status: SimBlockStatus;
   description: string;
   models_needed: string[];
   datasheets: SimDatasheet[];
   sim_types: SimType[];
+}
+
+// A functional grouping for the Simulation tab + sidebar. The ordered list comes
+// from the backend (SIM_GROUPS in app.py); blocks are bucketed by `block.group`.
+export interface SimGroup {
+  id: string;
+  label: string;
+  blurb: string;
 }
 
 // Editable requirements for a block (pass criteria + boundary params).

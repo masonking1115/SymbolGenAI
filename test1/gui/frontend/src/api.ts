@@ -15,6 +15,7 @@ import type {
   RunSummary,
   SheetMeta,
   SimBlock,
+  SimGroup,
   SimRequirements,
   SimResult,
   SkillItem,
@@ -227,7 +228,7 @@ export const api = {
       method: "DELETE",
     }),
 
-  simBlocks: () => j<{ blocks: SimBlock[] }>("/api/sim/blocks"),
+  simBlocks: () => j<{ blocks: SimBlock[]; groups: SimGroup[] }>("/api/sim/blocks"),
   simRun: (block: string, simType: string, voutSet = 1.8) =>
     j<SimResult>("/api/sim/run", {
       method: "POST",
