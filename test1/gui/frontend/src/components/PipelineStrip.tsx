@@ -16,7 +16,8 @@ export interface Step {
   label: string;
   actor: string;        // "py" | "agent" | "ngspice" | "build" | ...
   state: StepState;
-  hint?: string;
+  hint?: string;        // small status sub-line under the label (e.g. a verdict)
+  desc?: string;        // plain-English "what this stage does" — shown as a hover tooltip
 }
 
 export function StepIcon({ state }: { state: StepState }) {
@@ -64,11 +65,13 @@ export function PipelineStrip({ steps, badge = null }: Props) {
       {badge}
       {steps.map((s, i) => (
         <Fragment key={s.id}>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5" title={s.desc || undefined}>
             <StepIcon state={s.state} />
             <div className="leading-tight">
               <div className="text-[11px] text-ink-700 whitespace-nowrap flex items-center gap-1">
-                {s.label}
+                <span className={s.desc ? "underline decoration-dotted decoration-ink-300 underline-offset-2 cursor-help" : ""}>
+                  {s.label}
+                </span>
                 <span className={
                   "text-[8.5px] px-1 py-px rounded font-mono " +
                   (s.state === "active"

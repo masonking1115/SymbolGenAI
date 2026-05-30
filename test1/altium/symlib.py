@@ -46,6 +46,39 @@ def has_symbol(mpn: str) -> bool:
     return schlib_path(mpn).exists()
 
 
+# Open + parse each .SchLib AT MOST ONCE per (mpn, file mtime). symbol_name,
+# read_pins, and _summary all funnel through here, so a build that touches a
+# part 5×—or verify_coverage walking every net-member pin—re-parses the file 0
+# extra times. mtime keying means a regenerated/swapped library is still picked
+# up on the next call. (Previously each of those helpers re-opened the file.)
+@lru_cache(maxsize=None)
+def _load_schlib(mpn: str, mtime: float) -> AltiumSchLib | None:
+    p = schlib_path(mpn)
+    if not p.exists():
+        return None
+    try:
+        return AltiumSchLib(p)
+    except Exception:
+        return None
+
+
+def _schlib(mpn: str) -> AltiumSchLib | None:
+    """Cached parsed library for an MPN (None if absent/unparseable)."""
+    p = schlib_path(mpn)
+    if not p.exists():
+        return None
+    return _load_schlib(mpn, p.stat().st_mtime)
+
+
+@lru_cache(maxsize=None)
+def _symbol_names(mpn: str, mtime: float) -> tuple[str, ...]:
+    """Memoized symbol-name list (get_symbol_names is a static path call)."""
+    try:
+        return tuple(AltiumSchLib.get_symbol_names(schlib_path(mpn)))
+    except Exception:
+        return ()
+
+
 def symbol_name(mpn: str) -> str | None:
     """The symbol name to look up inside the MPN's library. By construction we
     author it as exactly `<MPN>`, but fall back to the first symbol present so a
@@ -53,7 +86,7 @@ def symbol_name(mpn: str) -> str | None:
     p = schlib_path(mpn)
     if not p.exists():
         return None
-    names = AltiumSchLib.get_symbol_names(p)
+    names = _symbol_names(mpn, p.stat().st_mtime)
     if not names:
         return None
     return mpn if mpn in names else names[0]
@@ -66,11 +99,11 @@ def read_pins(mpn: str) -> dict[str, tuple[str, float, float, int, int]]:
     angle_deg is derived from the pin orientation (0/90/180/270). unit is the
     Altium owner_part_id (1-based; 1 for single-unit parts).
     """
-    p = schlib_path(mpn)
+    lib = _schlib(mpn)
     name = symbol_name(mpn)
-    if name is None:
+    if lib is None or name is None:
         return {}
-    sym = AltiumSchLib(p).get_symbol(name)
+    sym = lib.get_symbol(name)
     if sym is None:
         return {}
     out: dict[str, tuple[str, float, float, int, int]] = {}
@@ -88,11 +121,11 @@ def read_pins(mpn: str) -> dict[str, tuple[str, float, float, int, int]]:
 def _summary(mpn: str, mtime: float) -> dict:
     """Parsed symbol summary, memoised on (mpn, file mtime) so repeated GUI
     reads are cheap but a regenerated library is picked up."""
-    p = schlib_path(mpn)
     name = symbol_name(mpn)
-    if name is None:
+    lib = _schlib(mpn)
+    if name is None or lib is None:
         return {}
-    sym = AltiumSchLib(p).get_symbol(name)
+    sym = lib.get_symbol(name)
     if sym is None:
         return {}
     props: dict[str, str] = {}

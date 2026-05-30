@@ -44,6 +44,33 @@ def main() -> int:
                            "refs": list(i.refs)})
 
     # Symbol-library quality gate (pin-name fit, etc.) before placing.
+    # A component the design references but has no committed .SchLib (a "new
+    # component not in the library") used to crash build_library() with an opaque
+    # FileNotFoundError mid-build. Instead, surface it as a clean, actionable
+    # library ERROR listing the MPNs that need a symbol (authored via
+    # author_symbol / installed from Ultra Librarian, or sourced by the review's
+    # missing-part flow) — and fail the build gracefully.
+    from .build_symbols import missing_symbols
+    missing = missing_symbols()
+    if missing:
+        msg = ("component(s) referenced by the design have no symbol in the "
+               "library — author/install them (test1.altium.author_symbol or an "
+               "Ultra Librarian .SchLib), or let the review's missing-part flow "
+               "source them: " + ", ".join(missing))
+        report.append({"sheet": "library", "severity": "ERROR",
+                       "rule": "missing_symbol", "message": msg,
+                       "refs": list(missing)})
+        print(f"symbol library: MISSING {len(missing)} symbol(s): {', '.join(missing)}")
+        # Persist the report (same shape as the normal exit path) so the GUI lint
+        # panel + the closed loop see the missing-symbol ERROR, then fail cleanly.
+        (OUT_DIR / "lint.json").write_text(json.dumps({
+            "generated_at": time.time(),
+            "status": "fail",
+            "counts": {"ERROR": 1, "WARNING": 0, "INFO": 0},
+            "issues": report,
+        }, indent=2))
+        print("\nFAILURES: missing symbols — see report")
+        return 1
     lib_path, _ = get_library()
     lib_issues = lint_library(lib_path)
     _record("library", lib_issues)

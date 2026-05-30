@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { api, subscribeLoop } from "../api";
 import { I } from "./Icon";
 import { LiveConsole } from "./LiveConsole";
 import { PipelineStrip, type Step, type StepState } from "./PipelineStrip";
+import { WorkflowConsole } from "./WorkflowConsole";
 import type { LoopEvent, LoopSummary, LoopRound, LoopAction } from "../types";
 
 interface Props {
@@ -23,6 +24,27 @@ const MAX_ROUNDS = 10;
 
 type PhaseId = "idle" | "plan" | "apply" | "sim" | "missing_part" | "lint_fix" | "build" | "re_eval" | "done";
 
+// Plain-English meaning of each pipeline stage. One source of truth, shared by
+// the per-step hover tooltips (PipelineStrip) and the always-visible legend
+// below the strip — "Missing" especially isn't self-explanatory.
+const STEP_DOCS: { id: string; label: string; desc: string }[] = [
+  { id: "plan",         label: "Plan",
+    desc: "Decide which of the open findings to act on this round, and pick the action for each (edit / simulate / source a part / lint-fix)." },
+  { id: "apply",        label: "Apply",
+    desc: "An agent edits the Altium builders (altium/build_*.py) + netlist to implement the chosen fixes." },
+  { id: "sim",          label: "Sim",
+    desc: "Run ngspice on the affected block(s) to check the change holds up physically (e.g. bias current, rail droop). Skipped when no finding needs simulation." },
+  { id: "missing_part", label: "Missing",
+    desc: "“Missing part”: the design references a component it doesn't yet have a symbol/footprint for — an agent sources or authors it and places it. Skipped when nothing is missing." },
+  { id: "lint_fix",     label: "Lint fix",
+    desc: "Auto-correct cosmetic layout-linter nits (label/symbol overlaps, power-stub side, decap grouping). Skipped when the build is already lint-clean." },
+  { id: "build",        label: "Build",
+    desc: "Regenerate the Altium schematic (SchDoc + SVG renders + lint report) from the edited builders." },
+  { id: "re_eval",      label: "Re-eval",
+    desc: "Re-run every review rule against the rebuilt design to see which findings cleared and what remains for the next round." },
+];
+const STEP_DESC: Record<string, string> = Object.fromEntries(STEP_DOCS.map(s => [s.id, s.desc]));
+
 // Compute the step row from the current phase + the last round's seen kinds
 // (so a round that skipped sim shows "Sim" gray-skipped rather than pending).
 // StepIcon, Step, StepState, ACTOR_TONE all moved to PipelineStrip.tsx.
@@ -36,13 +58,13 @@ function pipelineSteps(phase: PhaseId, currentRound: LoopRound | undefined, term
   const phaseIdx = order.indexOf(phase);
 
   const steps: Step[] = [
-    { id: "plan",         label: "Plan",     actor: "py",    state: "pending" },
-    { id: "apply",        label: "Apply",    actor: "agent", state: "pending" },
-    { id: "sim",          label: "Sim",      actor: "ngspice", state: everSim ? "pending" : "skipped" },
-    { id: "missing_part", label: "Missing",  actor: "agent", state: everMissing ? "pending" : "skipped" },
-    { id: "lint_fix",     label: "Lint fix", actor: "agent", state: everLintFix ? "pending" : "skipped" },
-    { id: "build",        label: "Build",    actor: "build", state: "pending" },
-    { id: "re_eval",      label: "Re-eval",  actor: "py",    state: "pending" },
+    { id: "plan",         label: "Plan",     actor: "py",      state: "pending",                          desc: STEP_DESC.plan },
+    { id: "apply",        label: "Apply",    actor: "agent",   state: "pending",                          desc: STEP_DESC.apply },
+    { id: "sim",          label: "Sim",      actor: "ngspice", state: everSim ? "pending" : "skipped",    desc: STEP_DESC.sim },
+    { id: "missing_part", label: "Missing",  actor: "agent",   state: everMissing ? "pending" : "skipped", desc: STEP_DESC.missing_part },
+    { id: "lint_fix",     label: "Lint fix", actor: "agent",   state: everLintFix ? "pending" : "skipped", desc: STEP_DESC.lint_fix },
+    { id: "build",        label: "Build",    actor: "build",   state: "pending",                          desc: STEP_DESC.build },
+    { id: "re_eval",      label: "Re-eval",  actor: "py",      state: "pending",                          desc: STEP_DESC.re_eval },
   ];
 
   if (terminal) {
@@ -129,7 +151,7 @@ function inferPhaseFromEvent(ev: LoopEvent, prev: PhaseId): PhaseId {
 
 // ---- Component ----------------------------------------------------------
 
-export function IterationSection({ loopId, onLoopCompleted, setHealth, onSummary }: Props) {
+export function WorkflowSection({ loopId, onLoopCompleted, setHealth, onSummary }: Props) {
   const [summary, setSummary] = useState<LoopSummary | null>(null);
   const [phase, setPhase] = useState<PhaseId>("idle");
   const [activeAgentId, setActiveAgentId] = useState<string | null>(null);
@@ -193,11 +215,20 @@ export function IterationSection({ loopId, onLoopCompleted, setHealth, onSummary
   const round = summary?.round ?? 0;
   const steps = pipelineSteps(phase, currentRound, terminal);
 
+  // Agents active (or completed) THIS round → one structured panel each in the
+  // Steps view (split screen). Sourced from the round's actions, which carry
+  // agent_run_id/kind/status/targets.
+  const activeAgents = (currentRound?.actions ?? [])
+    .filter(a => a.agent_run_id)
+    .map(a => ({ id: a.agent_run_id as string, kind: a.kind, status: a.status, targets: a.targets }));
+  // One-line "what is the tool doing now" narration from the live phase.
+  const phaseNarration = isRunning ? (STEP_DESC[phase] ?? undefined) : undefined;
+
   return (
     <section className="mt-5 rounded-md border border-edge bg-white">
       <header className="px-4 py-2.5 flex items-center gap-2 border-b border-edge">
         <I.Play size={14} />
-        <span className="text-sm font-semibold text-ink-900">Iteration</span>
+        <span className="text-sm font-semibold text-ink-900">Workflow</span>
         <span className="text-[11px] text-ink-500">
           loop {loopId.slice(0, 8)}
           {summary && ` · ${summary.status}`}
@@ -231,12 +262,30 @@ export function IterationSection({ loopId, onLoopCompleted, setHealth, onSummary
             </span>
           ) : null}
         />
+        <StepLegend />
       </div>
 
       {summary?.status === "plateau" && (
         <div className="px-4 py-2 text-[12px] bg-warn/[0.06] text-ink-700 border-y border-edge">
           <strong>⚠ Loop halted</strong> — no progress for 2 consecutive rounds.{" "}
           {summary.findings_current} findings unresolved.
+        </div>
+      )}
+      {/* Flapping warning — rules whose verdict flipped across rounds without a
+          fix that explains it (semantic/sim nondeterminism). The loop's
+          "resolution" of these can't be trusted; surface them explicitly. */}
+      {summary?.flapping && Object.keys(summary.flapping).length > 0 && (
+        <div className="px-4 py-2 text-[12px] bg-warn/[0.08] text-ink-700 border-y border-edge">
+          <strong className="text-warn">⚠ Unstable verdicts (flapping)</strong> —
+          these rules changed pass/fail across rounds with no fix that explains it
+          (LLM/sim nondeterminism). Don't trust their final state without a manual look:
+          <ul className="mt-1 list-disc pl-5">
+            {Object.entries(summary.flapping).slice(0, 6).map(([rid, n]) => (
+              <li key={rid} className="font-mono text-[11px]">
+                {rid} <span className="text-ink-500">({n} flip{n === 1 ? "" : "s"})</span>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
       {summary?.status === "all_clear" && (
@@ -258,21 +307,25 @@ export function IterationSection({ loopId, onLoopCompleted, setHealth, onSummary
         </div>
       )}
 
-      {/* Console — always present once a loop has started. When a sub-agent is
-          active/pinned, show its live stream; otherwise show the loop ACTIVITY
-          FEED (rule evaluation, rounds, builds) so the console is never empty —
-          this is what fills it during the eval phase, like the sim tab. */}
-      {(pinnedAgentId ?? activeAgentId) ? (
+      {/* Console — always present once a loop has started. A PINNED agent (from
+          the round history) gets the full raw LiveConsole for deep inspection.
+          Otherwise the WorkflowConsole shows the default Steps view (split per
+          agent) with a Raw toggle back to the discrete loop-activity feed. */}
+      {pinnedAgentId ? (
         <LiveConsole
-          agentRunId={pinnedAgentId ?? activeAgentId}
-          idlePlaceholder={isRunning ? "waiting for agent action…" : "no active agent"}
-          headerRight={pinnedAgentId ? (
+          agentRunId={pinnedAgentId}
+          headerRight={
             <button onClick={() => setPinnedAgentId(null)}
               className="ml-2 text-ink-500 hover:text-ink-900 underline">unpin</button>
-          ) : undefined}
+          }
         />
       ) : (
-        <LoopActivityConsole lines={loopLog} running={isRunning} />
+        <WorkflowConsole
+          agents={activeAgents}
+          rawLines={loopLog}
+          running={isRunning}
+          phaseNarration={phaseNarration}
+        />
       )}
 
       {/* Per-round history — collapsed by default once finished */}
@@ -394,34 +447,25 @@ function ActionRow({ a, onPin, active }:
   );
 }
 
-// Loop-level activity console. Shows the readable event feed (rule evaluation,
-// rounds, builds) so the review console streams from the first second — the
-// fix for the previously-empty console during the eval phase. Styling matches
-// the shared LiveConsole (white pre, auto-scroll when near the bottom).
-function LoopActivityConsole({ lines, running }: { lines: string[]; running: boolean }) {
-  const preRef = useRef<HTMLPreElement | null>(null);
-  useEffect(() => {
-    const el = preRef.current;
-    if (!el) return;
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
-    if (nearBottom) el.scrollTop = el.scrollHeight;
-  }, [lines]);
+// Always-available legend explaining what each pipeline stage means. Collapsed
+// by default (the strip + per-step tooltips carry the day-to-day signal); expand
+// for the plain-English description of every stage, esp. the non-obvious ones
+// ("Missing", "Lint fix"). Reads the same STEP_DOCS as the tooltips.
+function StepLegend() {
   return (
-    <div className="border-t border-edge px-4 py-2.5 bg-rail/20">
-      <div className="text-[11px] text-ink-500 mb-1.5 flex items-center gap-2">
-        <I.Terminal size={11} />
-        <span>loop activity</span>
-        <span className="ml-auto text-[10px] text-ink-400">{lines.length} lines</span>
-      </div>
-      <pre
-        ref={preRef}
-        className="text-[11px] font-mono bg-white text-ink-900 border border-edge p-2.5 rounded overflow-auto whitespace-pre-wrap"
-        style={{ minHeight: "120px", maxHeight: "240px" }}
-      >
-{lines.length === 0
-  ? <span className="text-ink-400 italic">{running ? "starting — evaluating rules…" : "(idle)"}</span>
-  : lines.join("\n")}
-      </pre>
-    </div>
+    <details className="mt-1.5 group">
+      <summary className="text-[10.5px] text-ink-500 hover:text-ink-700 cursor-pointer inline-flex items-center gap-1 select-none">
+        <I.Caret size={9} className="transition-transform group-open:rotate-180" />
+        What do these steps mean?
+      </summary>
+      <dl className="mt-1.5 pl-3 border-l border-edge space-y-1">
+        {STEP_DOCS.map((s) => (
+          <div key={s.id} className="text-[11px] leading-snug">
+            <dt className="inline font-medium text-ink-800">{s.label}</dt>
+            <dd className="inline text-ink-600"> — {s.desc}</dd>
+          </div>
+        ))}
+      </dl>
+    </details>
   );
 }

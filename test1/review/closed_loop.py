@@ -97,6 +97,11 @@ class Loop:
     finished_at: float | None = None
     error: str = ""
     web_call_count: int = 0       # missing-part flow increments this
+    # Rules whose verdict flipped across rounds WITHOUT a source change that
+    # should explain it (semantic/sim nondeterminism). Surfaced to the user as a
+    # "flapping" warning so a spuriously-cleared finding isn't trusted. Maps
+    # rule_id -> number of verdict flips observed.
+    flapping: dict[str, int] = field(default_factory=dict)
 
 
 _LOOPS: dict[str, Loop] = {}
@@ -136,6 +141,7 @@ def loop_summary(L: Loop) -> dict:
         "last_delta": L.last_delta,
         "plateau_streak": L.plateau_streak,
         "error": L.error,
+        "flapping": L.flapping,
     }
 
 
@@ -545,11 +551,25 @@ async def _rebuild_project() -> tuple[str, dict | None]:
     if lint_json.exists():
         try:
             data = json.loads(lint_json.read_text(encoding="utf-8"))
-            lint_summary = {
-                "ERROR":   sum(1 for f in data if f.get("severity") == "ERROR"),
-                "WARNING": sum(1 for f in data if f.get("severity") == "WARNING"),
-                "INFO":    sum(1 for f in data if f.get("severity") == "INFO"),
-            }
+            # lint.json is the dict form {status, counts, issues}. (This used to
+            # iterate `data` as if it were a bare list → dict-keys → lint_summary
+            # was always None/wrong, so the loop never saw lint ERRORs.) Prefer
+            # the precomputed counts; fall back to counting issues; tolerate a
+            # legacy bare-list file.
+            if isinstance(data, dict):
+                counts = data.get("counts")
+                issues = data.get("issues", [])
+                if isinstance(counts, dict):
+                    lint_summary = {k: int(counts.get(k, 0))
+                                    for k in ("ERROR", "WARNING", "INFO")}
+                else:
+                    lint_summary = {
+                        sev: sum(1 for f in issues if f.get("severity") == sev)
+                        for sev in ("ERROR", "WARNING", "INFO")}
+            elif isinstance(data, list):
+                lint_summary = {
+                    sev: sum(1 for f in data if f.get("severity") == sev)
+                    for sev in ("ERROR", "WARNING", "INFO")}
         except Exception:
             pass
     return status, lint_summary
@@ -601,6 +621,10 @@ async def run_loop(loop_id: str) -> None:
             await emit(L, "round_start", round=r,
                        findings=R.findings_before)
 
+            # Fingerprint the netlist BEFORE this round's actions so we can scope
+            # the re-eval to the sheets/components the round actually changed.
+            fp_before = _netlist_fingerprint()
+
             for action in plan_actions(L.findings_current):
                 if L.cancelled:
                     break
@@ -621,10 +645,39 @@ async def run_loop(loop_id: str) -> None:
                 await emit(L, "build_end", round=r,
                            status=R.build_status, lint=R.lint_summary)
 
-            # Re-evaluate (semantic too, off-thread — see loop_start note)
+                # If the rebuild left cosmetic lint ERRORs, run the lint_fix agent
+                # to clear them, then rebuild once more. (Previously plan_actions
+                # never emitted a lint_fix action, so the "Lint fix" stage was dead
+                # code — the build's own auto_fix_* handled most nits but loop-level
+                # lint ERRORs were never addressed.) Bounded to one pass/round.
+                lint_err = (R.lint_summary or {}).get("ERROR", 0)
+                if lint_err and not L.cancelled:
+                    lf = Action(kind="lint_fix", targets=[f"{lint_err} lint ERROR(s)"])
+                    R.actions.append(lf)
+                    await emit(L, "action_start", round=r, kind="lint_fix",
+                               targets=lf.targets)
+                    await _dispatch_action(L, lf)
+                    await emit(L, "action_end", round=r, kind="lint_fix",
+                               agent_run_id=lf.agent_run_id, status=lf.status,
+                               summary=lf.summary)
+                    if lf.status == "ok" and not L.cancelled:
+                        await emit(L, "build_start", round=r)
+                        R.build_status, R.lint_summary = await _rebuild_project()
+                        await emit(L, "build_end", round=r,
+                                   status=R.build_status, lint=R.lint_summary)
+
+            # Scope the re-eval to the impacted area. Compare the netlist after the
+            # build to fp_before; only re-check rules whose subject is on a changed
+            # sheet (or whose refdes changed, or that can't be localized → global).
+            # The rest carry their prior verdict forward — far fewer slow
+            # semantic/sim calls per round. (Round 1 always runs full: nothing to
+            # carry. A round that changed nothing also re-checks nothing new.)
+            fp_after = _netlist_fingerprint()
+            changed_sheets, changed_refdes = _diff_fingerprint(fp_before, fp_after)
             await emit(L, "eval_start", phase=f"re-eval round {r}")
             new_findings = await asyncio.to_thread(
-                eval_rules, None, None, True, _progress)
+                _scoped_reeval, L.findings_current, changed_sheets,
+                changed_refdes, _progress)
             await emit(L, "eval_done", findings=len(new_findings))
             R.findings_after = len(new_findings)
             old_ids = {f.rule_id for f in L.findings_current}
@@ -633,6 +686,19 @@ async def run_loop(loop_id: str) -> None:
             added = sorted(new_ids - old_ids)
             R.findings_cleared = cleared
             R.findings_new = added
+            # Flap detection: a rule that gets ADDED this round after having been
+            # CLEARED in an earlier round (or vice-versa) flipped verdict without
+            # a dedicated fix — semantic/sim nondeterminism. Track per rule_id.
+            ever_cleared = {rid for rr in L.rounds[:-1] for rid in rr.findings_cleared}
+            ever_added = {rid for rr in L.rounds[:-1] for rid in rr.findings_new}
+            for rid in added:
+                if rid in ever_cleared:
+                    L.flapping[rid] = L.flapping.get(rid, 0) + 1
+            for rid in cleared:
+                if rid in ever_added:
+                    L.flapping[rid] = L.flapping.get(rid, 0) + 1
+            if L.flapping:
+                await emit(L, "flapping", rules=L.flapping)
             delta = len(cleared) - len(added)
             L.findings_current = new_findings
             L.last_delta = delta
@@ -660,6 +726,12 @@ async def run_loop(loop_id: str) -> None:
 
     L.finished_at = time.time()
     persist_audit(L)
+    # Publish the loop's final findings to review/findings.json so the GUI
+    # Findings panel reflects the outcome (all_clear → empty; plateau/max_rounds/
+    # cancelled/error → the unresolved findings, flapping ones tagged). Runs for
+    # EVERY terminal state. Previously findings.json was never written by the
+    # loop, so the panel looked empty/stale after any run.
+    write_findings_json(L)
     # NOTE: we deliberately do NOT write a plateau report into the changelog.
     # The changelog is the ACTIONABLE queue (items an apply pass implements); a
     # plateau is a status, not an action, so it would linger forever unconsumed.
@@ -675,6 +747,69 @@ async def run_loop(loop_id: str) -> None:
             q.put_nowait(None)
         except asyncio.QueueFull:
             pass
+
+
+def _scoped_reeval(prior_findings: list[Finding], changed_sheets: set[str],
+                   changed_refdes: set[str], progress=None) -> list[Finding]:
+    """Re-evaluate ONLY the rules impacted by this round's change; carry the
+    prior verdict forward for the rest. Runs in a worker thread.
+
+    If nothing changed (or we can't tell), fall back to a full re-eval so we
+    never silently skip checks. Returns the merged finding list."""
+    from .rule_eval import run_all as _run_all, load_rules as _load_rules, \
+        scope_rules as _scope_rules
+    from .netlist_view import load_all as _load_all
+
+    rf = _load_rules()
+    # No change detected → be safe, run everything (matches old behavior).
+    if not changed_sheets and not changed_refdes:
+        return _run_all(rf.rules, None, True, progress)
+
+    view = _load_all()
+    impacted, carried = _scope_rules(rf.rules, changed_sheets, changed_refdes, view)
+    # Evaluate only the impacted subset.
+    fresh = _run_all(impacted, None, True, progress)
+    # Carry forward prior findings for the rules we did NOT re-check.
+    carried_ids = {r.id for r in carried}
+    prior_for_carried = [f for f in prior_findings if f.rule_id in carried_ids]
+    # Merge: fresh (impacted) + carried-forward (untouched). De-dupe by rule_id,
+    # preferring the freshly-evaluated verdict.
+    fresh_ids = {f.rule_id for f in fresh}
+    merged = list(fresh) + [f for f in prior_for_carried if f.rule_id not in fresh_ids]
+    return merged
+
+
+def _netlist_fingerprint() -> dict[str, dict[str, str]]:
+    """{sheet: {refdes: value}} for every netlist YAML — used to detect which
+    sheets/components a round's apply actually changed, so re-eval can be scoped
+    to the impacted area instead of re-running all 115 rules every round."""
+    import yaml as _yaml
+    fp: dict[str, dict[str, str]] = {}
+    if not NETLIST_DIR.exists():
+        return fp
+    for y in NETLIST_DIR.glob("*.yaml"):
+        try:
+            data = _yaml.safe_load(y.read_text(encoding="utf-8")) or {}
+            parts = data.get("parts", {}) or {}
+            fp[y.stem] = {rd: str((parts[rd] or {}).get("value", "")) for rd in parts}
+        except Exception:
+            fp[y.stem] = {}
+    return fp
+
+
+def _diff_fingerprint(before: dict, after: dict) -> tuple[set[str], set[str]]:
+    """(changed_sheets, changed_refdes) between two _netlist_fingerprint()s.
+    A sheet is changed if any refdes was added/removed/re-valued."""
+    changed_sheets: set[str] = set()
+    changed_refdes: set[str] = set()
+    for sheet in set(before) | set(after):
+        b = before.get(sheet, {})
+        a = after.get(sheet, {})
+        diff_refs = {rd for rd in set(b) | set(a) if b.get(rd) != a.get(rd)}
+        if diff_refs:
+            changed_sheets.add(sheet)
+            changed_refdes |= diff_refs
+    return changed_sheets, changed_refdes
 
 
 def _clear_sim_cache_for_review() -> None:
@@ -705,6 +840,62 @@ def persist_audit(L: Loop) -> None:
     audit_path = LOOPS_STATE_DIR / f"{L.loop_id}.json"
     audit_path.write_text(json.dumps(loop_summary(L), indent=2,
                                      default=str), encoding="utf-8")
+
+
+def _finding_to_dict(f: Finding) -> dict:
+    """Serialize a Finding into the GUI envelope shape (the same `findings.json`
+    `/api/findings` + the Findings panel consume). Loop findings have no per-row
+    `actions` (the loop applies them itself, not the user), so Apply stays
+    disabled for them — but they show in the list + the structured summary
+    (which groups by rule_id)."""
+    import hashlib
+    sev = f.severity.value if hasattr(f.severity, "value") else str(f.severity)
+    fid = hashlib.sha1(f"{f.rule_id}|{f.subject}".encode()).hexdigest()[:12]
+    return {
+        "id": fid,
+        "rule_id": f.rule_id,
+        "severity": sev,
+        "title": f.title,
+        "component": f.subject or (f.component_refs[0] if f.component_refs else ""),
+        "category": "closed-loop review",
+        "rule": f.title,
+        "sheet": f.sheet,
+        "refs": f.component_refs,
+        "observed": f.observed,
+        "impact": f.impact,
+        "fix_hint": f.fix,
+        "source": "closed_loop",
+    }
+
+
+def write_findings_json(L: Loop) -> None:
+    """Write the loop's CURRENT findings to review/findings.json so the GUI
+    Findings panel reflects the run's outcome (it was empty before — the loop
+    kept findings only in memory). Tags any FLAPPING rule so the panel can warn.
+    Best-effort; never breaks the loop."""
+    try:
+        findings_json = PROJECT_DIR / "review" / "findings.json"
+        rows = [_finding_to_dict(f) for f in L.findings_current]
+        # Annotate flapping findings so the UI can mark them unreliable.
+        for r in rows:
+            if r["rule_id"] in L.flapping:
+                r["flapping"] = L.flapping[r["rule_id"]]
+        summary = {"ERROR": 0, "WARNING": 0, "INFO": 0}
+        for r in rows:
+            if r["severity"] in summary:
+                summary[r["severity"]] += 1
+        envelope = {
+            "project": "test1",
+            "findings": rows,
+            "semantic": [],
+            "summary": summary,
+            "sources": [f"closed-loop review {L.loop_id} ({L.status})"],
+            # Rules that flipped verdict across rounds without an explaining edit.
+            "flapping": L.flapping,
+        }
+        findings_json.write_text(json.dumps(envelope, indent=2), encoding="utf-8")
+    except Exception:
+        pass
 
 
 

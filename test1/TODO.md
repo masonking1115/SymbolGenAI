@@ -28,9 +28,9 @@ Deferred work items (not blocking; pick up when convenient).
 
 ## UI / GUI
 
-### Iteration / Findings legibility (2026-05-30, NEW)
+### Iteration / Findings legibility (2026-05-30) — DONE
 
-- [ ] **Describe the meaning of each pipeline step.** The loop's step strip
+- [x] **Describe the meaning of each pipeline step.** The loop's step strip
       (round N/10: Plan · Apply · Sim · Missing · Lint fix · Build · Re-eval) is
       not self-explanatory — "Missing" especially is opaque. Add a short
       plain-English description per step (tooltip on hover and/or a one-line
@@ -42,11 +42,17 @@ Deferred work items (not blocking; pick up when convenient).
         - Lint fix — auto-correct cosmetic linter nits (overlaps, stub sides)
         - Build — regenerate the Altium schematic from the edited builders
         - Re-eval — re-run the rules to see if findings cleared
-- [ ] **Findings dropdown → structured summary.** The Findings view should be a
+- [x] **Findings dropdown → structured summary.** The Findings view should be a
       structured report, not a flat list: group by family/block, summarize
       counts (pass/fail/severity) in a table, and add small graphs where genuinely
       useful (e.g. severity breakdown, findings-over-rounds). Tables/graphs only
       where they aid comprehension — don't decorate.
+      DONE: new FindingsSummary.tsx at the top of the Findings section — a
+      collapsible "Summary" with a CSS severity bar graph + a breakdown table
+      grouped by family (general checks / components / blocks→per-block) ×
+      ERROR/WARNING/INFO. Joins finding.rule_id → rules(family,block); unknown
+      rule_ids fall into an "other / linter" bucket so nothing is dropped.
+      (Findings-over-rounds deferred — lives in the Iteration round history.)
 
 - [ ] **Surface the changelog directly in the Schematic Generator tab**, under the
       Regenerate button (and above the Linter checklist). The user should be able to

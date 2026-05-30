@@ -21,6 +21,11 @@ interface DiffSheetData {
   // changed parts carry BOTH anchors: x/y = current pos (AFTER), from_x/from_y = snapshot pos (BEFORE)
   changed: Record<string, { x: number; y: number; from_x?: number; from_y?: number; kind: "changed"; from_value: string; to_value: string }>;
   count: number;
+  // When the change is too substantial to show as a box overlay (re-layout, many
+  // adds/removes, anchors that don't map), renderable=false + a reason. We then
+  // show the schematics directly instead of forcing a misleading overlay.
+  renderable?: boolean;
+  unrenderable_reason?: string;
 }
 
 interface DiffData {
@@ -103,7 +108,28 @@ export function DiffPanes({ loopId, diff, activeSheet, setActiveSheet, mode, set
 
       <div className="flex-1 min-h-0 p-3">
         {current ? (
-          mode === "side" ? (
+          current.renderable === false ? (
+            // Change too substantial for a meaningful box overlay — show the two
+            // schematics plainly (no boxes) + say WHY, rather than forcing a
+            // misleading highlight overlay.
+            <div className="h-full min-h-0 flex flex-col">
+              <div className="mb-2 px-3 py-2 rounded border border-warn/40 bg-warn/[0.06] text-[12px] text-ink-700">
+                <strong className="text-warn">⚠ Change too substantial to highlight visually.</strong>{" "}
+                {current.unrenderable_reason || "Compare the schematics directly."}{" "}
+                {current.count > 0 && <span className="text-ink-500">({current.count} parts changed — see the value table below.)</span>}
+              </div>
+              <div className="grid grid-cols-2 gap-3 flex-1 min-h-0">
+                <DiffPane key={`before-plain-${activeSheet}`} title="BEFORE (snapshot)" tone="before"
+                  src={`/api/png_snapshot/${loopId}/${activeSheet}`}
+                  boxes={[]}
+                  viewBox={current.snapViewBox || current.viewBox} />
+                <DiffPane key={`after-plain-${activeSheet}`} title="AFTER (current)" tone="after"
+                  src={`/api/png/${activeSheet}`}
+                  boxes={[]}
+                  viewBox={current.viewBox} />
+              </div>
+            </div>
+          ) : mode === "side" ? (
             <div className="grid grid-cols-2 gap-3 h-full min-h-0">
               <DiffPane key={`before-${activeSheet}`} title="BEFORE (snapshot)" tone="before"
                 src={`/api/png_snapshot/${loopId}/${activeSheet}`}

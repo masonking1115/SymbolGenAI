@@ -21,6 +21,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import yaml
+from pydantic import BaseModel
 
 from .findings import AutofixCategory, Finding, Severity
 from .netlist_view import load_all, NetlistView
@@ -42,11 +43,75 @@ _SEMANTIC_TIMEOUT_S = 120
 
 # ---- Loader -------------------------------------------------------------
 
-def load_rules(path: Path = RULES_YAML) -> RulesFile:
+# A single malformed rule (bad family/severity, missing source, etc.) used to
+# fail RulesFile.model_validate() for the WHOLE file → load_rules raised →
+# /api/review/rules returned HTTP 500 and the entire Rules UI + every review
+# went dark. Now we validate each rule INDIVIDUALLY: valid rules load, invalid
+# ones are collected and surfaced (see load_rules_safe + the API) instead of
+# bricking everything. The file-level shape (version/sources_seen) is still
+# parsed leniently.
+
+class RejectedRule(BaseModel):
+    """A rules.yaml entry that failed schema validation — kept out of the active
+    set but reported so the user can see + fix it (vs a silent/opaque 500)."""
+    id: str
+    error: str
+    raw: dict = {}
+
+
+def load_rules_safe(path: Path = RULES_YAML) -> tuple[RulesFile, list["RejectedRule"]]:
+    """Lenient loader: returns (RulesFile of the VALID rules, [RejectedRule,...]).
+
+    Never raises on a malformed individual rule or a non-fatal file issue. A
+    truly unparseable YAML file (syntax error) still surfaces as one rejected
+    entry rather than crashing the caller."""
     if not path.exists():
-        return RulesFile()
-    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    return RulesFile.model_validate(data)
+        return RulesFile(), []
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError as e:
+        # Whole file unparseable — surface as a single rejected pseudo-rule.
+        return RulesFile(), [RejectedRule(id="<rules.yaml>",
+                                          error=f"YAML parse error: {e}")]
+    if not isinstance(data, dict):
+        return RulesFile(), [RejectedRule(id="<rules.yaml>",
+                                          error="top-level YAML is not a mapping")]
+
+    raw_rules = data.get("rules") or []
+    valid: list = []
+    rejected: list[RejectedRule] = []
+    from pydantic import TypeAdapter, ValidationError
+    rule_adapter = TypeAdapter(Rule)
+    for i, raw in enumerate(raw_rules):
+        rid = raw.get("id", f"<index {i}>") if isinstance(raw, dict) else f"<index {i}>"
+        try:
+            valid.append(rule_adapter.validate_python(raw))
+        except ValidationError as e:
+            # Compact one-line reason(s).
+            msgs = "; ".join(
+                f"{'.'.join(str(p) for p in err['loc'])}: {err['msg']}"
+                for err in e.errors()[:4]
+            )
+            rejected.append(RejectedRule(
+                id=str(rid), error=msgs,
+                raw=raw if isinstance(raw, dict) else {"value": raw}))
+
+    # Build the RulesFile from the file-level fields + only the valid rules.
+    rf = RulesFile(
+        version=int(data.get("version", 1) or 1),
+        generated_at=str(data.get("generated_at", "") or ""),
+        sources_seen=data.get("sources_seen", []) or [],
+        rules=valid,
+    )
+    return rf, rejected
+
+
+def load_rules(path: Path = RULES_YAML) -> RulesFile:
+    """Back-compat strict-ish loader used across the codebase. No longer raises
+    on a single bad rule — it drops invalid rules (use load_rules_safe to see
+    which). An empty/missing file returns an empty RulesFile."""
+    rf, _ = load_rules_safe(path)
+    return rf
 
 
 def save_rules(rf: RulesFile, path: Path = RULES_YAML) -> None:
@@ -54,6 +119,66 @@ def save_rules(rf: RulesFile, path: Path = RULES_YAML) -> None:
         yaml.safe_dump(rf.model_dump(exclude_none=True), sort_keys=False),
         encoding="utf-8",
     )
+
+
+# ---- Scoped re-evaluation (impacted-area only) --------------------------
+# After a fix the closed loop re-checks only the rules whose subject lives on a
+# CHANGED sheet (+ rules whose subject refdes/net touches a changed component),
+# trusting the rest as unchanged. This is the "scope re-check to impacted area"
+# optimization — typically 1 sheet of ~6, so ~5-6x fewer (slow) semantic/sim
+# calls per round. Safe because edits are localized to a sheet; a fix that
+# reaches across sheets still re-checks every sheet it touched.
+
+def rule_sheets(rule: Rule, view: NetlistView) -> set[str]:
+    """Every sheet a rule's subject could live on. Uses applies_to.sheet when
+    set; otherwise resolves the subject refdes/net to its sheet(s) via the view.
+    Empty set ⇒ couldn't localize ⇒ treat as global (always re-check)."""
+    at = rule.applies_to
+    if at.sheet:
+        return {at.sheet}
+    sheets: set[str] = set()
+    # refdes on applies_to or in the structural predicate
+    refs: set[str] = set()
+    if at.refdes:
+        refs.add(at.refdes)
+    if isinstance(rule, StructuralRule):
+        p = rule.predicate
+        for attr in ("refdes",):
+            v = getattr(p, attr, None)
+            if v:
+                refs.add(v)
+        for attr in ("from_pin", "to_pin"):
+            v = getattr(p, attr, None)
+            if isinstance(v, str) and "." in v:
+                refs.add(v.split(".", 1)[0])
+    for r in refs:
+        hit = view.part(r)
+        if hit:
+            sheets.add(hit[0])
+    # net membership
+    if at.net:
+        for m in view.members(at.net):
+            sheets.add(m.sheet)
+    return sheets
+
+
+def scope_rules(all_rules: list[Rule], changed_sheets: set[str],
+                changed_refdes: set[str], view: NetlistView
+                ) -> tuple[list[Rule], list[Rule]]:
+    """Split rules into (impacted, carried_forward) given the changed sheets +
+    refdes. Impacted = subject on a changed sheet, OR subject refdes is changed,
+    OR couldn't be localized (global → re-check to be safe). carried_forward =
+    everything else (verdict reused from the prior round)."""
+    impacted: list[Rule] = []
+    carried: list[Rule] = []
+    for r in all_rules:
+        sheets = rule_sheets(r, view)
+        ref = r.applies_to.refdes
+        if (not sheets) or (sheets & changed_sheets) or (ref and ref in changed_refdes):
+            impacted.append(r)
+        else:
+            carried.append(r)
+    return impacted, carried
 
 
 # ---- Helpers used by multiple predicates --------------------------------

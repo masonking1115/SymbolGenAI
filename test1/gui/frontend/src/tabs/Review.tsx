@@ -2,8 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import { DiffAndAccept } from "../components/DiffAndAccept";
 import type { DiffMode } from "../components/DiffPanes";
+import { FindingsSummary } from "../components/FindingsSummary";
 import { I } from "../components/Icon";
-import { IterationSection } from "../components/IterationSection";
+import { WorkflowSection } from "../components/WorkflowSection";
 import { RulesSection } from "../components/RulesSection";
 import type { Finding, FindingAction, FindingsReport, FixQueueEntry,
   LoopSummary, Severity } from "../types";
@@ -18,6 +19,8 @@ interface DiffData {
     removed: Record<string, { x: number; y: number; kind: "removed" }>;
     changed: Record<string, { x: number; y: number; kind: "changed"; from_value: string; to_value: string }>;
     count: number;
+    renderable?: boolean;
+    unrenderable_reason?: string;
   }>;
 }
 
@@ -213,7 +216,7 @@ export function Review({
           loopRunning={runState === "running"}
         />
 
-        <IterationSection
+        <WorkflowSection
           loopId={activeLoopId}
           onLoopCompleted={onLoopCompleted}
           setHealth={setHealth}
@@ -248,7 +251,9 @@ export function Review({
               No findings. Run review above; the design is currently green if it comes back empty.
             </div>
           ) : (
-            <div className="space-y-2">
+            <>
+              <FindingsSummary items={items} />
+              <div className="space-y-2">
               {items.map((f, i) => (
                 <FindingRow
                   key={f.id ?? i}
@@ -259,7 +264,8 @@ export function Review({
                   onDismiss={onDismiss}
                 />
               ))}
-            </div>
+              </div>
+            </>
           )}
         </section>
 

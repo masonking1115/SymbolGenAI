@@ -27,9 +27,25 @@ involved so it's verifiable.
 
 ## Bias
 
-- **R40/R41 = 5.11 kΩ sense resistors** set the OPA bias current; the sim deck
-  (`opa_bias`) extracts these from `bias.yaml` via `design_extract`. Changing
+- **R40/R41 = 3.65 kΩ 0.1% sense resistors** set the OPA bias current; the sim
+  deck (`opa_bias`) extracts these from `bias.yaml`'s `value` field via
+  `design_extract.sense_resistance()` (parses "3.65k 0.1%" → 3650 Ω). Changing
   them changes the simulated ideal-current formula too — keep value + sim in sync.
+  **Value was lowered from 5.11k → 3.65k** because at 5.11k the regulated
+  full-scale capped at ~484 µA (I·R left no headroom over the 0.5 V DUT
+  compliance), failing rule BLK_BIAS_FS_CEILING (needs ≥640 µA). **Do NOT raise
+  R40/R41 back toward 5.11k** to "match the part number" — fix the MPN instead
+  (see next bullet). The direction is fixed: lower R_sense satisfies the ceiling.
+
+- **R40/R41 MPN still references the 5.11k part (`Lib:TNPW06035K11BEEA`) while the
+  value is 3.65k** — a real value↔MPN mismatch (rule CHK_VALUE_MATCHES_MPN). The
+  correct fix is to repoint the lib_id to a 3.65k 0.1% part in the same TNPW0603
+  e3 series (e.g. TNPW06033K65BEEA), which needs a new per-MPN `.SchLib` authored
+  with pin geometry IDENTICAL to the existing resistor symbol (so R40/R41 routing
+  in `build_bias.py` doesn't shift). This requires a build to verify — it was left
+  for a human / build-capable pass, not auto-applied. (The entry also carries a
+  pre-existing package mismatch: TNPW0603 MPN vs `R_0402_1005Metric` footprint —
+  resolve both together when selecting the real part.)
 
 - **R42/R43 are DNP (0Ω jumpers left unpopulated)** — the 2N7002 isolator is the
   active POR-failsafe path, not the jumper. Don't model/treat them as closed.

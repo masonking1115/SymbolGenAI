@@ -389,13 +389,22 @@ export interface Rule {
   prompt?: string;
 }
 
+export interface RejectedRule {
+  id: string;
+  error: string;
+  raw?: Record<string, unknown>;
+}
+
 export interface RulesListResponse {
   version: number;
   generated_at: string;
   rules: Rule[];
   sources_seen: { path: string; mtime: number }[];
   stale_sources: { path: string; current_mtime: number; recorded_mtime: number }[];
-  by_family: { schematic: number; simulation: number; design: number; block?: number };
+  // Rules that failed schema validation — loaded leniently so one bad rule no
+  // longer blanks the whole UI. Surfaced as a warning banner.
+  rejected?: RejectedRule[];
+  by_family: { schematic: number; simulation?: number; design: number; block?: number };
   by_origin: { generated: number; user: number; imported: number };
 }
 
@@ -436,6 +445,8 @@ export interface LoopSummary {
   last_delta?: number | null;
   plateau_streak: number;
   error?: string;
+  // rule_id -> # of verdict flips across rounds (semantic/sim nondeterminism).
+  flapping?: Record<string, number>;
 }
 
 export type LoopEvent =
@@ -450,51 +461,12 @@ export type LoopEvent =
   | { event: "build_end";    data: { round: number; status: string; lint?: { ERROR: number; WARNING: number; INFO: number } | null } }
   | { event: "sim_results";  data: { round: number; results: { block: string; sim_type: string; ok: boolean }[] } }
   | { event: "round_done";   data: { round: number; delta: number; cleared: string[]; new: string[]; remaining: number } }
+  | { event: "flapping";     data: { rules: Record<string, number> } }
   | { event: "plateau";      data: { streak: number; remaining: number; by_severity: { E: number; W: number; I: number } } }
   | { event: "error";        data: { message: string; traceback: string } }
   | { event: "done";         data: { status: string; rounds: number; remaining: number } };
 
-// ---- Closed-loop design review: rule-gen job (background pipeline) -----
-// Mirrors test1/review/rule_gen.py::RuleGenJob + the SSE events emit_job
-// fans out. The GUI subscribes to the per-job stream to drive the
-// pipeline-strip + console in RulesSection.
-
-export type RuleGenPhase =
-  | "bundle"      // build_doc_bundle
-  | "dispatch"    // start_rule_gen agent (may emit retries)
-  | "validate"    // verify_citations
-  | "merge"       // merge_rules with user-origin
-  | "write"       // save_rules → rules.yaml
-  | "done"
-  | "error";
-
-export interface RuleGenResult {
-  count_total: number;
-  count_by_family: { schematic: number; design: number; simulation?: number; block?: number };
-  conflicts: { id: string; user_title: string; generated_title: string }[];
-  rejected_unverifiable: { id: string; reason: string }[];
-  sources_seen: { path: string; mtime: number }[];
-}
-
-export interface RuleGenSummary {
-  job_id: string;
-  phase: RuleGenPhase;
-  status: "running" | "ok" | "fail";
-  agent_run_id: string | null;
-  result: RuleGenResult | null;
-  error: string;
-  started_at: number;
-  finished_at: number | null;
-}
-
-export type RuleGenEvent =
-  | { event: "bundle";                  data: Record<string, never> }
-  | { event: "bundle_done";             data: { datasheets: number; urls: number; user_rules: number } }
-  | { event: "dispatch";                data: { agent_run_id?: string; attempt?: number; max_attempts?: number } }
-  | { event: "dispatch_attempt_failed"; data: { attempt: number; reason: string } }
-  | { event: "validate";                data: { candidates: number } }
-  | { event: "validate_done";           data: { verified: number; rejected: number } }
-  | { event: "merge";                   data: { conflicts: number } }
-  | { event: "write";                   data: { rules: number } }
-  | { event: "done";                    data: RuleGenResult }
-  | { event: "error";                   data: { message: string; traceback: string } };
+// NOTE: doc-driven rule generation (RuleGen*) was retired — rules are managed
+// manually now. The RuleGenPhase/Result/Summary/Event types + the subscribeRuleGen
+// client were removed as dead code (no component referenced them after the
+// Regenerate button was deleted). Backend /generate* routes remain for CLI use.

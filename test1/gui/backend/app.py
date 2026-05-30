@@ -513,9 +513,8 @@ def lint(run_id: str | None = None) -> JSONResponse:
 
 
 # ---- Review findings -----------------------------------------------------
-@app.get("/api/findings")
-def findings() -> JSONResponse:
-    """Return review findings.
+def _findings_payload() -> dict:
+    """Build the findings response body as a plain dict.
 
     findings.json may be either (a) a bare list of Finding dicts (legacy
     KiCad run_review.py path) or (b) a dict envelope produced by the
@@ -523,7 +522,10 @@ def findings() -> JSONResponse:
     ({ project, findings: [...], semantic: [...], summary: {...}, sources }).
     Both shapes are accepted.
 
-    Response includes cache-busting headers so every fetch is fresh.
+    Internal callers (e.g. apply_finding) use this directly; the HTTP route
+    wraps it in a no-store JSONResponse. (Previously apply_finding called the
+    route function and tried to subscript the JSONResponse — a TypeError that
+    made every per-finding Apply return HTTP 500.)
     """
     data: list = []
     envelope_summary: dict | None = None
@@ -555,14 +557,19 @@ def findings() -> JSONResponse:
             sev = (f.get("severity") or "").upper()
             if sev in summary:
                 summary[sev] += 1
-    body = {
+    return {
         "findings": data,
         "semantic": semantic,
         "summary": summary,
         "error_log_exists": ERROR_LOG.exists(),
         "timestamp": time.time(),
     }
-    return JSONResponse(body, headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/findings")
+def findings() -> JSONResponse:
+    """Return review findings with cache-busting headers so every fetch is fresh."""
+    return JSONResponse(_findings_payload(), headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/error-log")
@@ -2119,7 +2126,7 @@ def apply_finding(finding_id: str, body: ApplyFindingBody) -> dict:
     if not re.fullmatch(r"[A-Fa-f0-9]{4,32}", finding_id):
         raise HTTPException(400, "bad finding id")
     # Cross-check: the finding must exist in the current findings.json.
-    snap = findings()
+    snap = _findings_payload()
     f = next((x for x in snap["findings"] if x.get("id") == finding_id), None)
     if f is None:
         raise HTTPException(404, "finding not found in current findings.json")
@@ -2178,9 +2185,14 @@ def dismiss_fix(finding_id: str) -> dict:
 
 @app.get("/api/review/rules")
 def review_rules_list() -> dict:
-    """Return the current rules.yaml contents + staleness state."""
-    from test1.review.rule_eval import load_rules
-    rf = load_rules()
+    """Return the current rules.yaml contents + staleness state.
+
+    Uses the LENIENT loader: a single malformed rule (bad family/severity,
+    missing source, YAML typo) no longer 500s the whole endpoint — the valid
+    rules load and the bad ones come back under `rejected` so the UI can show
+    'rule X is invalid: <reason>' instead of going blank."""
+    from test1.review.rule_eval import load_rules_safe
+    rf, rejected = load_rules_safe()
     # Staleness: any source on disk newer than the recorded mtime?
     stale_sources: list[dict] = []
     for s in rf.sources_seen:
@@ -2189,15 +2201,19 @@ def review_rules_list() -> dict:
             stale_sources.append({"path": s.path,
                                   "current_mtime": p.stat().st_mtime,
                                   "recorded_mtime": s.mtime})
+    # Only report families that can actually carry rules (the retired
+    # "simulation" family is gone — don't advertise a stale simulation:0 key).
+    active_families = ("schematic", "design", "block")
     return {
         "version": rf.version,
         "generated_at": rf.generated_at,
         "rules": [r.model_dump(exclude_none=True) for r in rf.rules],
         "sources_seen": [s.model_dump() for s in rf.sources_seen],
         "stale_sources": stale_sources,
+        "rejected": [rr.model_dump() for rr in rejected],
         "by_family": {
             fam: sum(1 for r in rf.rules if r.family == fam)
-            for fam in ("schematic", "simulation", "design", "block")
+            for fam in active_families
         },
         "by_origin": {
             ori: sum(1 for r in rf.rules if r.origin == ori)

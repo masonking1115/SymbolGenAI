@@ -145,12 +145,57 @@ def compute_loop_diff(loop_id: str) -> dict[str, dict]:
                 from_y=snap_a.get("y", cur_a.get("y", 0)),
             )
 
+        # ---- Is this diff meaningfully RENDERABLE as a visual box overlay? ----
+        # A surgical change (a few parts moved/added) renders fine. But a
+        # substantial change — a re-layout, or many adds/removes — makes the
+        # box-overlay misleading (boxes everywhere, or anchors that don't map
+        # between the two renders). In that case we DON'T force a visual diff;
+        # we flag it so the UI shows "change too substantial to show visually,
+        # see the value table / rebuilt schematic" instead of a noisy overlay.
+        n_changed = len(added) + len(removed) + len(changed)
+        n_parts = max(len(cur_parts), len(snap_parts), 1)
+        # Changed parts missing an anchor in either render can't be boxed.
+        unanchored = sum(
+            1 for rd in changed
+            if rd not in cur_refdes or rd not in snap_refdes
+        ) + sum(1 for rd in added if rd not in cur_refdes) \
+          + sum(1 for rd in removed if rd not in snap_refdes)
+        # viewBox shift: a big change in drawable size ⇒ re-layout ⇒ coords don't map.
+        def _vb_area(a: dict) -> float:
+            vb = a.get("viewBox") or [0, 0]
+            try:
+                return float(vb[0]) * float(vb[1])
+            except (TypeError, ValueError, IndexError):
+                return 0.0
+        cur_area, snap_area = _vb_area(cur_anchors), _vb_area(snap_anchors)
+        vb_ratio = (max(cur_area, snap_area) / min(cur_area, snap_area)
+                    if min(cur_area, snap_area) > 0 else 1.0)
+
+        renderable = True
+        reason = ""
+        if n_changed == 0:
+            renderable = True  # nothing to draw, but that's fine (no overlay needed)
+        elif n_changed > 0.5 * n_parts and n_changed >= 6:
+            renderable = False
+            reason = (f"{n_changed} of {n_parts} parts changed — too substantial "
+                      f"to show as a visual diff; see the value table / rebuilt schematic.")
+        elif unanchored >= 3 and unanchored >= 0.5 * n_changed:
+            renderable = False
+            reason = (f"{unanchored} changed parts can't be located in both renders "
+                      f"(symbols moved/renamed) — visual diff would be misleading.")
+        elif vb_ratio >= 1.4:
+            renderable = False
+            reason = ("sheet was re-laid-out (drawing area changed substantially) — "
+                      "box positions don't map between versions; compare the schematics directly.")
+
         out[sheet] = {
             "viewBox": _viewbox_str(cur_anchors),
             "snapViewBox": _viewbox_str(snap_anchors),
             "added": added,
             "removed": removed,
             "changed": changed,
-            "count": len(added) + len(removed) + len(changed),
+            "count": n_changed,
+            "renderable": renderable,
+            "unrenderable_reason": reason,
         }
     return out

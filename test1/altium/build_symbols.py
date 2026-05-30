@@ -13,12 +13,22 @@ from pathlib import Path
 
 from altium_monkey import AltiumSchLib
 
+from functools import lru_cache
+
 from ..gen.netlist import load_netlist, parse_member
 from .config import LIB_DIR
 from .symbols import _add_passive
 from .symlib import read_pins, schlib_path, symbol_name
 
 SHEETS = ["fmc", "power", "bobcat", "eeprom", "bias", "connectors"]
+
+
+@lru_cache(maxsize=None)
+def _netlist(sheet: str):
+    """Load each sheet's netlist AT MOST ONCE per process. libid_map() and
+    verify_coverage() both walk every sheet; without this they each re-parsed
+    all six YAMLs (and build_library/main called both)."""
+    return load_netlist(sheet)
 
 
 def symbol_name_for(lib_id: str) -> str:
@@ -44,8 +54,24 @@ def libid_map() -> dict[str, str]:
     """lib_id -> symbol name across all sheets (pure, no file write)."""
     out: dict[str, str] = {}
     for sh in SHEETS:
-        for p in load_netlist(sh).parts.values():
+        for p in _netlist(sh).parts.values():
             out[p.lib_id] = symbol_name_for(p.lib_id)
+    return out
+
+
+def missing_symbols() -> list[str]:
+    """MPNs the design references that have NO committed per-MPN .SchLib yet —
+    i.e. components that need a symbol authored/installed before the design can
+    build. Pure query (no raise, no write); the review pipeline + GUI call this
+    to detect the 'new component not in the library' case and route it to the
+    missing-part flow, instead of letting build_library() crash mid-build."""
+    out: list[str] = []
+    for libid in sorted(libid_map()):
+        if not libid.startswith("Lib:"):
+            continue
+        mpn = libid.split(":", 1)[1]
+        if not schlib_path(mpn).exists():
+            out.append(mpn)
     return out
 
 
@@ -125,7 +151,7 @@ def verify_coverage() -> int:
     fails = 0
     _, lmap = build_library()
     for sh in SHEETS:
-        nl = load_netlist(sh)
+        nl = _netlist(sh)
         for ref, part in nl.parts.items():
             if part.lib_id not in lmap:
                 print(f"  [FAIL] {sh}: {ref} lib_id {part.lib_id!r} unmapped"); fails += 1

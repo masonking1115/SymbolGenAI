@@ -167,10 +167,18 @@ runs `claude -p` for chat/apply/sim (`backend/agent.py`). React+Vite+TS frontend
   `./node_modules/.bin/tsc --noEmit -p .` then `./node_modules/.bin/vite build`.
 - Tabs: **Design Resources · Library · Schematic Generator · Simulation · Design
   Review**. Right rail = multi-session chat + opt-in changelog + pipeline status.
-- Review flow: upload a PDF → parsed into `review/findings.json`; clicking
-  **Apply** parks a request in `review/fix_queue.json` for the agent to triage
-  (see the `review-fix-queue` skill). `error_log.md` is the human-review output,
-  read by the backend — leave it in place.
+- Review = the **closed-loop design review** (pipeline C in `pipeline.txt`).
+  "Design review" evaluates `review/rules.yaml` (structural + semantic +
+  sim_review) then runs a fix loop — Plan → Apply → Sim → Missing → Lint fix →
+  Build → Re-eval (`review/closed_loop.py`), max 10 rounds — and surfaces a
+  **Diff & Accept** (snapshot vs current, roll-forward-guarded reject). The
+  round/stage UI is the **Workflow** panel (`WorkflowSection.tsx`, formerly
+  "Iteration") with a Steps|Raw console toggle. Rules are managed MANUALLY in
+  the GUI (add/edit/delete); the loader is lenient (one bad rule → reported,
+  not a 500). Final findings land in `review/findings.json` (flapping rules
+  tagged). A SEPARATE legacy path: a Voltai PDF parsed into `findings.json` with
+  per-row **Apply** parking a request in `review/fix_queue.json` (see the
+  `review-fix-queue` skill).
 
 ## Skills (`.claude/skills/`)
 

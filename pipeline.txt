@@ -300,7 +300,8 @@
    Generator   run the generation pipeline; linter checklist (RULES registry)
    Simulation  the whole B pipeline above (run, groups, model lifecycle,
                agent models, requirements editor, clear-cache, SPICE-model view)
-   Review      design-review findings + fix queue
+   Review      the C pipeline below: Rules viewer + "Design review" closed loop
+               (Workflow panel) + structured Findings + Diff & Accept
 
  The Simulation panel stays MOUNTED across tab switches (hidden via CSS), so a
  running sim's run() loop + SSE subscriptions survive navigating away.
@@ -330,6 +331,85 @@
    sim/read_pdf.py` = the fitz-having interpreter) + PYTHONUTF8=1. Tool allow-
    lists are sim-scoped. Sim agents auto-discover test1/.claude/skills/
    (e.g. sim-datasheet-extraction).
+
+
+===============================================================================
+ C.  DESIGN-REVIEW PIPELINE  (the Review tab — closed-loop AI review)
+===============================================================================
+
+ A third pipeline over the SAME inputs (netlist + built schematic + datasheets/
+ requirements): an AI design review that not only FINDS issues but iterates to
+ FIX them, then lets you accept or reject the result.
+
+   rules.yaml ──► evaluate (structural + semantic + sim_review) ──► findings
+        │                                                              │
+        │            ┌───────────────────  CLOSED LOOP  ──────────────┘
+        ▼            ▼   (review/closed_loop.py, "Design review" button)
+   ┌──────────────────────────────────────────────────────────────────┐
+   │  per round (max 10, stop on all-clear / plateau×2 / cancel):       │
+   │   Plan → Apply → Sim → Missing → Lint fix → Build → Re-eval        │
+   └──────────────────────────────────────────────────────────────────┘
+        │                                                  │
+        ▼                                                  ▼
+   review/findings.json  (final findings, flapping tagged)   Diff & Accept
+   gui/state/loops/<id>.json (audit)                         (snapshot vs current)
+
+ RULE MODEL (review/rule_schema.py, persisted in review/rules.yaml):
+   Families: schematic ("general checks") · design ("components") · block
+   ("blocks", per functional block). The "simulation" family is RETIRED.
+   Evaluation: structural (Python predicate over the netlist) · semantic
+   (claude -p judges cited sources + design) · sim_review (a structural kind
+   that RUNS ngspice then has claude -p judge the result — shown with a
+   "simulated" tag). Rules are managed MANUALLY in the GUI (add / edit / delete);
+   doc-driven generation was retired. load_rules is LENIENT — one malformed rule
+   is reported under `rejected`, it no longer 500s the whole Rules panel.
+
+ THE CLOSED LOOP (review/closed_loop.py::run_loop), each round:
+   Plan      plan_actions() buckets findings → actions by required fix kind.
+   Apply     a claude -p agent edits altium/build_*.py + netlist for the fixes.
+   Sim       ngspice re-checks affected blocks (only if a finding needs it).
+   Missing   a referenced component with no library symbol → missing_part.py
+             (search → rank → identity-check → author/install .SchLib → place →
+             build → sim-verify → topology-adapt → impasse). build_project also
+             FAILS GRACEFULLY on a missing symbol (lists the MPNs; no crash).
+   Lint fix  if the rebuild left cosmetic lint ERRORs, a lint_fix agent clears
+             them, then rebuilds once more.
+   Build     python -m test1.altium.build_project (subprocess).
+   Re-eval   SCOPED to the impacted area: only rules whose subject is on a
+             CHANGED sheet (or whose refdes changed, or can't be localized) are
+             re-checked; the rest carry their prior verdict forward (≈5-6× fewer
+             slow semantic/sim calls/round). Rules that flip verdict across
+             rounds with no explaining edit are flagged as FLAPPING.
+
+ DIFF & ACCEPT (review/diff.py + the Diff panes):
+   Pre-loop SNAPSHOT (out/render_snapshots/<id>/) vs current. Content-aware
+   refdes-level diff (added/removed/changed with anchor boxes) — rebuild noise
+   shows nothing. When a change is too substantial to box meaningfully
+   (re-layout / many adds-removes / unanchorable), renderable=false and the UI
+   shows the two schematics plainly + WHY, instead of forcing a misleading
+   overlay. Accept = archive the snapshot (keep the design). Reject = revert,
+   with a VERIFY-AFTER-REVERT roll-forward guard: if reverting produces a worse
+   state (build breaks / lint ERRORs rise) it ROLLS FORWARD to the post-loop
+   state rather than stranding you. /api/loop/{id}/clear drops the residue
+   (changelog + snapshot) without touching the design.
+
+ Key Review endpoints (gui/backend/app.py):
+   GET  /api/review/rules          rules + stale_sources + `rejected` (lenient)
+   GET  /api/review/rules/pdf      the rule set as a PDF
+   GET  /api/findings              current findings.json (envelope)
+   POST /api/findings/{id}/apply   queue a PDF-finding's fix (Voltai-import path)
+   POST /api/loop/start            start the closed loop (409 if one running)
+   GET  /api/loop/{id}             summary (rounds, findings, flapping)
+   GET  /api/loop/{id}/stream      SSE: eval_progress/round/action/build/flapping
+   POST /api/loop/{id}/cancel      cancel (checked between phases)
+   GET  /api/loop/{id}/diff        per-sheet diff (+ renderable / reason)
+   POST /api/loop/{id}/accept | reject | clear
+   GET  /api/png_snapshot/{id}/{sheet}   pre-loop render for the BEFORE pane
+
+ The Workflow panel (gui/frontend/.../WorkflowSection.tsx — formerly
+ "Iteration") shows the round/stage strip + a console with a Steps|Raw toggle:
+ "Steps" (default) is a per-agent split-screen of distilled actions; "Raw" is
+ the discrete event log.
 
 
 ===============================================================================
@@ -367,4 +447,8 @@
    HARD-bounded / provenance-stamped so they converge and stay in sync.
  • Lifecycle agents may edit ONLY the sim layer; the schematic is never edited
    by a sim agent.
+ • Review = a THIRD pipeline (C): rules.yaml → eval → closed loop (Plan/Apply/
+   Sim/Missing/Lint-fix/Build/Re-eval) → Diff & Accept. Rules are manual; the
+   loader is lenient; re-eval is scoped to the impacted area; reject is guarded
+   by a roll-forward; a missing library symbol fails the build gracefully.
 ===============================================================================

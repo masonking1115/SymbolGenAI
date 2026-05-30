@@ -210,7 +210,9 @@ SymbolGenAI/
     ├── gen/                     ← backend-neutral core (netlist loader, validator) — REUSED
     ├── gui/                     ← FastAPI backend (8765) + React/Vite frontend (5173)
     ├── sim/                     ← ngspice simulation subsystem
-    ├── review/                  ← findings.json + fix_queue.json (GUI-driven review)
+    ├── review/                  ← closed-loop design review: rules.yaml + rule_eval.py
+    │                                + closed_loop.py (Plan→Apply→Sim→Missing→Lint-fix→
+    │                                Build→Re-eval) + diff.py; findings.json + fix_queue.json
     └── error_log.md             ← review output artifact (GUI READS it — leave in place)
 ```
 

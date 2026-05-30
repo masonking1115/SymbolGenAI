@@ -132,6 +132,25 @@ export function RulesSection({ loopRunning }: Props) {
         </div>
       )}
 
+      {/* Rejected rules — a rule in rules.yaml that failed schema validation.
+          Loaded leniently (the rest still work), but surfaced so it's fixable
+          rather than silently dropped or 500-ing the whole panel. */}
+      {data && data.rejected && data.rejected.length > 0 && (
+        <div className="px-4 py-2 text-[12px] bg-err/[0.06] text-ink-700 border-b border-edge">
+          <strong className="text-err">⚠ {data.rejected.length} rule
+            {data.rejected.length === 1 ? "" : "s"} invalid</strong> — skipped (the
+          rest loaded). Fix in <span className="font-mono">review/rules.yaml</span>:
+          <ul className="mt-1 list-disc pl-5">
+            {data.rejected.slice(0, 6).map((rr, i) => (
+              <li key={rr.id + i} className="text-[11px]">
+                <span className="font-mono text-ink-900">{rr.id}</span>
+                <span className="text-ink-500"> — {rr.error}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {!empty && (
         <div className="px-4 py-3 space-y-2">
           {(["schematic", "design"] as const).map(fam => {
