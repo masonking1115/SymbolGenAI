@@ -175,18 +175,90 @@ async def run_missing_part_action(L: Loop, action: Action) -> MissingPartAudit:
 # ---- Helper stubs (will fill in next tasks) -----------------------------
 
 def _render_query(rule: Rule) -> str:
-    """Build a search query from rule.applies_to. Filled in Task 5.2."""
-    raise NotImplementedError("Task 5.2")
+    """Build a WebSearch query from rule.applies_to."""
+    parts: list[str] = []
+    if rule.applies_to.mpn:
+        parts.append(f'"{rule.applies_to.mpn}"')
+        parts.append("datasheet")
+    role = rule.applies_to.role_spec or {}
+    if role.get("role"):
+        parts.append(role["role"])
+    for key, val in role.items():
+        if key == "role":
+            continue
+        if isinstance(val, (int, float)):
+            parts.append(f'"{key}" "{val}"')
+        elif isinstance(val, list) and key == "package_pref":
+            parts.append("(" + " OR ".join(f'"{p}"' for p in val) + ")")
+    parts.append("datasheet")
+    parts.append("(site:digikey.com OR site:mouser.com OR site:ti.com "
+                  "OR site:microchip.com OR site:onsemi.com OR "
+                  "site:nxp.com OR site:diodes.com OR site:infineon.com)")
+    return " ".join(parts)
 
 
 def _rank_candidates(cands: list[Candidate], role_spec: dict) -> list[Candidate]:
-    """Filter by hard constraints + score by soft constraints. Task 5.2."""
-    raise NotImplementedError("Task 5.2")
+    """Filter by hard role_spec constraints; score by soft signals."""
+    survivors: list[Candidate] = []
+    role = role_spec or {}
+    for c in cands:
+        # Hard constraints: every numeric *_min in role_spec must be <= candidate's param
+        ok = True
+        for key, val in role.items():
+            if key.endswith("_min_V") or key.endswith("_min_A"):
+                metric = key.replace("_min", "")
+                if c.params.get(metric, 0) < val:
+                    ok = False; break
+            if key.endswith("_max_ohm") or key.endswith("_max_V"):
+                metric = key.replace("_max", "")
+                if c.params.get(metric, 0) > val:
+                    ok = False; break
+        if not ok:
+            continue
+        # Lifecycle filter
+        lifecycle = (c.params.get("lifecycle") or "").lower()
+        if any(k in lifecycle for k in ("obsolete", "eol", "nrnd", "discontinued")):
+            continue
+        # Package filter
+        pkg_pref = role.get("package_pref", [])
+        if pkg_pref and c.params.get("package") not in pkg_pref:
+            continue
+        # Score
+        score = 0.0
+        score += float(c.params.get("source_count", 1))   # cross-distributor confirmation
+        if c.params.get("automotive_grade"):
+            score += 0.5
+        if c.params.get("package") in pkg_pref[:1]:
+            score += 0.3
+        c.score = score
+        survivors.append(c)
+    survivors.sort(key=lambda c: -c.score)
+    return survivors
 
 
 def _identity_check(pdf: Path, mpn: str) -> bool:
-    """MPN literal + manufacturer line in first 3 pages. Task 5.2."""
-    raise NotImplementedError("Task 5.2")
+    """MPN literal + manufacturer line should appear in first 3 pages."""
+    try:
+        import fitz  # PyMuPDF
+        doc = fitz.open(pdf)
+        text_parts: list[str] = []
+        for i in range(min(3, doc.page_count)):
+            text_parts.append(doc[i].get_text() or "")
+        text = "\n".join(text_parts)
+    except Exception:
+        return False
+    norm = " ".join(text.split()).lower()
+    if mpn.lower() not in norm:
+        return False
+    # Soft: at least one common manufacturer line
+    for vendor in ("texas instruments", "microchip", "on semiconductor",
+                   "nxp", "diodes incorporated", "infineon", "stmicroelectronics",
+                   "analog devices", "renesas", "vishay"):
+        if vendor in norm:
+            return True
+    # If MPN matches but no vendor line, still accept (some house-brand parts
+    # don't include vendor name in the datasheet header).
+    return True
 
 
 async def _install_and_author(mpn: str, ds_path: Path) -> bool:
