@@ -2,9 +2,10 @@ import { useCallback, useEffect, useState } from "react";
 import { api, subscribeRun } from "../api";
 import { Console } from "../components/Console";
 import { I } from "../components/Icon";
+import { IterationSection } from "../components/IterationSection";
 import { RulesSection } from "../components/RulesSection";
 import type { Finding, FindingAction, FindingsReport, FixQueueEntry,
-  Severity } from "../types";
+  LoopSummary, Severity } from "../types";
 
 interface Props {
   onArtifactsChanged: () => void;
@@ -35,6 +36,11 @@ export function Review({ onArtifactsChanged, setHealth, onAutofixCompleted }: Pr
   const [runState, setRunState] = useState<RunState>("idle");
   const [errorLog, setErrorLog] = useState<string>("");
   const [queue, setQueue] = useState<Map<string, FixQueueEntry>>(new Map());
+  const [activeLoopId, setActiveLoopId] = useState<string | null>(null);
+  // Loop summary lifted from IterationSection (via onSummary callback) so the
+  // upcoming DiffAndAccept section (Phase 4D) can gate on status !== "running".
+  // Currently consumed only for that future wiring — not rendered here.
+  const [, setLoopSummary] = useState<LoopSummary | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -75,6 +81,30 @@ export function Review({ onArtifactsChanged, setHealth, onAutofixCompleted }: Pr
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  // Re-attach to the most recent loop on mount (so reload doesn't lose state).
+  // Skip if a fresh start has already populated activeLoopId.
+  useEffect(() => {
+    if (activeLoopId) return;
+    void api.loopLatest().then((l) => {
+      if ("loop_id" in l && l.loop_id) setActiveLoopId(l.loop_id);
+    }).catch(() => { /* ignore */ });
+    // Intentionally empty deps: only run once on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const startLoop = async () => {
+    setLines([]);
+    setRunState("running");
+    setHealth({ text: "loop starting…", tone: "neutral" });
+    try {
+      const { loop_id } = await api.loopStart();
+      setActiveLoopId(loop_id);
+    } catch {
+      setHealth({ text: "loop start failed", tone: "err" });
+      setRunState("fail");
+    }
+  };
 
   const startRun = async (autofix: boolean) => {
     setLines([]);
@@ -135,7 +165,7 @@ export function Review({ onArtifactsChanged, setHealth, onAutofixCompleted }: Pr
 
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <button
-            onClick={() => startRun(false)}
+            onClick={startLoop}
             disabled={runState === "running"}
             className="h-9 px-3 inline-flex items-center gap-2 rounded-md bg-ink-900 text-white text-sm font-medium hover:bg-black disabled:opacity-50"
           >
@@ -160,8 +190,18 @@ export function Review({ onArtifactsChanged, setHealth, onAutofixCompleted }: Pr
         </div>
 
         <RulesSection
-          onApproveAndRun={() => startRun(false)}
+          onApproveAndRun={startLoop}
           loopRunning={runState === "running"}
+        />
+
+        <IterationSection
+          loopId={activeLoopId}
+          onLoopCompleted={(status) => {
+            setRunState(status === "all_clear" ? "ok" : "fail");
+            onArtifactsChanged();
+          }}
+          setHealth={setHealth}
+          onSummary={setLoopSummary}
         />
 
         <section className="mt-6">
