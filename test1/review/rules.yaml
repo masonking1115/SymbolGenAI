@@ -1,0 +1,9 @@
+# Generated rules for the closed-loop design review.
+# Populated by test1/review/rule_gen.py (Phase 2). User-origin edits
+# survive regeneration (see rules with `origin: user`).
+#
+# Spec: docs/superpowers/specs/2026-05-29-closed-loop-design-review-design.md §3
+version: 1
+generated_at: ""
+sources_seen: []
+rules: []
