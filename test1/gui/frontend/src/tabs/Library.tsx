@@ -3,15 +3,42 @@ import { api, subscribeAgent } from "../api";
 import { I } from "../components/Icon";
 import type { LibraryPart, SymbolInfo, SymbolPin } from "../types";
 
+// Per-part symbol-generation state. Keyed by MPN so a generation in progress
+// survives switching to another part and back — the console no longer resets
+// or vanishes on part switch (the run keeps streaming into its own bucket, and
+// we re-attach to the live stream when the user returns).
+type GenStatus = "idle" | "running" | "ok" | "fail";
+interface GenEntry {
+  state: GenStatus;
+  log: string[];
+  runId?: string;
+}
+
 export function Library() {
   const [parts, setParts] = useState<LibraryPart[]>([]);
   const [sel, setSel] = useState<string | null>(null);
   const [sym, setSym] = useState<SymbolInfo | null>(null);
   const [filter, setFilter] = useState<"all" | "populated" | "missing">("all");
-  const [genState, setGenState] = useState<"idle" | "running" | "ok" | "fail">("idle");
-  const [genLog, setGenLog] = useState<string[]>([]);
+  // mpn -> generation state/log/runId. The displayed console reads from here
+  // for the current `sel`, so it's stable across part switches.
+  const [gen, setGen] = useState<Record<string, GenEntry>>({});
   const [upState, setUpState] = useState<"idle" | "uploading" | "ok" | "fail">("idle");
   const [upMsg, setUpMsg] = useState<string>("");
+
+  // Active live subscriptions, keyed by run_id, so we tear each down exactly
+  // once and never double-subscribe when re-attaching on return to a part.
+  const subs = useRef<Map<string, () => void>>(new Map());
+
+  const setGenEntry = (mpn: string, patch: Partial<GenEntry>) =>
+    setGen((g) => {
+      const base: GenEntry = g[mpn] ?? { state: "idle", log: [] };
+      return { ...g, [mpn]: { ...base, ...patch } };
+    });
+  const appendGenLine = (mpn: string, line: string) =>
+    setGen((g) => {
+      const cur = g[mpn] ?? { state: "running" as GenStatus, log: [] };
+      return { ...g, [mpn]: { ...cur, log: [...cur.log, line] } };
+    });
 
   const refreshParts = () =>
     api
@@ -23,48 +50,90 @@ export function Library() {
     refreshParts();
   }, []);
 
+  // Tear down every live subscription when the whole tab unmounts.
+  useEffect(() => {
+    const map = subs.current;
+    return () => {
+      for (const stop of map.values()) stop();
+      map.clear();
+    };
+  }, []);
+
+  // Attach (or re-attach) to a run's live stream. The backend replays the full
+  // buffered stream_log to every new subscriber, so we always start the visible
+  // log from the spawn header and let the stream (replay + live tail) rebuild
+  // it. That makes re-attach after a part switch idempotent: returning to an
+  // in-progress part repopulates the whole console, then continues live.
+  // Idempotent on run_id — a run we're already subscribed to is left alone.
+  const attachRun = (mpn: string, runId: string, header: string[]) => {
+    if (subs.current.has(runId)) return;
+    // Reset to the header; the replayed stream_log appends the rest.
+    setGenEntry(mpn, { state: "running", log: header, runId });
+    const stop = subscribeAgent(
+      runId,
+      (line) => appendGenLine(mpn, line),
+      ({ status }) => {
+        subs.current.delete(runId);
+        const ok = status === "ok" || status === "replayed";
+        setGen((g) => {
+          const cur = g[mpn] ?? { state: "running" as GenStatus, log: [] };
+          return {
+            ...g,
+            [mpn]: { ...cur, state: ok ? "ok" : "fail", log: [...cur.log, `✓ subagent ${status}`] },
+          };
+        });
+        refreshParts();
+        // If this part is the one on screen, refresh its symbol view.
+        setSel((cur) => {
+          if (cur === mpn) api.librarySymbol(mpn).then(setSym).catch(() => {});
+          return cur;
+        });
+      },
+    );
+    subs.current.set(runId, stop);
+  };
+
   useEffect(() => {
     if (!sel) {
       setSym(null);
       return;
     }
     setSym(null);
-    setGenState("idle");
-    setGenLog([]);
     setUpState("idle");
     setUpMsg("");
     api.librarySymbol(sel)
       .then((d) => setSym(d))
       .catch(() => setSym({ present: false, mpn: sel }));
+    // Re-attach to an in-progress generation for this part (if any) whose live
+    // subscription we don't currently hold (e.g. after switching away + back).
+    // The backend replays the full stream, so we hand a minimal header.
+    const entry = gen[sel];
+    if (entry?.state === "running" && entry.runId && !subs.current.has(entry.runId)) {
+      attachRun(sel, entry.runId, [`▶ symbol-gen subagent for ${sel} (reconnected)…`]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sel]);
 
   const generateSymbol = async () => {
     if (!sel) return;
-    setGenState("running");
-    setGenLog([`▶ spawning symbol-gen subagent for ${sel}…`]);
+    const mpn = sel;
+    setGenEntry(mpn, { state: "running", log: [`▶ spawning symbol-gen subagent for ${mpn}…`] });
     try {
-      const { run_id, datasheet } = await api.symbolGen(sel);
-      setGenLog((l) => [...l, `  datasheet: ${datasheet}`]);
-      subscribeAgent(
-        run_id,
-        (line) => setGenLog((l) => [...l, line]),
-        ({ status }) => {
-          setGenState(status === "ok" ? "ok" : "fail");
-          setGenLog((l) => [...l, `✓ subagent ${status}`]);
-          refreshParts();
-          if (sel) {
-            api.librarySymbol(sel).then(setSym).catch(() => {});
-          }
-        },
-      );
+      const { run_id, datasheet } = await api.symbolGen(mpn);
+      // Fresh run: the spawn header + datasheet line precede the streamed log.
+      attachRun(mpn, run_id, [`▶ spawning symbol-gen subagent for ${mpn}…`, `  datasheet: ${datasheet}`]);
     } catch (e) {
-      setGenState("fail");
-      setGenLog((l) => [
-        ...l,
-        `error: ${e instanceof Error ? e.message : String(e)}`,
-      ]);
+      setGenEntry(mpn, {
+        state: "fail",
+        log: [...(gen[mpn]?.log ?? []), `error: ${e instanceof Error ? e.message : String(e)}`],
+      });
     }
   };
+
+  // Derived view for the currently-selected part.
+  const curGen = sel ? gen[sel] : undefined;
+  const genState: GenStatus = curGen?.state ?? "idle";
+  const genLog: string[] = curGen?.log ?? [];
 
   const uploadSymbol = async (file: File) => {
     if (!sel) return;
@@ -359,7 +428,7 @@ function PartDetail({
             <div className="text-[11px] uppercase tracking-wide text-ink-500 mb-1">
               Symbol-gen subagent
             </div>
-            <div className="border border-edge rounded-md bg-[#0F1115] text-[#D6DAE0] max-h-[260px] overflow-auto thin-scroll px-2.5 py-1.5 font-mono text-[11px] leading-[1.5]">
+            <div className="border border-edge rounded-md bg-white text-ink-800 max-h-[260px] overflow-auto thin-scroll px-2.5 py-1.5 font-mono text-[11px] leading-[1.5]">
               {genLog.map((l, i) => (
                 <div key={i} className="whitespace-pre-wrap">
                   {l}

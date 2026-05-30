@@ -2,6 +2,34 @@
 
 Deferred work items (not blocking; pick up when convenient).
 
+## Console UX (2026-05-30) — IN PROGRESS
+
+- [ ] **Symbol-gen console survives part switching.** In the Library tab, kicking
+      off "Generate symbol" shows the live subagent console; switching to another
+      part and back makes the console vanish and only restart when the run
+      finishes. Root cause: `genLog`/`genState` are reset by the `useEffect([sel])`
+      and the live subscription is parent-local with no re-attach. Fix: track
+      per-part run state (run_id keyed by MPN), don't clear a running part's log on
+      switch, and re-attach to the in-progress run on return.
+- [ ] **Make all console displays white** to match the other sections (the
+      symbol-gen subagent console is currently dark `bg-[#0F1115]`). Apply a light
+      background uniformly to every console/live-stream view (Library symbol-gen,
+      Workflow console steps/raw, any LiveConsole/agent-stream panels).
+- [ ] **Zoom + pan the symbol in the parts viewer.** The Library tab's
+      `SymbolViewer` renders the generated symbol SVG statically — add zoom
+      (wheel / +- buttons) and pan (drag) so the user can inspect pin detail.
+      Likely a pan/zoom wrapper around the SVG `<img>`/inline SVG with a reset
+      control; keep it lightweight (no heavy dep unless already present).
+- [ ] **Inspect the TNPW06035K11BEEA symbol-gen run output.** User pasted a trace
+      showing the subagent ended `✓ subagent ok` but the `author_symbol` venv-Python
+      invocation kept hitting per-call approval prompts (not allowlisted) — same
+      class of blocker found in the sim-setup run (datasheet read_pdf). The symbol
+      DID get authored (files present, glyph valid), but the agent had to fight the
+      allowlist. Root fix: add `Bash(*altium_spike/.venv/Scripts/python.exe*)` (and/or
+      `Bash(*python* -m test1.altium.author_symbol*)`) to settings.local.json so
+      symbol-gen + sim agents run the venv Python without prompts. Verify the run
+      log for any silent fallback/skip.
+
 ## UI cleanup + Resources uploads (2026-05-30) — DONE
 
 - [x] **Clean up the Schematic Generator + Design Resources tabs UI.** Framing

@@ -104,6 +104,23 @@ export function Review({
     await refresh();
   }, [refresh]);
 
+  // Closed-loop findings have no action list — "Apply suggested fix" drops the
+  // hint into the changelog (tagged closed_loop) so the existing Regenerate /
+  // apply-and-generate machinery picks it up (apply -> build -> re-eval). We
+  // build a self-contained instruction so the apply agent has full context.
+  const onApplyToChangelog = useCallback(async (f: Finding, fix: string) => {
+    const rid = (f.rule_id as string) || "";
+    const subj = (f.component as string) || (f.sheet as string) || "";
+    const title = (f.title as string) || f.message || f.rule || "";
+    const summary = [
+      rid && `[${rid}]`,
+      subj && `${subj}:`,
+      fix,
+      title && `(finding: ${title})`,
+    ].filter(Boolean).join(" ");
+    await api.changelogAdd(summary, { source: "closed_loop" });
+  }, []);
+
   useEffect(() => {
     refresh();
   }, [refresh]);
@@ -263,6 +280,7 @@ export function Review({
                   loopRunning={runState === "running"}
                   onApply={onApply}
                   onDismiss={onDismiss}
+                  onApplyToChangelog={onApplyToChangelog}
                 />
               ))}
               </div>
@@ -308,6 +326,7 @@ interface FindingRowProps {
   loopRunning: boolean;
   onApply: (f: Finding, a: FindingAction, idx: number) => void;
   onDismiss: (f: Finding) => void;
+  onApplyToChangelog: (f: Finding, fix: string) => Promise<void>;
 }
 
 const STATUS_TONE: Record<string, { bg: string; text: string; label: string }> = {
@@ -323,7 +342,14 @@ const ACTION_TONE: Record<string, string> = {
   verify: "border-edge bg-rail/40",
 };
 
-function FindingRow({ f, queued, loopRunning, onApply, onDismiss }: FindingRowProps) {
+// Pull a readable string off a Finding by key, tolerating the `unknown` index
+// signature (closed-loop findings carry observed/impact/title/sheet there).
+function fstr(f: Finding, key: string): string | undefined {
+  const v = (f as Record<string, unknown>)[key];
+  return typeof v === "string" && v.trim() ? v.trim() : undefined;
+}
+
+function FindingRow({ f, queued, loopRunning, onApply, onDismiss, onApplyToChangelog }: FindingRowProps) {
   const sev = ((f.severity as string) || "INFO").toUpperCase() as Severity;
   const tone = SEV_TONE[sev] ?? SEV_TONE.INFO;
   const actions: FindingAction[] = (f.actions as FindingAction[]) ?? [];
@@ -331,39 +357,66 @@ function FindingRow({ f, queued, loopRunning, onApply, onDismiss }: FindingRowPr
   const defaultIdx = Math.max(
     0, actions.findIndex((a) => a.kind === "fix"));
   const [picked, setPicked] = useState<number>(defaultIdx);
-  const [expanded, setExpanded] = useState<boolean>(false);
+  const [open, setOpen] = useState<boolean>(false);
+  // Local lifecycle for the "Apply suggested fix" → changelog button (the
+  // changelog is a flat list, not per-finding, so this row owns its own state).
+  const [clState, setClState] = useState<"idle" | "adding" | "added" | "error">("idle");
   const status = queued?.status;
   const statusTone = status ? STATUS_TONE[status] : undefined;
 
+  // Headline: the closed-loop writes the descriptive text in `title`; the
+  // PDF/linter path uses `message`. Show whichever exists, title first.
+  const headline = fstr(f, "title") || f.message || f.rule || "(finding)";
+
+  // Suggested fix: prefer an explicit "fix" action's text, else the fix_hint.
+  const fixAction = actions.find((a) => a.kind === "fix");
+  const suggestedFix = fixAction?.text || fstr(f, "fix_hint");
+
+  // Extra structured context (closed-loop). Only render rows that exist.
+  const observed = fstr(f, "observed");
+  const impact = fstr(f, "impact");
+  const sheet = fstr(f, "sheet");
+  const detail = fstr(f, "detail");
+  // Anything worth expanding for?
+  const hasDetail =
+    !!suggestedFix || !!observed || !!impact || !!detail ||
+    actions.length > 0 || (f.refs ?? []).length > 0;
+
   return (
-    <div className="rounded-md border border-edge bg-white px-3 py-2.5">
-      <div className="flex items-start gap-3">
-        <span className={"mt-1.5 inline-block w-2 h-2 rounded-full " + tone.dot} />
+    <div className="rounded-md border border-edge bg-white overflow-hidden">
+      {/* ── Header (always visible; the click target that toggles details) ── */}
+      <button
+        type="button"
+        onClick={() => hasDetail && setOpen((v) => !v)}
+        className={
+          "w-full text-left flex items-start gap-2.5 px-3 py-2.5 " +
+          (hasDetail ? "cursor-pointer hover:bg-rail/30" : "cursor-default")
+        }
+        aria-expanded={open}
+      >
+        {hasDetail ? (
+          <I.Caret
+            size={11}
+            className={"mt-1 shrink-0 text-ink-400 transition-transform " + (open ? "rotate-180" : "")}
+          />
+        ) : (
+          <span className="mt-1 w-[11px] shrink-0" />
+        )}
+        <span className={"mt-1 inline-block w-2 h-2 rounded-full shrink-0 " + tone.dot} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 text-xs flex-wrap">
             <span className={"font-medium " + tone.text}>{sev}</span>
             {f.component && (
-              <span className="text-ink-900 font-mono font-medium">
-                {f.component}
-              </span>
+              <span className="text-ink-900 font-mono font-medium">{f.component}</span>
             )}
-            {f.category && (
-              <span className="text-ink-500">· {f.category}</span>
-            )}
-            {(f.refs ?? []).length > 0 && (
-              <span className="text-ink-500 truncate max-w-[40%]">
-                · {(f.refs ?? []).join(", ")}
-              </span>
-            )}
+            {f.category && <span className="text-ink-500">· {f.category}</span>}
             {f.rule_id && (
               <span className="text-[10px] font-mono text-ink-500 bg-rail/40 rounded px-1">
                 {f.rule_id}
               </span>
             )}
             {f.iteration_round !== undefined && (
-              <span className="text-[10px] text-ink-500">
-                round {f.iteration_round}
-              </span>
+              <span className="text-[10px] text-ink-500">round {f.iteration_round}</span>
             )}
             {(f.fired_count ?? 1) > 1 && (
               <span
@@ -374,12 +427,7 @@ function FindingRow({ f, queued, loopRunning, onApply, onDismiss }: FindingRowPr
               </span>
             )}
             {statusTone && (
-              <span
-                className={
-                  "text-[10px] rounded px-1.5 py-0.5 ml-auto " +
-                  statusTone.bg + " " + statusTone.text
-                }
-              >
+              <span className={"text-[10px] rounded px-1.5 py-0.5 ml-auto " + statusTone.bg + " " + statusTone.text}>
                 {statusTone.label}
               </span>
             )}
@@ -387,11 +435,105 @@ function FindingRow({ f, queued, loopRunning, onApply, onDismiss }: FindingRowPr
               <span className="text-ink-500 ml-auto">{f.source}</span>
             )}
           </div>
-          <div className="text-sm text-ink-900 mt-0.5">{f.message}</div>
+          {/* One-line headline (clamped) when collapsed; full text when open. */}
+          <div className={"text-sm text-ink-900 mt-0.5 " + (open ? "" : "truncate")}>
+            {headline}
+          </div>
+          {/* A peek at the fix even when collapsed, so the row is actionable
+              at a glance — full fix lives in the expanded panel. */}
+          {!open && suggestedFix && (
+            <div className="text-[11.5px] text-ink-500 italic mt-0.5 truncate">
+              fix: {suggestedFix}
+            </div>
+          )}
+        </div>
+      </button>
 
-          {/* Action items: expanded picker; default-selected first Fix.   */}
+      {/* ── Expanded detail: Suggested fix + structured context + actions ── */}
+      {open && hasDetail && (
+        <div className="px-3 pb-3 pt-0 border-t border-edge/60 space-y-2.5">
+          {/* Suggested fix — the headline of the dropdown. For closed-loop
+              findings (no explicit action list) this also offers an inline
+              "Apply" that queues the hint for the chat agent to implement. */}
+          {suggestedFix && (
+            <div className="mt-2.5 rounded-md border border-ok/30 bg-ok/[0.05] px-2.5 py-2">
+              <div className="flex items-center gap-1.5 text-[11px] font-medium text-ok mb-0.5">
+                <I.Wrench size={12} /> Suggested fix
+              </div>
+              <div className="text-[12.5px] text-ink-900">{suggestedFix}</div>
+              {/* Only when there's no explicit action picker below — otherwise
+                  the picker's Apply button is the canonical control. This adds
+                  the fix to the changelog; Regenerate then applies + rebuilds. */}
+              {actions.length === 0 && (
+                <div className="flex items-center gap-2 mt-2 flex-wrap">
+                  <button
+                    onClick={async () => {
+                      setClState("adding");
+                      try {
+                        await onApplyToChangelog(f, suggestedFix);
+                        setClState("added");
+                      } catch {
+                        setClState("error");
+                      }
+                    }}
+                    disabled={clState === "adding" || clState === "added" || loopRunning}
+                    className="h-7 px-2.5 inline-flex items-center gap-1 rounded-md bg-ink-900 text-white text-[11.5px] font-medium hover:bg-black disabled:opacity-50"
+                    title="Add this fix to the changelog; Regenerate then applies it (apply → build → re-eval)"
+                  >
+                    <I.Wrench size={12} />
+                    {clState === "adding" ? "Adding…" :
+                     clState === "added" ? "Added to changelog" :
+                     "Apply suggested fix"}
+                  </button>
+                  {clState === "added" && (
+                    <span className="text-[11px] text-ok inline-flex items-center gap-1">
+                      <I.Check size={12} /> queued — hit Regenerate to apply
+                    </span>
+                  )}
+                  {clState === "error" && (
+                    <span className="text-[11px] text-err">couldn't add — try again</span>
+                  )}
+                  {clState === "idle" && loopRunning && (
+                    <span className="text-[10.5px] text-ink-400">loop running…</span>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Structured context fields (closed-loop). */}
+          {(observed || impact || sheet || (f.refs ?? []).length > 0) && (
+            <dl className="text-[12px] grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+              {observed && (
+                <>
+                  <dt className="text-ink-500">Observed</dt>
+                  <dd className="text-ink-800 whitespace-pre-wrap">{observed}</dd>
+                </>
+              )}
+              {impact && (
+                <>
+                  <dt className="text-ink-500">Impact</dt>
+                  <dd className="text-ink-800 whitespace-pre-wrap">{impact}</dd>
+                </>
+              )}
+              {sheet && (
+                <>
+                  <dt className="text-ink-500">Sheet</dt>
+                  <dd className="text-ink-800 font-mono">{sheet}</dd>
+                </>
+              )}
+              {(f.refs ?? []).length > 0 && (
+                <>
+                  <dt className="text-ink-500">Refs</dt>
+                  <dd className="text-ink-800 font-mono">{(f.refs ?? []).join(", ")}</dd>
+                </>
+              )}
+            </dl>
+          )}
+
+          {/* Action picker (PDF-parser findings carry Fix/Alt/Verify options). */}
           {actions.length > 0 && (
-            <div className="mt-2 space-y-1">
+            <div className="space-y-1">
               {actions.map((a, i) => (
                 <label
                   key={i}
@@ -411,9 +553,7 @@ function FindingRow({ f, queued, loopRunning, onApply, onDismiss }: FindingRowPr
                       onChange={() => setPicked(i)}
                     />
                     <div className="min-w-0">
-                      <span className="font-mono uppercase text-[10px] mr-1.5 text-ink-500">
-                        {a.kind}
-                      </span>
+                      <span className="font-mono uppercase text-[10px] mr-1.5 text-ink-500">{a.kind}</span>
                       <span className="text-ink-900">{a.text}</span>
                     </div>
                   </div>
@@ -438,31 +578,17 @@ function FindingRow({ f, queued, loopRunning, onApply, onDismiss }: FindingRowPr
                     cancel
                   </button>
                 )}
-                <button
-                  onClick={() => setExpanded((v) => !v)}
-                  className="h-7 px-2 text-[11.5px] text-ink-500 hover:text-ink-900 ml-auto"
-                >
-                  {expanded ? "hide details" : "details"}
-                </button>
               </div>
             </div>
           )}
 
-          {/* Fallback: legacy single fix_hint for findings without an
-              actions array (KiCad path). */}
-          {actions.length === 0 && f.fix_hint && (
-            <div className="mt-1.5 text-[11.5px] text-ink-500 italic">
-              hint: {f.fix_hint}
-            </div>
-          )}
-
-          {expanded && f.detail && (
-            <div className="text-xs text-ink-700 mt-2 whitespace-pre-wrap border-t border-edge pt-2">
-              {f.detail}
+          {detail && (
+            <div className="text-xs text-ink-700 whitespace-pre-wrap border-t border-edge pt-2">
+              {detail}
             </div>
           )}
         </div>
-      </div>
+      )}
     </div>
   );
 }

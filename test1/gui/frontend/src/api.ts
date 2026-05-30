@@ -158,7 +158,7 @@ export const api = {
   changelog: () => j<{ items: ChangelogItem[] }>("/api/changelog"),
   changelogAdd: (
     summary: string,
-    origin?: { source?: "sim" | "user"; sim_block?: string; sim_type?: string },
+    origin?: { source?: "sim" | "user" | "closed_loop"; sim_block?: string; sim_type?: string },
   ) =>
     j<ChangelogItem>("/api/changelog", {
       method: "POST",
