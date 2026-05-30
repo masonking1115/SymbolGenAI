@@ -66,9 +66,30 @@ export function Resources() {
           {sub === "datasheets" && <DatasheetsPanel />}
           {sub === "requirements" && <RequirementsPanel />}
           {sub === "skills" && <SkillsPanel />}
+          <section className="mt-6 px-3 py-2 rounded border border-edge bg-rail/30 text-[11.5px]">
+            <div className="text-ink-500 mb-1">Providers</div>
+            <ProvidersBox />
+          </section>
         </div>
       </div>
     </div>
+  );
+}
+
+function ProvidersBox() {
+  const [p, setP] = useState<Record<string, string> | null>(null);
+  useEffect(() => {
+    fetch("/api/review/providers").then(r => r.json()).then(setP).catch(() => {});
+  }, []);
+  if (!p) return <div className="text-ink-500">loading…</div>;
+  return (
+    <ul className="grid grid-cols-2 gap-1">
+      {Object.entries(p).map(([slot, impl]) => (
+        <li key={slot} className="font-mono">
+          {slot}: <span className={impl.startsWith("Custom") ? "text-ok" : "text-ink-700"}>{impl}</span>
+        </li>
+      ))}
+    </ul>
   );
 }
 

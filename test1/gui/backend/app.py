@@ -2260,6 +2260,15 @@ def review_rules_delete(rule_id: str) -> dict:
     return {"ok": True, "rule_id": rule_id, "enabled": False}
 
 
+@app.get("/api/review/providers")
+def review_providers() -> dict:
+    """Diagnostic: which backend implementation is bound to each provider
+    slot (parts / knowledge / rulegen / chat). Surfaced in the Resources
+    tab so the user can confirm a Custom*APIProvider swap took effect."""
+    from test1.review.providers import configured_providers
+    return configured_providers()
+
+
 # ===========================================================================
 # Closed-loop design review -- Loop endpoints
 # ===========================================================================
