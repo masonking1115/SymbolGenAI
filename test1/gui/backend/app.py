@@ -2260,6 +2260,123 @@ def review_rules_delete(rule_id: str) -> dict:
     return {"ok": True, "rule_id": rule_id, "enabled": False}
 
 
+# ===========================================================================
+# Closed-loop design review -- Loop endpoints
+# ===========================================================================
+
+from test1.review import closed_loop as _loop_mod
+
+
+@app.post("/api/loop/start")
+async def loop_start() -> dict:
+    # Reject if another loop is currently running.
+    for L in _loop_mod._LOOPS.values():
+        if L.status == "running":
+            raise HTTPException(409, f"loop {L.loop_id} already running")
+    loop_id = _loop_mod.start_loop()
+    return {"loop_id": loop_id}
+
+
+@app.get("/api/loop/latest")
+def loop_latest() -> dict:
+    lid = _loop_mod.latest_loop_id()
+    if not lid:
+        return {"loop_id": None}
+    L = _loop_mod.get_loop(lid)
+    if L:
+        return _loop_mod.loop_summary(L)
+    # Fallback: read from disk
+    audit = _loop_mod.LOOPS_STATE_DIR / f"{lid}.json"
+    if audit.exists():
+        return json.loads(audit.read_text(encoding="utf-8"))
+    return {"loop_id": None}
+
+
+@app.get("/api/loop/{loop_id}")
+def loop_get(loop_id: str) -> dict:
+    L = _loop_mod.get_loop(loop_id)
+    if L:
+        return _loop_mod.loop_summary(L)
+    audit = _loop_mod.LOOPS_STATE_DIR / f"{loop_id}.json"
+    if audit.exists():
+        return json.loads(audit.read_text(encoding="utf-8"))
+    raise HTTPException(404, "no such loop")
+
+
+@app.get("/api/loop/{loop_id}/stream")
+async def loop_stream(loop_id: str) -> StreamingResponse:
+    L = _loop_mod.get_loop(loop_id)
+    if not L:
+        raise HTTPException(404, "no such loop")
+
+    async def gen() -> AsyncIterator[bytes]:
+        # Replay buffered events: we don't keep a buffer (subscribers attach
+        # for live events only). If the loop is already done, send a single
+        # 'done' frame from the audit so late subscribers don't hang.
+        if L.status != "running":
+            yield (f"event: done\ndata: "
+                   f"{json.dumps({'status': L.status, 'rounds': len(L.rounds), 'remaining': len(L.findings_current)})}"
+                   f"\n\n").encode()
+            return
+        q: asyncio.Queue = asyncio.Queue(maxsize=1000)
+        L.subscribers.append(q)
+        try:
+            while True:
+                item = await q.get()
+                if item is None:
+                    return
+                ev = item.get("event", "message")
+                data = json.dumps(item.get("data", {}))
+                yield f"event: {ev}\ndata: {data}\n\n".encode()
+        finally:
+            try:
+                L.subscribers.remove(q)
+            except ValueError:
+                pass
+
+    return StreamingResponse(gen(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-store",
+                                      "X-Accel-Buffering": "no"})
+
+
+@app.post("/api/loop/{loop_id}/cancel")
+def loop_cancel(loop_id: str) -> dict:
+    ok = _loop_mod.cancel_loop(loop_id)
+    if not ok:
+        raise HTTPException(404, "no such loop")
+    return {"ok": True}
+
+
+@app.post("/api/loop/{loop_id}/accept")
+def loop_accept(loop_id: str) -> dict:
+    L = _loop_mod.get_loop(loop_id)
+    if not L:
+        raise HTTPException(404, "no such loop")
+    _loop_mod.archive_snapshot(L)
+    return {"ok": True}
+
+
+class LoopRejectBody(BaseModel):
+    revert: list[str] | None = None    # refdes list for selective revert
+
+
+@app.post("/api/loop/{loop_id}/reject")
+async def loop_reject(loop_id: str, body: LoopRejectBody = LoopRejectBody()) -> dict:
+    L = _loop_mod.get_loop(loop_id)
+    if not L:
+        raise HTTPException(404, "no such loop")
+    _loop_mod.restore_from_snapshot(L, refdes_revert=body.revert)
+    # Rebuild once to refresh out/render
+    proc = await asyncio.create_subprocess_exec(
+        sys.executable, "-m", "test1.altium.build_project",
+        cwd=str(REPO_ROOT),
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+    )
+    out, _ = await proc.communicate()
+    return {"ok": True, "rebuild_status": proc.returncode == 0,
+            "rebuild_log_tail": out.decode("utf-8", errors="replace")[-2000:]}
+
+
 def main() -> None:
     import uvicorn
     uvicorn.run("app:app", host="127.0.0.1", port=8765, reload=False)
