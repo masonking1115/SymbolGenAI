@@ -2,6 +2,7 @@ import type {
   AgentDecision,
   ChangelogItem,
   ChatSession,
+  BomItem,
   ChatSessionMeta,
   Circuit,
   DatasheetItem,
@@ -228,6 +229,17 @@ export const api = {
     ),
   requirementFileUrl: (name: string) =>
     `/api/resources/requirements/file?name=${encodeURIComponent(name)}`,
+  // BOM (bill of materials) — .xlsx/.csv, stored in resources/bom/
+  resourcesBom: () =>
+    j<{ bom: BomItem[]; generated_exists: boolean }>("/api/resources/bom"),
+  uploadBom: (filename: string, contentB64: string) =>
+    j<{ ok: boolean; file: string; size: number }>("/api/resources/bom", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filename, content_b64: contentB64 }),
+    }),
+  bomFileUrl: (name: string) =>
+    `/api/resources/bom/file?name=${encodeURIComponent(name)}`,
   resourcesSkills: () => j<{ skills: SkillItem[] }>("/api/resources/skills"),
   resourcesSkill: (slug: string) =>
     j<{ slug: string; content: string }>(

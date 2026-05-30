@@ -93,6 +93,7 @@ FIX_QUEUE_JSON = PROJECT_DIR / "review" / "fix_queue.json"
 DESIGN_REQS = PROJECT_DIR / "design_requirements.md"
 RESOURCES_DIR = PROJECT_DIR / "resources"
 REQ_DOCS_DIR = RESOURCES_DIR / "requirements"   # uploaded requirement source docs
+BOM_DIR = RESOURCES_DIR / "bom"                 # uploaded BOM files (.xlsx/.csv)
 SKILLS_DIR = RESOURCES_DIR / "skills"           # agent skills (md), used by chat later
 
 # Make the sim package importable as `test1.sim` (repo root on path).
@@ -1094,7 +1095,9 @@ def resources_requirements() -> dict:
 @app.post("/api/resources/requirements")
 def resources_requirement_upload(body: RequirementUpload) -> dict:
     fname = _safe_upload_name(
-        body.filename, ("pdf", "docx", "doc", "pptx", "ppt", "md", "txt")
+        body.filename,
+        ("pdf", "docx", "doc", "pptx", "ppt", "md", "txt",
+         "xlsx", "xls", "csv", "rtf", "odt"),
     )
     raw = _decode_upload(body.content_b64)
     REQ_DOCS_DIR.mkdir(parents=True, exist_ok=True)
@@ -1106,6 +1109,48 @@ def resources_requirement_upload(body: RequirementUpload) -> dict:
 def resources_requirement_file(name: str = Query(...)):
     fname = Path(name).name
     target = REQ_DOCS_DIR / fname
+    if not target.exists() or not target.is_file():
+        raise HTTPException(404, "no such file")
+    media = mimetypes.guess_type(str(target))[0] or "application/octet-stream"
+    return FileResponse(target, media_type=media, filename=fname)
+
+
+# ---- BOM (bill of materials) ---------------------------------------------
+# A Design-Resources sub-tab next to Datasheets. Accepts .xlsx / .csv BOM files
+# (e.g. the generated test1_bom.xlsx). Stored under resources/bom/.
+
+class BomUpload(BaseModel):
+    filename: str
+    content_b64: str
+
+
+@app.get("/api/resources/bom")
+def resources_bom() -> dict:
+    """Every BOM file uploaded to resources/bom/ (+ whether the generated
+    test1_bom.xlsx exists in the project root so the UI can offer it)."""
+    files: list[dict] = []
+    if BOM_DIR.exists():
+        for f in sorted(BOM_DIR.iterdir(), key=lambda p: p.name.lower()):
+            if f.is_file() and f.suffix.lower() in (".xlsx", ".xls", ".csv"):
+                files.append({"name": f.name, "size": f.stat().st_size,
+                              "mtime": f.stat().st_mtime})
+    return {"bom": files, "generated_exists": (PROJECT_DIR / "test1_bom.xlsx").exists()}
+
+
+@app.post("/api/resources/bom")
+def resources_bom_upload(body: BomUpload) -> dict:
+    """Upload a BOM (.xlsx / .xls / .csv) into resources/bom/."""
+    fname = _safe_upload_name(body.filename, ("xlsx", "xls", "csv"))
+    raw = _decode_upload(body.content_b64)
+    BOM_DIR.mkdir(parents=True, exist_ok=True)
+    (BOM_DIR / fname).write_bytes(raw)
+    return {"ok": True, "file": fname, "size": len(raw)}
+
+
+@app.get("/api/resources/bom/file")
+def resources_bom_file(name: str = Query(...)):
+    fname = Path(name).name
+    target = BOM_DIR / fname
     if not target.exists() or not target.is_file():
         raise HTTPException(404, "no such file")
     media = mimetypes.guess_type(str(target))[0] or "application/octet-stream"

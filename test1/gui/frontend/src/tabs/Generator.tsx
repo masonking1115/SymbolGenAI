@@ -3,6 +3,7 @@ import { api, subscribeAgent, subscribeRun } from "../api";
 import { ChangelogPanel } from "../components/ChangelogPanel";
 import { Console } from "../components/Console";
 import { I } from "../components/Icon";
+import { PageHeader } from "../components/PageHeader";
 import type {
   AgentDecision,
   Freshness,
@@ -343,7 +344,7 @@ export function Generator({
   return (
     <div className="h-full overflow-auto thin-scroll">
       <div className="px-6 py-5 max-w-[1100px]">
-        <SectionHeader
+        <PageHeader
           eyebrow="Phase 2 · Schematic Generator"
           title="Build, render, and lint the schematic from the YAML netlists"
         />
@@ -700,15 +701,6 @@ export function Generator({
           />
         </SubSection>
       </div>
-    </div>
-  );
-}
-
-function SectionHeader({ eyebrow, title }: { eyebrow: string; title: string }) {
-  return (
-    <div>
-      <div className="text-[11px] tracking-wide uppercase text-ink-500">{eyebrow}</div>
-      <h2 className="text-[18px] font-semibold text-ink-900 mt-0.5">{title}</h2>
     </div>
   );
 }

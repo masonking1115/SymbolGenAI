@@ -4,6 +4,7 @@ import { DiffAndAccept } from "../components/DiffAndAccept";
 import type { DiffMode } from "../components/DiffPanes";
 import { FindingsSummary } from "../components/FindingsSummary";
 import { I } from "../components/Icon";
+import { PageHeader } from "../components/PageHeader";
 import { WorkflowSection } from "../components/WorkflowSection";
 import { RulesSection } from "../components/RulesSection";
 import type { Finding, FindingAction, FindingsReport, FixQueueEntry,
@@ -164,10 +165,10 @@ export function Review({
   return (
     <div className="h-full overflow-auto thin-scroll">
       <div className="px-6 py-5 max-w-[1100px]">
-        <div className="text-[11px] tracking-wide uppercase text-ink-500">Phase 3 · Design Review</div>
-        <h2 className="text-[18px] font-semibold text-ink-900 mt-0.5">
-          Cross-reference schematic against datasheets + requirements
-        </h2>
+        <PageHeader
+          eyebrow="Phase 3 · Design Review"
+          title="Cross-reference schematic against datasheets + requirements"
+        />
 
         <div className="mt-4 grid grid-cols-4 gap-3">
           <Stat label="ERRORs" v={sum.ERROR} tone={sum.ERROR ? "err" : "ok"} />

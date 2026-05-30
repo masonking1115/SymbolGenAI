@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { api } from "../api";
 import { I } from "../components/Icon";
+import { PageHeader } from "../components/PageHeader";
 import type {
+  BomItem,
   DatasheetItem,
   RequirementDoc,
   ResourceSubTab,
@@ -11,6 +13,7 @@ import type {
 
 const SUBS: { key: ResourceSubTab; label: string }[] = [
   { key: "datasheets", label: "Datasheets" },
+  { key: "bom", label: "BOM" },
   { key: "requirements", label: "Design Requirements" },
   { key: "skills", label: "Skills" },
 ];
@@ -40,8 +43,12 @@ export function Resources() {
   const [sub, setSub] = useState<ResourceSubTab>("datasheets");
   return (
     <div className="h-full flex flex-col min-h-0">
-      <div className="px-4 pt-3 shrink-0">
-        <div className="flex items-center gap-1 border-b border-edge">
+      <div className="px-6 pt-5 shrink-0">
+        <PageHeader
+          eyebrow="Phase 1 · Design Resources"
+          title="Datasheets, BOM, requirements, and skills the pipeline draws on"
+        />
+        <div className="mt-4 flex items-center gap-1 border-b border-edge">
           {SUBS.map((s) => {
             const on = s.key === sub;
             return (
@@ -61,9 +68,10 @@ export function Resources() {
           })}
         </div>
       </div>
-      <div className="flex-1 min-h-0 overflow-auto thin-scroll px-4 py-4">
-        <div className="max-w-[820px]">
+      <div className="flex-1 min-h-0 overflow-auto thin-scroll px-6 py-4">
+        <div className="max-w-[900px]">
           {sub === "datasheets" && <DatasheetsPanel />}
+          {sub === "bom" && <BomPanel />}
           {sub === "requirements" && <RequirementsPanel />}
           {sub === "skills" && <SkillsPanel />}
           <section className="mt-6 px-3 py-2 rounded border border-edge bg-rail/30 text-[11.5px]">
@@ -273,7 +281,7 @@ function RequirementsPanel() {
     <div className="space-y-5">
       <SectionIntro
         title="Design Requirements"
-        note="Upload requirement source documents (PDF, DOCX, PPTX). These are kept alongside the active design_requirements.md spec the pipeline reads."
+        note="Upload requirement source documents — PDF, Markdown, Word (.docx), PowerPoint (.pptx), Excel (.xlsx/.xls), CSV, or plain text. These are kept alongside the active design_requirements.md spec the pipeline reads."
       />
 
       <div className="rounded-lg border border-edge bg-rail/40 p-3">
@@ -284,7 +292,7 @@ function RequirementsPanel() {
           <input
             ref={fileRef}
             type="file"
-            accept=".pdf,.docx,.doc,.pptx,.ppt,.md,.txt"
+            accept=".pdf,.docx,.doc,.pptx,.ppt,.md,.txt,.xlsx,.xls,.csv,.rtf,.odt"
             disabled={busy}
             onChange={(e) => {
               const f = e.target.files?.[0];
@@ -331,6 +339,103 @@ function RequirementsPanel() {
                 </a>
                 <span className="ml-auto text-[11px] text-ink-500 shrink-0">
                   {fmtSize(d.size)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// BOM (bill of materials)
+// ---------------------------------------------------------------------------
+function BomPanel() {
+  const [files, setFiles] = useState<BomItem[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      const r = await api.resourcesBom();
+      setFiles(r.bom);
+    } catch {
+      // ignore
+    }
+  }, []);
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const upload = async (file: File) => {
+    setBusy(true);
+    setErr("");
+    try {
+      const b64 = await readAsBase64(file);
+      await api.uploadBom(file.name, b64);
+      if (fileRef.current) fileRef.current.value = "";
+      await refresh();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-5">
+      <SectionIntro
+        title="BOM"
+        note="Bill of materials for the design. Upload a .xlsx or .csv — the generated test1_bom.xlsx is included to start."
+      />
+
+      <div className="rounded-lg border border-edge bg-rail/40 p-3">
+        <div className="text-[11px] uppercase tracking-wide text-ink-500 mb-2">
+          Upload BOM
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".xlsx,.xls,.csv"
+            disabled={busy}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) upload(f);
+            }}
+            className="text-sm text-ink-700 file:mr-2 file:h-9 file:px-3 file:rounded-md file:border file:border-edge file:bg-white file:text-ink-700 file:text-sm hover:file:border-ink-300"
+          />
+          {busy && <span className="text-xs text-ink-500">Uploading…</span>}
+        </div>
+        {err && <div className="mt-2 text-xs text-err">{err}</div>}
+      </div>
+
+      <div className="space-y-2">
+        <div className="text-[11px] uppercase tracking-wide text-ink-500">
+          BOM files
+        </div>
+        {files.length === 0 ? (
+          <Empty>No BOM files yet. Upload a .xlsx or .csv above.</Empty>
+        ) : (
+          <ul className="rounded-lg border border-edge divide-y divide-edge">
+            {files.map((f) => (
+              <li key={f.name} className="px-3 py-2 flex items-center gap-2">
+                <span className="text-ok">
+                  <I.Bom size={16} />
+                </span>
+                <a
+                  href={api.bomFileUrl(f.name)}
+                  download
+                  className="text-[13px] text-ink-900 hover:underline truncate"
+                  title={`${f.name} — download`}
+                >
+                  {f.name}
+                </a>
+                <span className="ml-auto text-[11px] text-ink-500 shrink-0">
+                  {fmtSize(f.size)}
                 </span>
               </li>
             ))}

@@ -33,6 +33,40 @@ const BLOCK_LABEL: Record<string, string> = {
 const BLOCK_ORDER = ["opa_bias", "ldo_rail", "loadsw",
   "vddio_pdn", "vddd_pdn", "vdda1_pdn", "vdda2_pdn", "eeprom"];
 
+// Collapsible disclosure header matching the Schematic Generator tab's
+// "Linter checklist" SubSection: a rotating I.Caret chevron + label, instead of
+// the old ▸/▾ text glyphs. `level` tunes the type size (family vs nested block).
+function Disclosure({
+  open, onToggle, label, count, badge, level = "family",
+}: {
+  open: boolean;
+  onToggle: () => void;
+  label: string;
+  count?: number;
+  badge?: React.ReactNode;       // extra trailing content (e.g. "· 8 blocks · 9 ERROR")
+  level?: "family" | "block";
+}) {
+  const sized =
+    level === "family"
+      ? "text-[12.5px] font-medium text-ink-900"
+      : "text-[11px] font-medium text-ink-800";
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className="w-full text-left flex items-center gap-1.5 hover:opacity-80 transition-opacity"
+    >
+      <I.Caret
+        size={level === "family" ? 13 : 11}
+        className={"transition-transform text-ink-500 shrink-0 " + (open ? "rotate-180" : "")}
+      />
+      <span className={sized}>{label}</span>
+      {count !== undefined && <span className="text-[10.5px] text-ink-500">({count})</span>}
+      {badge}
+    </button>
+  );
+}
+
 export function RulesSection({ loopRunning }: Props) {
   const [data, setData] = useState<RulesListResponse | null>(null);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});  // by family
@@ -159,14 +193,14 @@ export function RulesSection({ loopRunning }: Props) {
             const open = !!expanded[fam];
             return (
               <div key={fam}>
-                <button
-                  onClick={() => setExpanded(e => ({ ...e, [fam]: !open }))}
-                  className="text-[11.5px] text-ink-700 hover:text-ink-900 flex items-center gap-1.5"
-                >
-                  {open ? "▾" : "▸"} {FAMILY_LABEL[fam]} ({rules.length})
-                </button>
+                <Disclosure
+                  open={open}
+                  onToggle={() => setExpanded(e => ({ ...e, [fam]: !open }))}
+                  label={FAMILY_LABEL[fam]}
+                  count={rules.length}
+                />
                 {open && (
-                  <div className="mt-1.5 ml-3 space-y-1">
+                  <div className="mt-1.5 ml-[18px] space-y-1">
                     {rules.map(r => (
                       <RuleRow key={r.id} r={r} onToggle={toggleRule} onDelete={deleteRule} />
                     ))}
@@ -220,35 +254,38 @@ function BlocksGroup({
   const errCount = rules.filter(r => r.severity === "ERROR").length;
   return (
     <div>
-      <button
-        onClick={onToggleGroup}
-        className="text-[11.5px] text-ink-700 hover:text-ink-900 flex items-center gap-1.5"
-      >
-        {open ? "▾" : "▸"} {FAMILY_LABEL.blocks} ({rules.length})
-        <span className="text-[10px] text-ink-500">· {keys.length} blocks
-          {errCount > 0 && <span className="text-err"> · {errCount} ERROR</span>}
-        </span>
-      </button>
+      <Disclosure
+        open={open}
+        onToggle={onToggleGroup}
+        label={FAMILY_LABEL.blocks}
+        count={rules.length}
+        badge={
+          <span className="text-[10.5px] text-ink-500">· {keys.length} blocks
+            {errCount > 0 && <span className="text-err"> · {errCount} ERROR</span>}
+          </span>
+        }
+      />
       {open && (
-        <div className="mt-1.5 ml-3 space-y-1.5">
+        <div className="mt-1.5 ml-[18px] space-y-1.5">
           {keys.map(b => {
             const brules = byBlock[b];
             const bopen = !!blockOpen[`block:${b}`];
             const bErr = brules.filter(r => r.severity === "ERROR").length;
             return (
-              <div key={b} className="rounded border border-edge/70 bg-rail/10">
-                <button
-                  onClick={() => onToggleBlock(`block:${b}`)}
-                  className="w-full text-left px-2 py-1 text-[11px] text-ink-800 hover:text-ink-900 flex items-center gap-1.5"
-                >
-                  {bopen ? "▾" : "▸"}
-                  <span className="font-medium">{BLOCK_LABEL[b] || b}</span>
-                  <span className="text-[10px] text-ink-500">
-                    ({brules.length}{bErr > 0 && <span className="text-err"> · {bErr}E</span>})
-                  </span>
-                </button>
+              <div key={b} className="rounded border border-edge/70 bg-rail/10 px-2 py-1">
+                <Disclosure
+                  open={bopen}
+                  onToggle={() => onToggleBlock(`block:${b}`)}
+                  label={BLOCK_LABEL[b] || b}
+                  level="block"
+                  badge={
+                    <span className="text-[10px] text-ink-500">
+                      · {brules.length}{bErr > 0 && <span className="text-err"> · {bErr}E</span>}
+                    </span>
+                  }
+                />
                 {bopen && (
-                  <div className="px-2 pb-2 ml-2 space-y-1">
+                  <div className="pb-1 pt-1 ml-[18px] space-y-1">
                     {brules.map(r => (
                       <RuleRow key={r.id} r={r} onToggle={onToggleRule} onDelete={onDeleteRule} />
                     ))}

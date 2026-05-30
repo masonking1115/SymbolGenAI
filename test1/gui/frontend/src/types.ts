@@ -127,7 +127,7 @@ export type TabKey =
   | "review"
   | "simulation";
 
-export type ResourceSubTab = "datasheets" | "requirements" | "skills";
+export type ResourceSubTab = "datasheets" | "bom" | "requirements" | "skills";
 
 export interface DatasheetItem {
   mpn: string;
@@ -138,6 +138,12 @@ export interface DatasheetItem {
 export interface RequirementDoc {
   name: string;
   size: number;
+}
+
+export interface BomItem {
+  name: string;
+  size: number;
+  mtime: number;
 }
 
 export interface SkillItem {

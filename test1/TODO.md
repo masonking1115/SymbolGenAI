@@ -2,6 +2,21 @@
 
 Deferred work items (not blocking; pick up when convenient).
 
+## UI cleanup + Resources uploads (2026-05-30) — DONE
+
+- [x] **Clean up the Schematic Generator + Design Resources tabs UI.** Framing
+      pass (per user: "that's enough"): extracted a shared `PageHeader` component
+      (eyebrow + title) now used by Review, Generator, and Resources; gave Design
+      Resources a proper page header + aligned padding (px-6 py-5, max-w-900) so
+      it frames like the Review tab. (Deeper per-panel token polish deferred.)
+- [x] **Design Requirements accepts common file types.** Backend whitelist +
+      frontend `accept` now allow pdf, md, docx/doc, pptx/ppt, xlsx/xls, csv,
+      txt, rtf, odt; note updated. Verified .csv → 200.
+- [x] **Added a "BOM" sub-tab next to Datasheets.** New `BomPanel` + backend
+      GET/POST `/api/resources/bom` + file-serve (accepts .xlsx/.xls/.csv, stored
+      in `resources/bom/`); seeded the existing `test1_bom.xlsx` into it. Verified:
+      BOM listed, .csv accepted, .pdf rejected (400).
+
 ## Review — sim in the loop (IN PROGRESS 2026-05-30)
 
 - [ ] **Include simulation in the review evaluation, driven by an agent.** The
