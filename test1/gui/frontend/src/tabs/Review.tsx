@@ -231,6 +231,7 @@ export function Review({ onArtifactsChanged, setHealth, onAutofixCompleted }: Pr
                   key={f.id ?? i}
                   f={f}
                   queued={f.id ? queue.get(f.id) : undefined}
+                  loopRunning={runState === "running"}
                   onApply={onApply}
                   onDismiss={onDismiss}
                 />
@@ -293,6 +294,7 @@ function Stat({
 interface FindingRowProps {
   f: Finding;
   queued?: FixQueueEntry;
+  loopRunning: boolean;
   onApply: (f: Finding, a: FindingAction, idx: number) => void;
   onDismiss: (f: Finding) => void;
 }
@@ -310,7 +312,7 @@ const ACTION_TONE: Record<string, string> = {
   verify: "border-edge bg-rail/40",
 };
 
-function FindingRow({ f, queued, onApply, onDismiss }: FindingRowProps) {
+function FindingRow({ f, queued, loopRunning, onApply, onDismiss }: FindingRowProps) {
   const sev = ((f.severity as string) || "INFO").toUpperCase() as Severity;
   const tone = SEV_TONE[sev] ?? SEV_TONE.INFO;
   const actions: FindingAction[] = (f.actions as FindingAction[]) ?? [];
@@ -409,7 +411,7 @@ function FindingRow({ f, queued, onApply, onDismiss }: FindingRowProps) {
               <div className="flex items-center gap-2 mt-1">
                 <button
                   onClick={() => onApply(f, actions[picked], picked)}
-                  disabled={!f.id || status === "queued" || status === "applied"}
+                  disabled={!f.id || status === "queued" || status === "applied" || loopRunning}
                   className="h-7 px-2.5 inline-flex items-center gap-1 rounded-md bg-ink-900 text-white text-[11.5px] font-medium hover:bg-black disabled:opacity-50"
                 >
                   <I.Wrench size={12} />
