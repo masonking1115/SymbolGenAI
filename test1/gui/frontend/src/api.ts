@@ -14,6 +14,8 @@ import type {
   LoopSummary,
   RequirementDoc,
   Rule,
+  RuleGenEvent,
+  RuleGenSummary,
   RulesListResponse,
   RunHandle,
   RunStatus,
@@ -344,13 +346,18 @@ export const api = {
 
   // ---- Closed-loop design review: rules CRUD --------------------------
   rules: () => j<RulesListResponse>("/api/review/rules"),
+  // Kicks off background generation. Returns immediately with a job_id;
+  // subscribe via subscribeRuleGen(job_id, ...) for live phase events.
   generateRules: () =>
-    j<{
-      count_total: number;
-      count_by_family: { schematic: number; simulation: number; design: number };
-      conflicts: { id: string; user_title: string; generated_title: string }[];
-      rejected_unverifiable: { id: string; reason: string }[];
-    }>("/api/review/rules/generate", { method: "POST" }),
+    j<{ job_id: string }>("/api/review/rules/generate", { method: "POST" }),
+  ruleGenStatus: (jobId: string) =>
+    j<RuleGenSummary>(
+      `/api/review/rules/generate/${encodeURIComponent(jobId)}`,
+    ),
+  ruleGenLatest: () =>
+    j<RuleGenSummary | { job_id: null }>(
+      "/api/review/rules/generate/latest",
+    ),
   editRule: (rule_id: string, patch: Partial<Rule>) =>
     j<{ ok: boolean; rule: Rule }>("/api/review/rules/edit", {
       method: "POST",
@@ -501,6 +508,72 @@ export function subscribeLoop(
   });
   es.onerror = () => {
     if (!closed) { closed = true; es.close(); onDone("stream_error"); }
+  };
+  return () => { closed = true; es.close(); };
+}
+
+/** Subscribe to a rule-gen job's SSE phase stream. Returns an unsubscribe fn.
+ *  Mirrors subscribeLoop: distinct named events per phase, plus a terminal
+ *  `done` or `error` frame that closes the connection. */
+export function subscribeRuleGen(
+  jobId: string,
+  onEvent: (ev: RuleGenEvent) => void,
+  onDone: (status: "ok" | "fail" | "stream_error") => void,
+): () => void {
+  let closed = false;
+  const es = new EventSource(
+    `/api/review/rules/generate/${encodeURIComponent(jobId)}/stream`,
+  );
+  const handle = (eventName: string) => (e: MessageEvent) => {
+    if (closed) return;
+    try {
+      const data = JSON.parse(e.data);
+      onEvent({ event: eventName as RuleGenEvent["event"], data } as RuleGenEvent);
+    } catch { /* ignore parse errors */ }
+  };
+  for (const name of [
+    "bundle", "bundle_done", "dispatch", "dispatch_attempt_failed",
+    "validate", "validate_done", "merge", "write",
+  ]) {
+    es.addEventListener(name, handle(name));
+  }
+  // NOTE: the server-side `error` SSE event (rule-gen failure) and the
+  // browser-side EventSource "error" both dispatch to type="error". The
+  // server event always carries `e.data`; transport errors do not -- so
+  // distinguishing on `e.data` is the cleanest way to route them.
+  es.addEventListener("error", (e: MessageEvent) => {
+    if (closed) return;
+    if (typeof e.data === "string" && e.data.length > 0) {
+      try {
+        const data = JSON.parse(e.data);
+        onEvent({ event: "error", data } as RuleGenEvent);
+      } catch { /* ignore parse errors */ }
+      closed = true;
+      es.close();
+      onDone("fail");
+    }
+  });
+  es.addEventListener("done", (e: MessageEvent) => {
+    if (closed) return;
+    try {
+      const data = JSON.parse(e.data);
+      // late-subscriber synthetic frame has shape {phase,status,...}; live
+      // terminal frame has shape RuleGenResult. Both are passed through; the
+      // caller's reducer decides what to do with each.
+      onEvent({ event: "done", data } as RuleGenEvent);
+    } catch { /* ignore parse errors */ }
+    closed = true;
+    es.close();
+    onDone("ok");
+  });
+  es.onerror = () => {
+    // Transport-level error (no data) — only treat as fatal when the
+    // connection is actually CLOSED (EventSource auto-reconnects on
+    // transient drops).
+    if (!closed && es.readyState === EventSource.CLOSED) {
+      closed = true;
+      onDone("stream_error");
+    }
   };
   return () => { closed = true; es.close(); };
 }

@@ -1,7 +1,15 @@
-import { useCallback, useEffect, useState } from "react";
-import { api } from "../api";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { api, subscribeRuleGen } from "../api";
 import { I } from "./Icon";
-import type { Rule, RulesListResponse } from "../types";
+import { LiveConsole } from "./LiveConsole";
+import { PipelineStrip, type Step, type StepState } from "./PipelineStrip";
+import type {
+  Rule,
+  RuleGenEvent,
+  RuleGenPhase,
+  RuleGenSummary,
+  RulesListResponse,
+} from "../types";
 
 interface Props {
   onApproveAndRun: () => void;   // start a loop after user clicks "Approve & Run"
@@ -16,11 +24,78 @@ const FAMILY_LABEL: Record<string, string> = {
   schematic: "schematic", simulation: "simulation", design: "design",
 };
 
+// ---- Pipeline-phase model -----------------------------------------------
+// Mirrors test1/review/rule_gen.py: bundle → dispatch → validate → merge →
+// write. `done` and `error` are terminal markers, not displayed as steps.
+
+const PIPELINE_PHASE_ORDER: RuleGenPhase[] = [
+  "bundle", "dispatch", "validate", "merge", "write",
+];
+
+function pipelineSteps(phase: RuleGenPhase, terminal: boolean,
+                       failed: boolean): Step[] {
+  const steps: Step[] = [
+    { id: "bundle",   label: "Bundle",   actor: "py",    state: "pending" },
+    { id: "dispatch", label: "Agent",    actor: "agent", state: "pending" },
+    { id: "validate", label: "Validate", actor: "py",    state: "pending" },
+    { id: "merge",    label: "Merge",    actor: "py",    state: "pending" },
+    { id: "write",    label: "Write",    actor: "py",    state: "pending" },
+  ];
+
+  if (terminal && !failed) {
+    for (const s of steps) s.state = "done";
+    return steps;
+  }
+  if (failed) {
+    // Steps BEFORE the failed phase are done; the failed phase itself is
+    // marked fail; later steps stay pending (never reached).
+    const failIdx = PIPELINE_PHASE_ORDER.indexOf(phase);
+    for (let i = 0; i < steps.length; i++) {
+      const idx = PIPELINE_PHASE_ORDER.indexOf(steps[i].id as RuleGenPhase);
+      if (idx < failIdx) steps[i].state = "done";
+      else if (idx === failIdx) steps[i].state = "fail";
+      else steps[i].state = "pending";
+    }
+    return steps;
+  }
+  const phaseIdx = PIPELINE_PHASE_ORDER.indexOf(phase);
+  for (let i = 0; i < steps.length; i++) {
+    const idx = PIPELINE_PHASE_ORDER.indexOf(steps[i].id as RuleGenPhase);
+    if (idx < phaseIdx) steps[i].state = "done";
+    else if (idx === phaseIdx) steps[i].state = "active";
+    else steps[i].state = "pending";
+  }
+  return steps;
+}
+
+// Reduce SSE events into the current phase. The server emits `<phase>` to
+// mark phase entry and `<phase>_done` for finish info; we drive state off
+// the entry events (so the active phase lights up immediately).
+function phaseFromEvent(ev: RuleGenEvent, prev: RuleGenPhase): RuleGenPhase {
+  switch (ev.event) {
+    case "bundle":   return "bundle";
+    case "dispatch": return "dispatch";
+    case "validate": return "validate";
+    case "merge":    return "merge";
+    case "write":    return "write";
+    case "done":     return "done";
+    case "error":    return "error";
+    default:         return prev;
+  }
+}
+
 export function RulesSection({ onApproveAndRun, loopRunning }: Props) {
   const [data, setData] = useState<RulesListResponse | null>(null);
-  const [generating, setGenerating] = useState(false);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});  // by family
   const [error, setError] = useState<string>("");
+
+  // Pipeline-job state. `job` is the latest in-flight or recently-finished
+  // job; once it's been done for >5s and `keepVisible` flips false, we hide
+  // the pipeline strip + console so the rules list is the focus again.
+  const [job, setJob] = useState<RuleGenSummary | null>(null);
+  const [phase, setPhase] = useState<RuleGenPhase>("bundle");
+  const [keepVisible, setKeepVisible] = useState(false);
+  const hideTimerRef = useRef<number | null>(null);
 
   const refresh = useCallback(async () => {
     try { setData(await api.rules()); setError(""); }
@@ -29,11 +104,89 @@ export function RulesSection({ onApproveAndRun, loopRunning }: Props) {
 
   useEffect(() => { void refresh(); }, [refresh]);
 
+  // On mount: if a recent job is still in memory on the backend, re-attach
+  // to it so a tab-switch or page-reload mid-pipeline doesn't lose the view.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const latest = await api.ruleGenLatest();
+        if (cancelled) return;
+        if ("job_id" in latest && latest.job_id) {
+          setJob(latest as RuleGenSummary);
+          setPhase((latest as RuleGenSummary).phase);
+          if ((latest as RuleGenSummary).status === "running") {
+            setKeepVisible(true);
+          }
+        }
+      } catch { /* ignore */ }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Subscribe to the active job's SSE stream. Re-runs whenever the job_id
+  // changes; cleanup tears down the EventSource.
+  useEffect(() => {
+    if (!job?.job_id || job.status !== "running") return;
+    const unsub = subscribeRuleGen(job.job_id, (ev) => {
+      setPhase((p) => phaseFromEvent(ev, p));
+      if (ev.event === "dispatch") {
+        const aid = (ev.data as { agent_run_id?: string }).agent_run_id;
+        if (aid) setJob((prev) => prev ? { ...prev, agent_run_id: aid } : prev);
+      }
+      if (ev.event === "done") {
+        setJob((prev) => prev ? { ...prev, phase: "done", status: "ok",
+          result: (ev.data as RuleGenSummary["result"]) ?? prev.result,
+          finished_at: Date.now() / 1000 } : prev);
+      }
+      if (ev.event === "error") {
+        setJob((prev) => prev ? { ...prev, phase: "error", status: "fail",
+          error: (ev.data as { message?: string }).message ?? "",
+          finished_at: Date.now() / 1000 } : prev);
+      }
+    }, (terminalStatus) => {
+      // Reload rules list when the job completes (regardless of ok/fail —
+      // failure may have written nothing, but refresh is cheap).
+      void refresh();
+      // Start the 5-second hide-timer.
+      if (hideTimerRef.current) window.clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = window.setTimeout(() => setKeepVisible(false), 5000);
+      // The stream may close before our `done`/`error` event handler fires
+      // (race on transport close). Lock the phase to a terminal one so the
+      // strip doesn't get stuck on the last "active" phase.
+      if (terminalStatus === "fail" || terminalStatus === "stream_error") {
+        setPhase((p) => p === "done" ? p : "error");
+      } else {
+        setPhase((p) => p === "error" ? p : "done");
+      }
+    });
+    return () => { unsub(); };
+  }, [job?.job_id, job?.status, refresh]);
+
   const generate = async () => {
-    setGenerating(true); setError("");
-    try { await api.generateRules(); await refresh(); }
-    catch (e) { setError(e instanceof Error ? e.message : String(e)); }
-    finally { setGenerating(false); }
+    setError("");
+    // Cancel any pending hide-timer from a previous run.
+    if (hideTimerRef.current) {
+      window.clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = null;
+    }
+    try {
+      const { job_id } = await api.generateRules();
+      setJob({
+        job_id,
+        phase: "bundle",
+        status: "running",
+        agent_run_id: null,
+        result: null,
+        error: "",
+        started_at: Date.now() / 1000,
+        finished_at: null,
+      });
+      setPhase("bundle");
+      setKeepVisible(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
   };
 
   const toggleRule = async (rule_id: string, enabled: boolean) => {
@@ -47,12 +200,15 @@ export function RulesSection({ onApproveAndRun, loopRunning }: Props) {
     </section>
   );
 
-  // Approval state is heuristic for now: any user-origin rule means
-  // the user has touched the set → approved. Refine with a dedicated
-  // approved_at flag in later iteration.
-
   const stale = data.stale_sources.length > 0;
   const empty = data.rules.length === 0;
+
+  const generating = job?.status === "running";
+  // Show the pipeline pane while a job is active, or for ~5s after it
+  // finishes so the user can see the green checkmarks. The hide-timer above
+  // flips `keepVisible` false to retract the pane.
+  const showPipeline = !!job && (generating || keepVisible);
+  const failed = job?.status === "fail";
 
   return (
     <section className="mt-5 rounded-md border border-edge bg-white">
@@ -86,6 +242,60 @@ export function RulesSection({ onApproveAndRun, loopRunning }: Props) {
         <div className="px-4 py-2 text-[12px] text-err bg-err/[0.04] border-b border-edge">
           {error}
         </div>
+      )}
+
+      {/* ---- Rule-gen pipeline viewer (only while generating or just done) ---- */}
+      {showPipeline && job && (
+        <>
+          <div className="px-4 pt-3 pb-2 border-b border-edge bg-rail/10">
+            <PipelineStrip
+              steps={pipelineSteps(phase, job.status !== "running", failed)}
+              badge={
+                <span
+                  className={
+                    "shrink-0 inline-flex items-center gap-1 text-[9.5px] font-mono px-1.5 py-0.5 rounded-full border " +
+                    (generating
+                      ? "border-violet-300 bg-violet-100 text-violet-700"
+                      : failed
+                        ? "border-err/40 bg-err/[0.06] text-err"
+                        : "border-edge bg-ink-100 text-ink-500")
+                  }
+                  title={`rule-gen job ${job.job_id}`}
+                >
+                  <I.Refresh size={9} className={generating ? "animate-spin" : ""} />
+                  rule_gen {job.job_id.slice(0, 6)}
+                </span>
+              }
+            />
+            {job.status === "ok" && job.result && (
+              <div className="mt-2 text-[11.5px] text-ok">
+                ✓ Wrote {job.result.count_total} rules
+                {" · "}schematic {job.result.count_by_family.schematic}
+                {" · "}sim {job.result.count_by_family.simulation}
+                {" · "}design {job.result.count_by_family.design}
+                {job.result.rejected_unverifiable.length > 0 &&
+                  ` · rejected ${job.result.rejected_unverifiable.length} (unverifiable)`}
+                {job.result.conflicts.length > 0 &&
+                  ` · ${job.result.conflicts.length} user-rule conflicts skipped`}
+              </div>
+            )}
+            {job.status === "fail" && job.error && (
+              <div className="mt-2 text-[11.5px] text-err">
+                ✗ {job.error}
+              </div>
+            )}
+          </div>
+          <LiveConsole
+            agentRunId={job.agent_run_id}
+            idlePlaceholder={
+              generating
+                ? phase === "bundle"
+                  ? "bundling docs…"
+                  : "waiting for rule_gen agent…"
+                : "no active agent"
+            }
+          />
+        </>
       )}
 
       {empty && (
