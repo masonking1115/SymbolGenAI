@@ -262,13 +262,49 @@ def _identity_check(pdf: Path, mpn: str) -> bool:
 
 
 async def _install_and_author(mpn: str, ds_path: Path) -> bool:
-    """install_datasheets.py + start_symbol_gen. Task 5.3."""
-    raise NotImplementedError("Task 5.3")
+    """Move datasheet into Parts Library/<mpn>/<mpn>.pdf; dispatch symbol_gen."""
+    target_dir = PARTS_LIBRARY / mpn
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target_pdf = target_dir / f"{mpn}.pdf"
+    try:
+        shutil.copy2(ds_path, target_pdf)
+    except Exception as e:
+        print(f"[missing_part] install copy failed: {e}")
+        return False
+
+    # Dispatch symbol_gen agent. agent.start_symbol_gen joins `datasheet_rel`
+    # to `Parts Library/<mpn>/`, so we pass just the filename.
+    import sys
+    sys.path.insert(0, str(PROJECT_DIR / "gui" / "backend"))
+    import agent as agent_mod
+    run = await agent_mod.start_symbol_gen(mpn, f"{mpn}.pdf")
+    while run.status == "running":
+        await asyncio.sleep(0.5)
+    return run.status == "ok" and (target_dir / f"{mpn}.SchLib").exists()
 
 
 async def _place_into_schematic(L: Loop, rule: Rule, cand: Candidate) -> bool:
-    """Dispatch apply agent with rule + candidate context. Task 5.3."""
-    raise NotImplementedError("Task 5.3")
+    """Dispatch apply agent with a focused prompt to instantiate the part."""
+    import sys
+    sys.path.insert(0, str(PROJECT_DIR / "gui" / "backend"))
+    import agent as agent_mod
+    # Use the existing changelog channel to convey the placement request.
+    msg = (f"closed-loop / missing-part: rule {rule.id} requires a part of "
+           f"role {rule.applies_to.role_spec or rule.applies_to.mpn}. "
+           f"Place the newly-installed MPN={cand.mpn} into the relevant "
+           f"sheet ({rule.applies_to.sheet or '?'}); seed values from the "
+           f"datasheet typical-application circuit at Parts Library/"
+           f"{cand.mpn}/{cand.mpn}.pdf. Edit netlist/<sheet>.yaml + "
+           f"altium/build_<sheet>.py; rebuild via build_project.")
+    agent_mod.append_changelog(msg, source="closed_loop")
+    run = await agent_mod.start_apply_pass()
+    L.sub_runs.append(run.run_id)
+    while run.status == "running":
+        if L.cancelled:
+            agent_mod.cancel_run(run.run_id)
+            return False
+        await asyncio.sleep(0.5)
+    return run.status == "ok"
 
 
 async def _sim_verify(L: Loop, rule: Rule, cand: Candidate) -> tuple[bool, float | None, list[dict]]:
