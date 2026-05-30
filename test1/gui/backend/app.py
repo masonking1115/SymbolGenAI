@@ -2383,6 +2383,18 @@ def loop_diff(loop_id: str) -> dict:
     return {"loop_id": loop_id, "sheets": compute_loop_diff(loop_id)}
 
 
+@app.get("/api/png_snapshot/{loop_id}/{name}")
+def png_snapshot(loop_id: str, name: str):
+    """Serve a pre-loop snapshot render for the Diff & Accept side-by-side
+    view. name is the sheet stem (no extension)."""
+    safe = re.sub(r"[^A-Za-z0-9_]", "", name)
+    snap = _loop_mod.SNAPSHOT_ROOT / loop_id / "render" / f"{safe}.svg"
+    if not snap.exists():
+        raise HTTPException(404, f"snapshot render not found: {snap}")
+    return FileResponse(snap, media_type="image/svg+xml",
+                        headers={"Cache-Control": "no-store"})
+
+
 def main() -> None:
     import uvicorn
     uvicorn.run("app:app", host="127.0.0.1", port=8765, reload=False)

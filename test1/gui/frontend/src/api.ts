@@ -397,6 +397,20 @@ export const api = {
     if (!r.ok) throw new Error("reject failed");
     return r.json();
   },
+  loopDiff: async (loop_id: string): Promise<{
+    loop_id: string;
+    sheets: Record<string, {
+      viewBox: string;
+      added: Record<string, { x: number; y: number; kind: "added" }>;
+      removed: Record<string, { x: number; y: number; kind: "removed" }>;
+      changed: Record<string, { x: number; y: number; kind: "changed"; from_value: string; to_value: string }>;
+      count: number;
+    }>;
+  }> => {
+    const r = await fetch(`/api/loop/${loop_id}/diff`);
+    if (!r.ok) throw new Error("diff fetch failed");
+    return r.json();
+  },
 
   librarySymbol: (mpn: string) =>
     j<SymbolInfo>(`/api/library/${encodeURIComponent(mpn)}/symbol`),

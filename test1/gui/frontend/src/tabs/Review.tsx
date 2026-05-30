@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, subscribeRun } from "../api";
 import { Console } from "../components/Console";
+import { DiffAndAccept } from "../components/DiffAndAccept";
 import { I } from "../components/Icon";
 import { IterationSection } from "../components/IterationSection";
 import { RulesSection } from "../components/RulesSection";
@@ -37,10 +38,10 @@ export function Review({ onArtifactsChanged, setHealth, onAutofixCompleted }: Pr
   const [errorLog, setErrorLog] = useState<string>("");
   const [queue, setQueue] = useState<Map<string, FixQueueEntry>>(new Map());
   const [activeLoopId, setActiveLoopId] = useState<string | null>(null);
-  // Loop summary lifted from IterationSection (via onSummary callback) so the
-  // upcoming DiffAndAccept section (Phase 4D) can gate on status !== "running".
-  // Currently consumed only for that future wiring — not rendered here.
-  const [, setLoopSummary] = useState<LoopSummary | null>(null);
+  // Loop summary lifted from IterationSection (via onSummary callback). Used
+  // to gate the DiffAndAccept section on status !== "running" so it only
+  // renders once the loop has terminated.
+  const [loopSummary, setLoopSummary] = useState<LoopSummary | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -203,6 +204,14 @@ export function Review({ onArtifactsChanged, setHealth, onAutofixCompleted }: Pr
           setHealth={setHealth}
           onSummary={setLoopSummary}
         />
+
+        {activeLoopId && loopSummary && loopSummary.status !== "running" && (
+          <DiffAndAccept
+            loopId={activeLoopId}
+            loopStatus={loopSummary.status}
+            onResolved={() => { setActiveLoopId(null); onArtifactsChanged(); }}
+          />
+        )}
 
         <section className="mt-6">
           <div className="flex items-baseline gap-3 mb-2">

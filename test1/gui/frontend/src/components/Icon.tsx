@@ -166,4 +166,11 @@ export const I = {
       <path d="M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13M9 7V4h6v3" />
     </svg>
   ),
+  Diff: (p: Props = {}) => (
+    <svg {...stroke(p)}>
+      <rect x="3" y="3" width="8" height="18" rx="1" />
+      <rect x="13" y="3" width="8" height="18" rx="1" />
+      <path d="M5 9h4M5 13h4M15 9h4M15 13h4M15 17h4" />
+    </svg>
+  ),
 };
