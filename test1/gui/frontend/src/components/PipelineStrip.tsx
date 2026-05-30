@@ -20,20 +20,27 @@ export interface Step {
 }
 
 export function StepIcon({ state }: { state: StepState }) {
+  // Per-state glyphs (requested): a '.' on a WHITE background before a step runs,
+  // a spinner while it processes, a red ✗ on failure, a green ✓ when done.
   const base = "w-5 h-5 rounded-full grid place-items-center shrink-0";
   if (state === "done")
     return <span className={base + " bg-ok/15 text-ok"}><I.Check size={12} /></span>;
   if (state === "fail")
     return <span className={base + " bg-err/15 text-err"}><I.X size={12} /></span>;
-  if (state === "skipped")
-    return <span className={base + " border border-edge text-ink-300"}>·</span>;
   if (state === "active")
     return (
-      <span className={base + " bg-ink-100"}>
+      <span className={base + " bg-white border border-edge"}>
         <span className="w-3 h-3 rounded-full border-2 border-ink-300 border-t-ink-700 animate-spin" />
       </span>
     );
-  return <span className={base + " border border-edge text-ink-300"}><I.Dot size={10} /></span>;
+  // pending (not yet run) AND skipped (not needed this round): a '.' on white.
+  // skipped is dimmer so "didn't need to run" still reads differently from "up next".
+  return (
+    <span className={base + " bg-white border border-edge "
+      + (state === "skipped" ? "text-ink-200" : "text-ink-400")}>
+      <I.Dot size={10} />
+    </span>
+  );
 }
 
 // Tint the actor badge when its step is the active one (matches IterationSection).

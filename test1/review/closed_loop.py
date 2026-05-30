@@ -87,6 +87,9 @@ class Loop:
     findings_current: list[Finding] = field(default_factory=list)
     snapshot_dir: Path | None = None
     sub_runs: list[str] = field(default_factory=list)
+    # Changelog item ids THIS loop queued (source=="closed_loop"), so a reject can
+    # remove exactly the items describing the changes it just reverted.
+    changelog_item_ids: list[str] = field(default_factory=list)
     subscribers: list[asyncio.Queue] = field(default_factory=list)
     cancelled: bool = False
     last_delta: int | None = None
@@ -237,6 +240,101 @@ def restore_from_snapshot(L: Loop, refdes_revert: list[str] | None = None) -> No
                                 encoding="utf-8")
 
 
+# ---- Verify-after-revert + roll-forward (the "double revert" guard) -----
+# A single revert can succeed straight into a WORSE baseline (the snapshot was
+# the pre-fix state). To catch that, loop_reject captures the post-loop state
+# BEFORE reverting; after the revert + rebuild it compares the reverted state's
+# health to the post-loop state, and if the revert made things worse it ROLLS
+# FORWARD (restores the post-loop state) rather than stranding the user in a bad
+# baseline. Health = (build ok?) then (lint ERROR count, lower is better).
+
+def capture_pre_revert(L: Loop) -> None:
+    """Snapshot the CURRENT (post-loop) netlist + render + lint into
+    snapshot_dir/pre_revert/ so a bad revert can be undone. No-op if there's no
+    snapshot dir (selective reverts without a loop snapshot can't roll forward)."""
+    if not L.snapshot_dir:
+        return
+    pr = L.snapshot_dir / "pre_revert"
+    (pr / "netlist").mkdir(parents=True, exist_ok=True)
+    (pr / "render").mkdir(parents=True, exist_ok=True)
+    if NETLIST_DIR.exists():
+        for y in NETLIST_DIR.glob("*.yaml"):
+            shutil.copy2(y, pr / "netlist" / y.name)
+    if RENDER_DIR.exists():
+        for svg in RENDER_DIR.glob("*.svg"):
+            shutil.copy2(svg, pr / "render" / svg.name)
+    lint_json = OUT_DIR / "lint.json"
+    if lint_json.exists():
+        shutil.copy2(lint_json, pr / "lint.json")
+
+
+def roll_forward(L: Loop) -> bool:
+    """Undo a revert: restore the post-loop state captured by capture_pre_revert.
+    Returns True if it restored, False if there was nothing captured."""
+    if not L.snapshot_dir:
+        return False
+    pr = L.snapshot_dir / "pre_revert"
+    if not pr.exists():
+        return False
+    pn = pr / "netlist"
+    if pn.exists():
+        for y in pn.glob("*.yaml"):
+            shutil.copy2(y, NETLIST_DIR / y.name)
+    prr = pr / "render"
+    if prr.exists():
+        for svg in prr.glob("*.svg"):
+            shutil.copy2(svg, RENDER_DIR / svg.name)
+    pl = pr / "lint.json"
+    if pl.exists():
+        shutil.copy2(pl, OUT_DIR / "lint.json")
+    return True
+
+
+def lint_error_count(lint_path: Path | None = None) -> int | None:
+    """ERROR count from a lint.json (default: the live out/lint.json). None if
+    unreadable — callers treat None as 'unknown, don't use as a worse-signal'."""
+    p = lint_path or (OUT_DIR / "lint.json")
+    try:
+        import json as _json
+        data = _json.loads(p.read_text(encoding="utf-8"))
+        return int((data.get("counts") or {}).get("ERROR", 0))
+    except Exception:
+        return None
+
+
+def _teardown_after_reject(L: Loop) -> None:
+    """After a reject restores the design, clear the loop's residue so the Review
+    tab actually goes clean: (1) drop the changelog items this loop queued (they
+    described changes we just reverted), and (2) remove the snapshot dir so
+    /api/loop/{id}/diff stops resurfacing the reverted diff (the "can't clear the
+    review changelog / cache" bug — reject used to leave both behind).
+
+    Best-effort: a failure here must not break the revert itself."""
+    # (1) Closed-loop changelog items — remove the ones THIS loop posted, plus any
+    # stale source=="closed_loop" items (the loop is the only writer of those, and
+    # after a reject none of them describe the live design).
+    try:
+        import sys
+        sys.path.insert(0, str(PROJECT_DIR / "gui" / "backend"))
+        import agent as agent_mod
+        items = agent_mod.load_changelog()
+        loop_ids = set(getattr(L, "changelog_item_ids", []) or [])
+        kept = [it for it in items
+                if it.get("source") != "closed_loop"
+                and it.get("id") not in loop_ids]
+        if len(kept) != len(items):
+            agent_mod.save_changelog(kept)
+    except Exception:
+        pass
+    # (2) Snapshot teardown — same as the accept path, minus the tar archive (a
+    # rejected design isn't worth keeping). Stops the diff from re-appearing.
+    try:
+        if L.snapshot_dir and L.snapshot_dir.exists():
+            shutil.rmtree(L.snapshot_dir)
+    except Exception:
+        pass
+
+
 def archive_snapshot(L: Loop) -> None:
     """Accept path -- tar + remove the snapshot dir."""
     if not L.snapshot_dir or not L.snapshot_dir.exists():
@@ -345,10 +443,12 @@ async def _dispatch_action(L: Loop, action: Action) -> None:
         # For Phase 4, we use the existing apply agent + emit the targets
         # in its prompt by pushing them to changelog first.
         for rid in action.targets:
-            agent_mod.append_changelog(
+            entry = agent_mod.append_changelog(
                 f"closed-loop: address rule {rid}",
                 source="closed_loop",
             )
+            if entry and entry.get("id"):
+                L.changelog_item_ids.append(entry["id"])
         run = await agent_mod.start_apply_pass()
         action.agent_run_id = run.run_id
         L.sub_runs.append(run.run_id)

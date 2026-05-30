@@ -57,19 +57,41 @@ export function DiffAndAccept({
     setRejectWarning(null);
     try {
       const res = await api.loopReject(loopId);
-      // Reject reverts to the pre-loop snapshot then rebuilds. If that rebuild
-      // FAILED, the on-disk schematic is now stale — warn instead of silently
-      // clearing the loop (which would imply a clean revert).
+      // Verify-after-revert guard: if the revert produced a WORSE state, the
+      // backend rolls forward (restores the post-loop state) and returns ok=false
+      // with a reason. Surface that instead of clearing the loop — the design was
+      // NOT left in the bad reverted baseline.
+      if (res.ok === false) {
+        setRejectWarning(
+          (res.rolled_forward
+            ? "Revert was unsafe and has been UNDONE (rolled forward to the post-loop state). "
+            : "Revert produced a worse state and could NOT be undone — check the design. ") +
+          (res.reason ? res.reason + " " : "") +
+          (res.rebuild_log_tail ? `Last log: ${res.rebuild_log_tail.slice(-300)}` : ""),
+        );
+        return; // keep the loop visible so the user sees what happened
+      }
+      // Legacy guard: a clean ok=true but failed rebuild (shouldn't happen with
+      // the new path, but keep the warning for safety).
       if (res.rebuild_status === false) {
         setRejectWarning(
           "Reverted, but the rebuild failed — the schematic may be stale. " +
           "Regenerate from the Generator tab. " +
           (res.rebuild_log_tail ? `Last log: ${res.rebuild_log_tail.slice(-300)}` : ""),
         );
-        return; // keep the loop visible so the user sees the warning
+        return;
       }
       onResolved();
     }
+    finally { setBusy(false); }
+  };
+  // Clear the loop's review residue (closed-loop changelog items + snapshot/diff)
+  // WITHOUT touching the design. Use when you KEPT the changes but the changelog
+  // + diff lingered with no way to dismiss them.
+  const clear = async () => {
+    setBusy(true);
+    setRejectWarning(null);
+    try { await api.loopClear(loopId); onResolved(); }
     finally { setBusy(false); }
   };
 
@@ -144,8 +166,13 @@ export function DiffAndAccept({
           className="h-8 px-3 inline-flex items-center gap-1.5 rounded border border-edge text-ink-700 text-sm hover:border-err hover:text-err disabled:opacity-50">
           ✗ Reject (revert)
         </button>
+        <button onClick={clear} disabled={busy}
+          className="h-8 px-3 inline-flex items-center gap-1.5 rounded border border-edge text-ink-500 text-sm hover:border-ink-300 hover:text-ink-900 disabled:opacity-50"
+          title="Clear the changelog + diff for this loop without changing the design (use when you kept the changes)">
+          <I.X size={12} /> Clear changelog &amp; diff
+        </button>
         <span className="text-[11px] text-ink-500 ml-2">
-          Accept keeps the loop's changes. Reject restores the pre-loop state.
+          Accept keeps the changes. Reject restores the pre-loop state. Clear dismisses the changelog/diff but keeps the design.
         </span>
         {rejectWarning && (
           <div className="w-full mt-2 text-[11px] text-err bg-err/[0.06] border border-err/30 rounded px-2 py-1.5">

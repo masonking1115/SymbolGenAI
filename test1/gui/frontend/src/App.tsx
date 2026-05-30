@@ -34,8 +34,23 @@ const TAB_TITLES: Record<TabKey, string> = {
   simulation: "Simulation / test1",
 };
 
+const TAB_LS_KEY = "test1.activeTab";
+const VALID_TABS: TabKey[] = ["resources", "library", "generator", "review", "simulation"];
+function initialTab(): TabKey {
+  try {
+    const v = localStorage.getItem(TAB_LS_KEY) as TabKey | null;
+    if (v && VALID_TABS.includes(v)) return v;
+  } catch { /* ignore */ }
+  return "generator";
+}
+
 export default function App() {
-  const [tab, setTab] = useState<TabKey>("generator");
+  // Persist the active tab so a refresh keeps you on the tab you were on.
+  const [tab, setTabRaw] = useState<TabKey>(initialTab);
+  const setTab = useCallback((t: TabKey) => {
+    setTabRaw(t);
+    try { localStorage.setItem(TAB_LS_KEY, t); } catch { /* ignore */ }
+  }, []);
   // Live mirror of `tab` for callbacks that must read the CURRENT tab without
   // re-binding (e.g. the gated setHealth handed to the always-mounted Simulation).
   const tabRef = useRef(tab);
@@ -196,7 +211,6 @@ export default function App() {
       <Review
         onArtifactsChanged={onArtifactsChanged}
         setHealth={setHealth}
-        onAutofixCompleted={() => setTab("generator")}
         activeLoopId={activeLoopId}
         setActiveLoopId={setActiveLoopId}
         loopSummary={loopSummary}

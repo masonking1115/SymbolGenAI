@@ -26,7 +26,13 @@ from pydantic import BaseModel, Field
 
 
 Severity = Literal["ERROR", "WARNING", "INFO"]
-Family   = Literal["schematic", "simulation", "design"]
+# `block` — boundary-validation rules for one functional block (bias, ldo,
+# loadsw, pdn …). They stress the block's operating LIMITS against datasheet
+# specs, component tolerances, and EE first principles (e.g. op-amp output
+# headroom capping the bias full-scale current, sense-R tolerance eating the
+# accuracy budget). Evaluated by the same sim_review / semantic machinery as
+# the other families; surfaced as its own category in the harness + GUI.
+Family   = Literal["schematic", "simulation", "design", "block"]
 Origin   = Literal["generated", "user", "imported"]
 
 
@@ -46,6 +52,11 @@ class AppliesTo(BaseModel):
     sim_type:  str | None      = None
     mpn:       str | None      = None
     role_spec: dict            = {}
+    # Functional block this rule belongs to (block-family rules). Drives the
+    # Blocks dropdown grouping in the GUI and the harness's per-block report. A
+    # block may map to a sim block (opa_bias), a sheet (eeprom), or a logical
+    # sub-circuit; it is the stable grouping key independent of sim_block/sheet.
+    block:     str | None      = None
 
 
 # ---- Predicate variants (structural) -----------------------------------

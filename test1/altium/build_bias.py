@@ -33,7 +33,7 @@ from ..gen.netlist import load_netlist
 from ..gen.validator import validate
 from .build_symbols import get_library
 from .config import OUT_DIR, RENDER_DIR
-from .shared import AltiumSheet
+from .shared import AltiumSheet, build_centered
 
 GRID = 100   # mil
 
@@ -349,12 +349,27 @@ def build_bias() -> tuple[AltiumSheet, object]:
     s.text("OUTB -> Q41.G  (CH1 bias gate drive)", 9700, 3600)
     s.text("<- OUTB  gate drive", 13400, 6500)
 
+    # --- Sense-R design-decision note (next to R40/R41) ---
+    # 5.11k limited full-scale to ~484uA (I*R = 640uA*5.11k = 3.27V left no
+    # headroom for the 0.5V DUT compliance); 3.65k restores the 0-640uA spec.
+    # Sense-R value verification note (clear band left of the R40 column, x=9000,
+    # stacked upward from the headline; nothing else is placed in this y range).
+    # Sense-R value verification note (clear band left of the R40 column, x=9000,
+    # stacked upward from the headline at 150-mil pitch; nothing else is placed
+    # in this y range — the linter confirms no overlap).
+    s.text("R40/R41 = 3.65k 0.1%: sets 0-640uA FS.", 9000, 7100)
+    s.text("(5.11k capped FS at ~484uA - V budget)", 9000, 6950)
+    s.text("Why 3.65k: I_FS*R must fit the 3V3 - 0.5V(BIASx) headroom.", 9000, 7700)
+    s.text("640uA*5.11k = 3.27V > 2.8V budget -> loop saturates early.", 9000, 7550)
+    s.text("640uA*3.65k = 2.34V fits. SPICE-verified: reg ceiling 674uA,", 9000, 7400)
+    s.text("nominal 320uA @ 0.5V within 0.2%, PMOS drain >= 0.5V.", 9000, 7250)
+
     validate(s, nl)
     return s, nl
 
 
 def main() -> int:
-    s, _nl = build_bias()
+    s, _nl = build_centered(build_bias)
     out = s.save(OUT_DIR / "bias.SchDoc")
     svg = s.render_svg(RENDER_DIR / "bias.svg")
     print(f"validated OK | wrote {out.name} + {svg.name}")

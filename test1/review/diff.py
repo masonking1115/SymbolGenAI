@@ -117,21 +117,37 @@ def compute_loop_diff(loop_id: str) -> dict[str, dict]:
         cur_anchors = _refdes_anchors(cur_svg) if cur_svg.exists() else {"viewBox": [0.0, 0.0], "refdes": {}}
         snap_anchors = _refdes_anchors(snap_svg) if snap_svg.exists() else {"viewBox": [0.0, 0.0], "refdes": {}}
 
-        # Annotate adds/changed with current positions
-        for rd, body in {**added, **changed}.items():
-            anchor = (cur_anchors.get("refdes") or {}).get(rd, {})
-            body.update(x=anchor.get("x", 0), y=anchor.get("y", 0))
-            # {**added, **changed} produced shallow copies in the merge dict,
-            # but body is the same dict reference as added[rd] / changed[rd],
-            # so the update above mutates the originals in place.
+        cur_refdes = cur_anchors.get("refdes") or {}
+        snap_refdes = snap_anchors.get("refdes") or {}
 
-        # Annotate removeds with snapshot positions
-        for rd, body in removed.items():
-            anchor = (snap_anchors.get("refdes") or {}).get(rd, {})
+        # Annotate ADDED with current positions (they exist only in current).
+        for rd, body in added.items():
+            anchor = cur_refdes.get(rd, {})
             body.update(x=anchor.get("x", 0), y=anchor.get("y", 0))
+
+        # Annotate REMOVED with snapshot positions (they exist only in snapshot).
+        for rd, body in removed.items():
+            anchor = snap_refdes.get(rd, {})
+            body.update(x=anchor.get("x", 0), y=anchor.get("y", 0))
+
+        # Annotate CHANGED with BOTH anchors: the part exists in both renders and
+        # may sit at different coordinates if the layout moved between snapshot and
+        # now. x/y = CURRENT position (the AFTER pane, drawn on the current image);
+        # from_x/from_y = SNAPSHOT position (the BEFORE pane, drawn on the snapshot
+        # image). Using current coords on the snapshot image is what mis-placed the
+        # BEFORE (red) box; each pane must use the anchor that matches ITS image.
+        for rd, body in changed.items():
+            cur_a = cur_refdes.get(rd, {})
+            snap_a = snap_refdes.get(rd, {})
+            body.update(
+                x=cur_a.get("x", 0), y=cur_a.get("y", 0),
+                from_x=snap_a.get("x", cur_a.get("x", 0)),
+                from_y=snap_a.get("y", cur_a.get("y", 0)),
+            )
 
         out[sheet] = {
             "viewBox": _viewbox_str(cur_anchors),
+            "snapViewBox": _viewbox_str(snap_anchors),
             "added": added,
             "removed": removed,
             "changed": changed,

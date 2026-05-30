@@ -364,11 +364,22 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ rule_id, ...patch }),
     }),
-  deleteRule: (rule_id: string) =>
-    j<{ ok: boolean; rule_id: string; enabled: boolean }>(
-      `/api/review/rules/${encodeURIComponent(rule_id)}`,
+  deleteRule: (rule_id: string, hard = false) =>
+    j<{ ok: boolean; rule_id: string; enabled?: boolean; deleted?: boolean }>(
+      `/api/review/rules/${encodeURIComponent(rule_id)}${hard ? "?hard=true" : ""}`,
       { method: "DELETE" },
     ),
+  // Manually add a user-authored (semantic) rule — replaces doc-driven regenerate.
+  addRule: (body: {
+    id: string; family?: string; severity?: string; title: string; prompt: string;
+    sheet?: string; refdes?: string; net?: string; block?: string;
+    source_doc?: string; source_loc?: string; source_quote?: string; fix_hint?: string;
+  }) =>
+    j<{ ok: boolean; rule: Rule }>("/api/review/rules/add", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
 
   // ---- Closed-loop design review: loop orchestration (Phase 4) -------------
   loopStart: async (): Promise<{ loop_id: string }> => {
@@ -398,7 +409,13 @@ export const api = {
   loopReject: async (
     loop_id: string,
     revert?: string[],
-  ): Promise<{ ok: boolean; rebuild_status?: boolean; rebuild_log_tail?: string }> => {
+  ): Promise<{
+    ok: boolean;
+    rolled_forward?: boolean;
+    reason?: string;
+    rebuild_status?: boolean;
+    rebuild_log_tail?: string;
+  }> => {
     const r = await fetch(`/api/loop/${loop_id}/reject`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -407,13 +424,23 @@ export const api = {
     if (!r.ok) throw new Error("reject failed");
     return r.json();
   },
+  // Clear a loop's review residue WITHOUT reverting the design (drops the
+  // closed-loop changelog items + removes the snapshot so the diff stops showing).
+  loopClear: async (
+    loop_id: string,
+  ): Promise<{ ok: boolean; changelog_removed: number; snapshot_removed: boolean }> => {
+    const r = await fetch(`/api/loop/${loop_id}/clear`, { method: "POST" });
+    if (!r.ok) throw new Error("clear failed");
+    return r.json();
+  },
   loopDiff: async (loop_id: string): Promise<{
     loop_id: string;
     sheets: Record<string, {
       viewBox: string;
+      snapViewBox?: string;
       added: Record<string, { x: number; y: number; kind: "added" }>;
       removed: Record<string, { x: number; y: number; kind: "removed" }>;
-      changed: Record<string, { x: number; y: number; kind: "changed"; from_value: string; to_value: string }>;
+      changed: Record<string, { x: number; y: number; from_x?: number; from_y?: number; kind: "changed"; from_value: string; to_value: string }>;
       count: number;
     }>;
   }> => {

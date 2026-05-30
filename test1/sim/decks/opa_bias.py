@@ -206,8 +206,12 @@ print i(vsns_bias) v(vsense) v(biasd) v(bias_iso0)
         core = _core_topology(dac, r_sense=r_sense)
         bias_load = (f"* DUT bias-input compliance: hold BIAS0 at {BIAS_COMPLIANCE_V} V\n"
                      f"VBIASCOMP BIAS0 0 DC {BIAS_COMPLIANCE_V:.6g}")
+        # 0.01 V step (not 0.033): analyze_compliance samples the NOMINAL point by
+        # nearest-V_DAC, so a coarse grid lands up to ±16 mV (≈5 µA) off 320 µA and
+        # false-fails the 1% nominal check. 0.01 V keeps the nominal sample within
+        # ~1.5 µA — the verdict reflects the design, not the sweep resolution.
         analysis = """.control
-dc VDAC 0 3.3 0.033
+dc VDAC 0 3.3 0.01
 wrdata dc_compliance.dat i(vsns_bias) v(vsense) v(opaout) v(biasd)
 .endc
 """

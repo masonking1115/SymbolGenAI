@@ -3,18 +3,23 @@
  * accepted/rejected). State (active sheet, mode, diff data) lives in App.tsx.
  *
  * Side-by-side: BEFORE (snapshot) | AFTER (current). Overlay: AFTER with all
- * boxes superimposed. Sheet-tab strip across the top so this pane can be
- * navigated without going through Review's content column.
+ * boxes superimposed. Each pane uses the SAME pan/zoom Canvas as the main
+ * schematic viewer (wheel-zoom-toward-cursor, click-drag pan, fit, +/-/0/F) —
+ * just two of them, each independently draggable. The DiffOverlay rides the
+ * same transform as the image so the highlight boxes stay aligned at any zoom.
  */
 import { DiffOverlay, type DiffBox } from "./DiffOverlay";
+import { Canvas, ImgLayer } from "./PngViewer";
 
 export type DiffMode = "side" | "overlay";
 
 interface DiffSheetData {
-  viewBox: string;
+  viewBox: string;        // current-render viewBox (AFTER pane)
+  snapViewBox?: string;   // snapshot-render viewBox (BEFORE pane); may differ if layout moved
   added: Record<string, { x: number; y: number; kind: "added" }>;
   removed: Record<string, { x: number; y: number; kind: "removed" }>;
-  changed: Record<string, { x: number; y: number; kind: "changed"; from_value: string; to_value: string }>;
+  // changed parts carry BOTH anchors: x/y = current pos (AFTER), from_x/from_y = snapshot pos (BEFORE)
+  changed: Record<string, { x: number; y: number; from_x?: number; from_y?: number; kind: "changed"; from_value: string; to_value: string }>;
   count: number;
 }
 
@@ -35,7 +40,31 @@ interface Props {
 export function DiffPanes({ loopId, diff, activeSheet, setActiveSheet, mode, setMode }: Props) {
   const sheets = Object.entries(diff.sheets);
   const current = activeSheet ? diff.sheets[activeSheet] : null;
-  const boxes: DiffBox[] = current
+
+  // BEFORE pane (snapshot image): removed parts (snapshot coords) + changed parts
+  // drawn at their SNAPSHOT position (from_x/from_y). Falls back to x/y when the
+  // backend didn't supply a snapshot anchor (older diffs / unmoved part).
+  const beforeBoxes: DiffBox[] = current
+    ? [
+        ...Object.entries(current.removed).map(([rd, b]) => ({ ...b, refdes: rd })),
+        ...Object.entries(current.changed).map(([rd, b]) => ({
+          ...b, refdes: rd,
+          x: b.from_x ?? b.x,
+          y: b.from_y ?? b.y,
+        })),
+      ]
+    : [];
+
+  // AFTER pane (current image): added parts + changed parts at their CURRENT position.
+  const afterBoxes: DiffBox[] = current
+    ? [
+        ...Object.entries(current.added).map(([rd, b]) => ({ ...b, refdes: rd })),
+        ...Object.entries(current.changed).map(([rd, b]) => ({ ...b, refdes: rd })),
+      ]
+    : [];
+
+  // Overlay mode draws everything on the current image, so it uses current coords.
+  const overlayBoxes: DiffBox[] = current
     ? [
         ...Object.entries(current.added).map(([rd, b]) => ({ ...b, refdes: rd })),
         ...Object.entries(current.removed).map(([rd, b]) => ({ ...b, refdes: rd })),
@@ -48,7 +77,7 @@ export function DiffPanes({ loopId, diff, activeSheet, setActiveSheet, mode, set
       <header className="px-3 py-2 border-b border-edge bg-white flex items-center gap-2 flex-wrap">
         <span className="text-[11px] uppercase tracking-wide text-ink-500 font-medium">Diff</span>
         <span className="text-[11px] text-ink-500">loop {loopId.slice(0, 8)}</span>
-        <div className="ml-auto flex items-center gap-1 text-[11px]">
+        <div className="ml-auto flex items-center gap-2 text-[11px]">
           <button onClick={() => setMode("side")}
             className={mode === "side" ? "text-ink-900 font-medium" : "text-ink-500 hover:text-ink-900"}>
             side-by-side
@@ -72,23 +101,23 @@ export function DiffPanes({ loopId, diff, activeSheet, setActiveSheet, mode, set
         ))}
       </div>
 
-      <div className="flex-1 min-h-0 overflow-auto p-3">
+      <div className="flex-1 min-h-0 p-3">
         {current ? (
           mode === "side" ? (
             <div className="grid grid-cols-2 gap-3 h-full min-h-0">
-              <DiffPane title="BEFORE (snapshot)"
+              <DiffPane key={`before-${activeSheet}`} title="BEFORE (snapshot)" tone="before"
                 src={`/api/png_snapshot/${loopId}/${activeSheet}`}
-                boxes={boxes.filter(b => b.kind === "removed" || b.kind === "changed")}
-                viewBox={current.viewBox} />
-              <DiffPane title="AFTER (current)"
+                boxes={beforeBoxes}
+                viewBox={current.snapViewBox || current.viewBox} />
+              <DiffPane key={`after-${activeSheet}`} title="AFTER (current)" tone="after"
                 src={`/api/png/${activeSheet}`}
-                boxes={boxes.filter(b => b.kind === "added" || b.kind === "changed")}
+                boxes={afterBoxes}
                 viewBox={current.viewBox} />
             </div>
           ) : (
-            <DiffPane title="OVERLAY"
+            <DiffPane key={`overlay-${activeSheet}`} title="OVERLAY" tone="kind"
               src={`/api/png/${activeSheet}`}
-              boxes={boxes}
+              boxes={overlayBoxes}
               viewBox={current.viewBox} />
           )
         ) : (
@@ -99,15 +128,25 @@ export function DiffPanes({ loopId, diff, activeSheet, setActiveSheet, mode, set
   );
 }
 
-function DiffPane({ title, src, boxes, viewBox }:
-  { title: string; src: string; boxes: DiffBox[]; viewBox: string }) {
+function DiffPane({ title, src, boxes, viewBox, tone }:
+  { title: string; src: string; boxes: DiffBox[]; viewBox: string;
+    tone: "before" | "after" | "kind" }) {
+  // Parse "minX minY W H" so the overlay SVG can be sized to the image's natural
+  // pixel box (it then rides Canvas's transform 1:1 with the image, like
+  // RegionOverlay does in PngViewer).
+  const parts = viewBox.trim().split(/\s+/).map(Number);
+  const w = parts[2] || 0;
+  const h = parts[3] || 0;
   return (
-    <div className="rounded border border-edge bg-white flex flex-col min-h-0">
-      <div className="text-[10px] uppercase tracking-wide text-ink-500 px-2 py-1 border-b border-edge">{title}</div>
-      <div className="relative flex-1 min-h-0 overflow-auto">
-        <img src={src} alt={title} className="w-full block" />
-        <DiffOverlay boxes={boxes} viewBox={viewBox}
-          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }} />
+    <div className="rounded border border-edge bg-white flex flex-col min-h-0 overflow-hidden">
+      <div className="text-[10px] uppercase tracking-wide text-ink-500 px-2 py-1 border-b border-edge shrink-0">{title}</div>
+      <div className="relative flex-1 min-h-0">
+        <Canvas>
+          <ImgLayer src={src} />
+          <DiffOverlay boxes={boxes} viewBox={viewBox} tone={tone}
+            style={{ position: "absolute", left: 0, top: 0, width: w, height: h,
+                     transformOrigin: "0 0", pointerEvents: "none", overflow: "visible" }} />
+        </Canvas>
       </div>
     </div>
   );

@@ -338,9 +338,12 @@ def _write_rules_and_summarize(merged: list[Rule], conflicts: list[dict],
     from .rule_eval import save_rules                  # noqa: PLC0415
     save_rules(rf)
 
-    by_family = {"schematic": 0, "simulation": 0, "design": 0}
+    # Count every family present (schematic / design / block — the simulation
+    # family was retired; block rules cover that ground). Built dynamically so a
+    # new family can't KeyError here.
+    by_family: dict[str, int] = {}
     for r in merged:
-        by_family[r.family] += 1
+        by_family[r.family] = by_family.get(r.family, 0) + 1
 
     return {
         "count_total": len(merged),

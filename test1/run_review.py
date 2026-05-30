@@ -70,9 +70,11 @@ def main() -> int:
         rf = rule_eval.load_rules()
         from review.rule_schema import SemanticRule
         n_sem = sum(1 for r in rf.rules if isinstance(r, SemanticRule) and r.enabled)
+        n_block = sum(1 for r in rf.rules if r.family == "block" and r.enabled)
         print(f"  {len(new_findings)} findings from "
               f"{sum(1 for r in rf.rules if r.enabled)}/{len(rf.rules)} active rules"
-              f" (semantic {'ON' if run_semantic else 'OFF'}: {n_sem} LLM-judged rules)")
+              f" (semantic {'ON' if run_semantic else 'OFF'}: {n_sem} LLM-judged rules;"
+              f" {n_block} block-boundary rules)")
     except FileNotFoundError:
         print("  (rules.yaml not yet generated — run /api/review/rules/generate)")
     except Exception as e:

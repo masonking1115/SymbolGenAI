@@ -214,6 +214,12 @@ wrdata line_reg.dat v(vout) v(vddio)
 # Result analysis — turn raw waveforms into PASS/FAIL margins.
 
 
+# TPS7A8401A datasheet max dropout (SBVS210, 1A load). The LDO regulates as
+# long as the available headroom (Vin - Vout) stays above this; it is NOT the
+# steady-state Vin-Vout drop (which is the headroom, ~2.5V here with 3V3 in).
+LDO_DROPOUT_SPEC_V = 0.18
+
+
 def analyze_op_point(op: dict[str, float], *, vout_set: float = 1.8) -> dict:
     """Score a DC op-point result against expected rail values."""
     rails = {
@@ -235,7 +241,31 @@ def analyze_op_point(op: dict[str, float], *, vout_set: float = 1.8) -> dict:
             "status": "OK" if err <= tol else "OUT_OF_BAND",
             "tol_V": tol,
         })
-    return {"check": "dc_op_point", "rails": findings,
+
+    # Explicit dropout assessment so the dropout rule can be judged off a
+    # labelled figure instead of (mis)reading Vin-Vout as the dropout. Dropout
+    # is the MINIMUM headroom the device needs to regulate (spec 180mV); the LDO
+    # is in spec when available headroom >= that and Vout tracks the setpoint.
+    vin = op.get("v(v3v3)")
+    vout = op.get("v(vout)")
+    dropout = None
+    if vin is not None and vout is not None:
+        headroom = vin - vout
+        regulating = abs(vout - vout_set) <= 0.05
+        in_dropout = headroom < LDO_DROPOUT_SPEC_V
+        dropout = {
+            "headroom_V": round(headroom, 4),
+            "dropout_spec_V": LDO_DROPOUT_SPEC_V,
+            "in_dropout": in_dropout,
+            "regulating": regulating,
+            # PASS the dropout requirement = enough headroom AND Vout regulating.
+            "status": "OK" if (not in_dropout and regulating) else "FAIL",
+            "note": ("headroom exceeds the 180mV device dropout — LDO regulating, "
+                     "not dropout-limited" if not in_dropout
+                     else "headroom below 180mV device dropout — LDO in dropout"),
+        }
+
+    return {"check": "dc_op_point", "rails": findings, "dropout": dropout,
             "overall": "OK" if all(f.get("status") == "OK" for f in findings) else "FAIL"}
 
 

@@ -90,6 +90,61 @@ def set_build_offset(dx: int, dy: int) -> None:
     _BUILD_OFFSET = (int(dx), int(dy))
 
 
+# --- Centering (intrinsic to building a sheet) ---------------------------
+# Centering lives HERE, next to the offset machinery, so EVERY build path gets
+# it: build_project and each standalone build_<sheet> main() call build_centered()
+# rather than each caller remembering to opt in. (It used to live privately in
+# build_project, so standalone `python -m test1.altium.build_<sheet>` produced
+# off-center renders — the stale artifact that looked like a bug.)
+_CENTER_LOW_MARGIN = 300    # keep content >= this from the left/bottom edge
+_CENTER_HIGH_MARGIN = 600   # ... and >= this from the right/top edge (matches _fit_paper)
+
+
+def _center_axis_shift(lo: float, hi: float, page: int) -> int:
+    """Grid-snapped shift that centers span [lo,hi] in [0,page], clamped so the
+    content never crosses into the margins (so it can't overflow / upgrade paper)."""
+    target = (page - (hi - lo)) / 2 - lo
+    d = max(_CENTER_LOW_MARGIN - lo,
+            min((page - _CENTER_HIGH_MARGIN) - hi, target))
+    return int(round(d / 100) * 100)
+
+
+def build_centered(fn):
+    """Build a sheet via `fn` (a no-arg builder), then re-build it shifted so its
+    content is centered on the chosen page. Connectivity is offset-invariant, so
+    this is purely a layout shift.
+
+    `fn` may return either an AltiumSheet or an (sheet, netlist) tuple — the return
+    is passed through unchanged, so callers keep their existing unpacking (root
+    returns just `s`; child builders return `(s, nl)`).
+
+    Two passes are required because the build offset is captured at sheet
+    construction and applied as each element is placed: pass 1 measures the
+    content bbox, pass 2 re-places everything shifted. Idempotent and safe — if no
+    shift is needed (already centered, or empty), it returns the first build."""
+    def _sheet(ret):
+        return ret[0] if isinstance(ret, tuple) else ret
+
+    set_build_offset(0, 0)
+    ret = fn()
+    s = _sheet(ret)
+    paper = getattr(s, "_chosen_paper", None) or s._fit_paper()
+    W, H = s._PAPER_MIL.get(paper, (0, 0))
+    minx, miny, maxx, maxy = s.content_bbox()
+    if not W or maxx <= minx:
+        return ret
+    dx = _center_axis_shift(minx, maxx, W)
+    dy = _center_axis_shift(miny, maxy, H)
+    if dx == 0 and dy == 0:
+        return ret
+    set_build_offset(dx, dy)
+    try:
+        ret = fn()
+    finally:
+        set_build_offset(0, 0)   # never leak the offset to the next build
+    return ret
+
+
 # NOTE on attribute names: the structured records below use the SAME
 # underscore-prefixed names the KiCad gen/validator.py duck-types on
 # (`_wires`, `_junctions`, `_placed`, `_labels`). That lets us reuse the exact

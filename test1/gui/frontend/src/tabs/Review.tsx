@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, subscribeRun } from "../api";
-import { Console } from "../components/Console";
+import { api } from "../api";
 import { DiffAndAccept } from "../components/DiffAndAccept";
 import type { DiffMode } from "../components/DiffPanes";
 import { I } from "../components/Icon";
@@ -26,7 +25,6 @@ interface Props {
   onArtifactsChanged: () => void;
   setHealth: (h: { text: string; tone: "ok" | "warn" | "err" | "neutral" } | undefined) => void;
   /** Navigate back to the Generator tab after autofix completes. */
-  onAutofixCompleted: () => void;
   // Loop state lifted to App.tsx so the right pane can swap PngViewer for
   // DiffPanes when a completed loop is awaiting accept/reject.
   activeLoopId: string | null;
@@ -63,15 +61,13 @@ function indexQueue(q: FixQueueEntry[]): Map<string, FixQueueEntry> {
 }
 
 export function Review({
-  onArtifactsChanged, setHealth, onAutofixCompleted,
+  onArtifactsChanged, setHealth,
   activeLoopId, setActiveLoopId, loopSummary, setLoopSummary,
   loopDiff, diffSheet, setDiffSheet, diffMode, setDiffMode,
   hasRealDiff, diffVisible, setDiffVisibleOverride,
 }: Props) {
   const [report, setReport] = useState<FindingsReport | null>(null);
-  const [lines, setLines] = useState<string[]>([]);
   const [runState, setRunState] = useState<RunState>("idle");
-  const [errorLog, setErrorLog] = useState<string>("");
   const [queue, setQueue] = useState<Map<string, FixQueueEntry>>(new Map());
 
   const refresh = useCallback(async () => {
@@ -83,12 +79,6 @@ export function Review({
       setHealth({ text: `${s.ERROR}E · ${s.WARNING}W · ${s.INFO}I`, tone });
     } catch {
       // ignore
-    }
-    try {
-      const e = await api.errorLog();
-      setErrorLog(e.content || "");
-    } catch {
-      setErrorLog("");
     }
     try {
       const q = await api.fixQueue();
@@ -139,7 +129,6 @@ export function Review({
   }, [onArtifactsChanged]);
 
   const startLoop = async () => {
-    setLines([]);
     setRunState("running");
     setHealth({ text: "loop starting…", tone: "neutral" });
     try {
@@ -162,30 +151,12 @@ export function Review({
     }
   };
 
-  const startRun = async (autofix: boolean) => {
-    setLines([]);
-    setRunState("running");
-    setHealth({ text: "running…", tone: "neutral" });
-    const { run_id } = autofix
-      ? await api.runAutofix()
-      : await api.runReview();
-    subscribeRun(
-      run_id,
-      (line) => setLines((prev) => [...prev, line]),
-      ({ status }) => {
-        setRunState(status === "ok" ? "ok" : "fail");
-        onArtifactsChanged();
-        setTimeout(() => {
-          refresh();
-          if (autofix && status === "ok") onAutofixCompleted();
-        }, 250);
-      },
-    );
-  };
-
   const sum = report?.summary ?? { ERROR: 0, WARNING: 0, INFO: 0 };
   const items: Finding[] = [...(report?.findings ?? []), ...(report?.semantic ?? [])];
-  const isHealthy = sum.ERROR === 0 && sum.WARNING === 0 && sum.INFO === 0 && (report?.error_log_exists ?? false);
+  // Healthy = no findings of any severity. (Previously also required
+  // error_log.md to exist, but the closed-loop review never writes that file —
+  // only the legacy CLI did — so the badge could never turn green. Dropped.)
+  const isHealthy = sum.ERROR === 0 && sum.WARNING === 0 && sum.INFO === 0;
 
   return (
     <div className="h-full overflow-auto thin-scroll">
@@ -225,14 +196,7 @@ export function Review({
             disabled={runState === "running"}
             className="h-9 px-3 inline-flex items-center gap-2 rounded-md bg-ink-900 text-white text-sm font-medium hover:bg-black disabled:opacity-50"
           >
-            <I.Play size={14} /> Run review
-          </button>
-          <button
-            onClick={() => startRun(true)}
-            disabled={runState === "running"}
-            className="h-9 px-3 inline-flex items-center gap-2 rounded-md border border-edge text-ink-700 text-sm hover:border-ink-300 disabled:opacity-50"
-          >
-            <I.Wrench size={14} /> Run review + autofix trivial
+            <I.Play size={14} /> Design review
           </button>
           <button
             onClick={refresh}
@@ -241,12 +205,11 @@ export function Review({
             <I.Refresh size={14} /> Refresh
           </button>
           <span className="text-xs text-ink-500 ml-2">
-            After an autofix the GUI jumps back to Schematic Generator to re-lint.
+            Design review runs the closed loop: evaluate rules → auto-correct findings → rebuild → re-check, then Diff &amp; Accept.
           </span>
         </div>
 
         <RulesSection
-          onApproveAndRun={startLoop}
           loopRunning={runState === "running"}
         />
 
@@ -300,25 +263,6 @@ export function Review({
           )}
         </section>
 
-        <section className="mt-6">
-          <div className="flex items-baseline gap-3 mb-2">
-            <h3 className="text-sm font-semibold text-ink-900">Run output</h3>
-            <span className="text-[11px] text-ink-500">stdout from run_review.py</span>
-          </div>
-          <Console lines={lines} status={runState} />
-        </section>
-
-        {errorLog && (
-          <section className="mt-6">
-            <div className="flex items-baseline gap-3 mb-2">
-              <h3 className="text-sm font-semibold text-ink-900">error_log.md</h3>
-              <span className="text-[11px] text-ink-500">latest report on disk</span>
-            </div>
-            <pre className="border border-edge rounded-md bg-white p-3 text-[12px] text-ink-700 whitespace-pre-wrap font-mono max-h-[400px] overflow-auto thin-scroll">
-              {errorLog}
-            </pre>
-          </section>
-        )}
       </div>
     </div>
   );

@@ -26,7 +26,7 @@ from ..gen.netlist import load_netlist
 from ..gen.validator import validate
 from .build_symbols import get_library
 from .config import OUT_DIR, RENDER_DIR
-from .shared import AltiumSheet
+from .shared import AltiumSheet, build_centered
 
 GRID = 100  # mil
 
@@ -172,7 +172,7 @@ def build_connectors() -> tuple[AltiumSheet, object]:
 
 
 def main() -> int:
-    s, _nl = build_connectors()
+    s, _nl = build_centered(build_connectors)
     out = s.save(OUT_DIR / "connectors.SchDoc")
     svg = s.render_svg(RENDER_DIR / "connectors.svg")
     print(f"validated OK | wrote {out.name} + {svg.name}")

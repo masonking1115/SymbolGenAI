@@ -17,6 +17,7 @@ import os
 import re
 import subprocess
 from collections.abc import Iterable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import yaml
@@ -518,7 +519,6 @@ def run_all(rules: list[Rule] | None = None,
         rules = rf.rules
     view = load_all()
     sim = sim_results or {}
-    out: list[Finding] = []
     # What we'll actually evaluate. Structural predicates are instant EXCEPT
     # sim_review (runs ngspice + a judge agent) — gate those behind `semantic`
     # alongside the LLM semantic rules, so the fast path stays instant.
@@ -527,28 +527,78 @@ def run_all(rules: list[Rule] | None = None,
                (isinstance(r, StructuralRule) and r.predicate.kind == "sim_review")
     active = [r for r in rules if r.enabled and (semantic or not _is_slow(r))]
     total = len(active)
-    for i, rule in enumerate(active, 1):
+    # Stable index per rule so progress + ordering are deterministic regardless
+    # of completion order under concurrency.
+    idx_of = {id(r): i for i, r in enumerate(active, 1)}
+    findings_by_idx: dict[int, Finding] = {}
+
+    def _emit(rule, result: str) -> None:
+        if progress is None:
+            return
+        try:
+            progress("rule", {"i": idx_of[id(rule)], "total": total, "id": rule.id,
+                              "evaluation": getattr(rule, "evaluation", "structural"),
+                              "result": result})
+        except Exception:
+            pass  # best-effort; never break evaluation
+
+    def _eval_one(rule) -> None:
+        """Evaluate one rule; record a finding (by stable index) on fail + emit
+        progress. Safe to call from worker threads."""
         result = "pass"
         if isinstance(rule, StructuralRule):
             ok = _DISPATCH[rule.predicate.kind](rule.predicate, view, sim)
             if not ok:
-                # For an agent-judged sim_review, surface the agent's observation.
                 observed = "rule fired"
                 if rule.predicate.kind == "sim_review":
                     r = sim.get((rule.predicate.sim_block, rule.predicate.sim_type)) or {}
                     observed = r.get("_review_observed") or "sim result did not meet the requirement"
-                out.append(_rule_to_finding(rule, observed=observed))
+                findings_by_idx[idx_of[id(rule)]] = _rule_to_finding(rule, observed=observed)
                 result = "fail"
-        else:  # semantic (only reached when semantic=True)
+        else:  # SemanticRule
             f = _eval_semantic_rule(rule, view)
             if f is not None:
-                out.append(f)
+                findings_by_idx[idx_of[id(rule)]] = f
                 result = "fail"
-        if progress is not None:
-            try:
-                progress("rule", {"i": i, "total": total, "id": rule.id,
-                                   "evaluation": getattr(rule, "evaluation", "structural"),
-                                   "result": result})
-            except Exception:
-                pass  # progress is best-effort; never break evaluation
-    return out
+        _emit(rule, result)
+
+    # Split fast (instant Python predicates) vs slow (agent/ngspice). Fast run
+    # inline; slow run in a bounded thread pool so 16 agent calls finish in
+    # ~max(call) instead of sum(calls) — the responsiveness fix.
+    fast = [r for r in active if not _is_slow(r)]
+    slow = [r for r in active if _is_slow(r)]
+    for rule in fast:
+        _eval_one(rule)
+
+    if slow:
+        # Pre-run the DISTINCT sim blocks ONCE (concurrently) so multiple
+        # sim_review rules sharing a block don't each spawn a duplicate ngspice
+        # run / race the shared cache. The judge agents then read cached results.
+        distinct_blocks = []
+        seen_blk = set()
+        for r in slow:
+            if isinstance(r, StructuralRule) and r.predicate.kind == "sim_review":
+                key = (r.predicate.sim_block, r.predicate.sim_type)
+                if key not in seen_blk and key not in sim:
+                    seen_blk.add(key)
+                    distinct_blocks.append(key)
+        if distinct_blocks:
+            with ThreadPoolExecutor(max_workers=min(4, len(distinct_blocks))) as ex:
+                futs = {ex.submit(_run_block_for_review, b, st): (b, st)
+                        for (b, st) in distinct_blocks}
+                for fut in as_completed(futs):
+                    b, st = futs[fut]
+                    try:
+                        res = fut.result()
+                        if res is not None:
+                            sim[(b, st)] = res
+                    except Exception:
+                        pass
+
+        # Now judge/eval all slow rules concurrently (sims are cached; judges +
+        # semantic agents are independent claude -p calls).
+        with ThreadPoolExecutor(max_workers=min(8, len(slow))) as ex:
+            list(ex.map(_eval_one, slow))
+
+    # Assemble findings in stable rule order.
+    return [findings_by_idx[i] for i in sorted(findings_by_idx)]

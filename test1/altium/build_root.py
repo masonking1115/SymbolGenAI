@@ -10,7 +10,7 @@ the top row sits at the larger y.
 from __future__ import annotations
 
 from .config import OUT_DIR, RENDER_DIR
-from .shared import AltiumSheet
+from .shared import AltiumSheet, build_centered
 
 W, H = 4000, 2600
 GAP_X, GAP_Y = 1200, 1200
@@ -56,7 +56,7 @@ def build_root() -> AltiumSheet:
 
 
 def main() -> int:
-    s = build_root()
+    s = build_centered(build_root)
     out = s.save(OUT_DIR / "root.SchDoc")
     svg = s.render_svg(RENDER_DIR / "root.svg")
     print(f"wrote {out.name} + {svg.name} (6 sheet symbols)")

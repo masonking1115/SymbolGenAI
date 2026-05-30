@@ -366,6 +366,7 @@ export interface RuleAppliesTo {
   sim_type?: string;
   mpn?: string;
   role_spec?: Record<string, unknown>;
+  block?: string;   // functional block this rule belongs to (block family)
 }
 
 export interface RulePredicate {
@@ -375,7 +376,7 @@ export interface RulePredicate {
 
 export interface Rule {
   id: string;
-  family: "schematic" | "simulation" | "design";
+  family: "schematic" | "simulation" | "design" | "block";
   evaluation: "structural" | "semantic";
   severity: "ERROR" | "WARNING" | "INFO";
   title: string;
@@ -394,7 +395,7 @@ export interface RulesListResponse {
   rules: Rule[];
   sources_seen: { path: string; mtime: number }[];
   stale_sources: { path: string; current_mtime: number; recorded_mtime: number }[];
-  by_family: { schematic: number; simulation: number; design: number };
+  by_family: { schematic: number; simulation: number; design: number; block?: number };
   by_origin: { generated: number; user: number; imported: number };
 }
 
@@ -469,7 +470,7 @@ export type RuleGenPhase =
 
 export interface RuleGenResult {
   count_total: number;
-  count_by_family: { schematic: number; simulation: number; design: number };
+  count_by_family: { schematic: number; design: number; simulation?: number; block?: number };
   conflicts: { id: string; user_title: string; generated_title: string }[];
   rejected_unverifiable: { id: string; reason: string }[];
   sources_seen: { path: string; mtime: number }[];

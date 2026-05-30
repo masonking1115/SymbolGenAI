@@ -547,7 +547,7 @@ interface View {
 
 const NaturalSizeContext = createContext<(w: number, h: number) => void>(() => {});
 
-function ImgLayer({ src }: { src: string }) {
+export function ImgLayer({ src }: { src: string }) {
   const setNat = useContext(NaturalSizeContext);
   return (
     <img
@@ -604,7 +604,7 @@ function RegionOverlay({ region }: { region: SheetRegion }) {
   );
 }
 
-function Canvas({ children }: { children: React.ReactNode }) {
+export function Canvas({ children }: { children: React.ReactNode }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   // zoom/tx/ty live in ONE state object and are always updated together by a

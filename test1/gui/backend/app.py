@@ -2197,13 +2197,128 @@ def review_rules_list() -> dict:
         "stale_sources": stale_sources,
         "by_family": {
             fam: sum(1 for r in rf.rules if r.family == fam)
-            for fam in ("schematic", "simulation", "design")
+            for fam in ("schematic", "simulation", "design", "block")
         },
         "by_origin": {
             ori: sum(1 for r in rf.rules if r.origin == ori)
             for ori in ("generated", "user", "imported")
         },
     }
+
+
+_PDF_FAMILY_LABEL = {"schematic": "General Checks", "design": "Components",
+                     "block": "Blocks", "simulation": "Simulation"}
+_PDF_BLOCK_LABEL = {
+    "opa_bias": "opa_bias — V-to-I bias loop",
+    "ldo_rail": "ldo_rail — TPS7A8401A LDO",
+    "loadsw": "loadsw — VADJ→VDDIO switch",
+    "vddio_pdn": "vddio_pdn — VDDIO decoupling",
+    "vddd_pdn": "vddd_pdn — VDDD decoupling",
+    "vdda1_pdn": "vdda1_pdn — VDDA1 decoupling",
+    "vdda2_pdn": "vdda2_pdn — VDDA2 decoupling",
+    "eeprom": "eeprom — 24AA08 I²C",
+}
+_PDF_BLOCK_ORDER = ["opa_bias", "ldo_rail", "loadsw", "vddio_pdn", "vddd_pdn",
+                    "vdda1_pdn", "vdda2_pdn", "eeprom"]
+
+
+@app.get("/api/review/rules/pdf")
+def review_rules_pdf():
+    """Render the current rule set to a PDF, grouped exactly like the Rules
+    dropdown (General Checks / Components / Blocks → per block). Each rule lists
+    its id, severity, evaluation (with a 'simulated' marker for sim_review),
+    title, the cited requirement/datasheet source, and the fix hint."""
+    import io
+    import datetime
+    from xml.sax.saxutils import escape
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import inch
+    from reportlab.lib import colors
+    from reportlab.platypus import (
+        SimpleDocTemplate, Paragraph, Spacer, HRFlowable)
+
+    from test1.review.rule_eval import load_rules
+    rf = load_rules()
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=letter,
+                            leftMargin=0.7 * inch, rightMargin=0.7 * inch,
+                            topMargin=0.7 * inch, bottomMargin=0.7 * inch,
+                            title="test1 — Design Review Rules")
+    ss = getSampleStyleSheet()
+    h1 = ParagraphStyle("h1", parent=ss["Heading1"], fontSize=16, spaceAfter=4)
+    h2 = ParagraphStyle("h2", parent=ss["Heading2"], fontSize=13, spaceBefore=10, spaceAfter=4)
+    h3 = ParagraphStyle("h3", parent=ss["Heading3"], fontSize=11, spaceBefore=6, spaceAfter=2,
+                        textColor=colors.HexColor("#333333"))
+    meta = ParagraphStyle("meta", parent=ss["Normal"], fontSize=8, textColor=colors.grey)
+    rid = ParagraphStyle("rid", parent=ss["Normal"], fontSize=8,
+                         fontName="Courier", textColor=colors.HexColor("#555555"))
+    title = ParagraphStyle("title", parent=ss["Normal"], fontSize=9.5, spaceAfter=1, leading=12)
+    detail = ParagraphStyle("detail", parent=ss["Normal"], fontSize=8,
+                           textColor=colors.HexColor("#444444"), leftIndent=10, leading=10)
+
+    SEV_COLOR = {"ERROR": "#c0392b", "WARNING": "#d97706", "INFO": "#777777"}
+
+    def rule_flowables(r):
+        out = []
+        sev = str(r.severity)
+        ev = "semantic" if r.prompt else (r.predicate.kind if r.predicate else "structural")
+        simd = " · <b>simulated</b>" if (r.predicate and getattr(r.predicate, "kind", "") == "sim_review") else ""
+        dis = "" if r.enabled else " · <i>disabled</i>"
+        sevtag = f'<font color="{SEV_COLOR.get(sev, "#777")}"><b>{sev}</b></font>'
+        out.append(Paragraph(
+            f'{sevtag} &nbsp; <font face="Courier" size="8">{escape(r.id)}</font> '
+            f'· {ev}{simd}{dis}', rid))
+        out.append(Paragraph(escape(r.title), title))
+        if r.source:
+            s = r.source[0]
+            cite = f"{escape(s.doc)}:{escape(s.loc)}"
+            if s.quote:
+                cite += f' — “{escape(s.quote[:180])}”'
+            out.append(Paragraph(cite, detail))
+        if r.fix_hint:
+            out.append(Paragraph(f"<b>fix:</b> {escape(r.fix_hint)}", detail))
+        out.append(Spacer(1, 5))
+        return out
+
+    story = [
+        Paragraph("test1 — Design Review Rules", h1),
+        Paragraph(
+            f"{sum(1 for r in rf.rules if r.enabled)} active of {len(rf.rules)} rules · "
+            f"generated {rf.generated_at or '—'} · "
+            f"exported {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}", meta),
+        HRFlowable(width="100%", thickness=0.5, color=colors.lightgrey, spaceBefore=6, spaceAfter=8),
+    ]
+
+    fam_order = ["schematic", "design", "block", "simulation"]
+    for fam in fam_order:
+        frules = [r for r in rf.rules if r.family == fam]
+        if not frules:
+            continue
+        story.append(Paragraph(f"{_PDF_FAMILY_LABEL.get(fam, fam)} ({len(frules)})", h2))
+        if fam == "block":
+            # group per block
+            by_block: dict[str, list] = {}
+            for r in frules:
+                by_block.setdefault(r.applies_to.block or "other", []).append(r)
+            keys = ([b for b in _PDF_BLOCK_ORDER if b in by_block]
+                    + sorted(b for b in by_block if b not in _PDF_BLOCK_ORDER))
+            for b in keys:
+                story.append(Paragraph(
+                    f"{_PDF_BLOCK_LABEL.get(b, b)} ({len(by_block[b])})", h3))
+                for r in by_block[b]:
+                    story.extend(rule_flowables(r))
+        else:
+            for r in frules:
+                story.extend(rule_flowables(r))
+
+    doc.build(story)
+    buf.seek(0)
+    fname = f"test1-design-review-rules-{datetime.datetime.now().strftime('%Y%m%d')}.pdf"
+    return StreamingResponse(
+        buf, media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'})
 
 
 @app.post("/api/review/rules/generate")
@@ -2320,17 +2435,74 @@ def review_rules_edit(body: RuleEditBody) -> dict:
 
 
 @app.delete("/api/review/rules/{rule_id}")
-def review_rules_delete(rule_id: str) -> dict:
-    """Soft-delete: sets enabled=false. Hard-delete: pass ?hard=true."""
+def review_rules_delete(rule_id: str, hard: bool = False) -> dict:
+    """Delete a rule. Default = soft (enabled=false, recoverable). hard=true
+    removes it from rules.yaml entirely (the Rules card's trash uses hard)."""
     from test1.review.rule_eval import load_rules, save_rules
     rf = load_rules()
     target = next((r for r in rf.rules if r.id == rule_id), None)
     if not target:
         raise HTTPException(404, f"rule not found: {rule_id}")
+    if hard:
+        rf.rules = [r for r in rf.rules if r.id != rule_id]
+        save_rules(rf)
+        return {"ok": True, "rule_id": rule_id, "deleted": True}
     target.enabled = False
     target.origin = "user"
     save_rules(rf)
     return {"ok": True, "rule_id": rule_id, "enabled": False}
+
+
+class AddRuleBody(BaseModel):
+    id: str
+    family: str = "design"               # general / schematic, components / design, block
+    severity: str = "WARNING"            # ERROR | WARNING | INFO
+    title: str
+    prompt: str                          # the check, judged by claude -p (semantic)
+    sheet: str | None = None
+    refdes: str | None = None
+    net: str | None = None
+    block: str | None = None             # for block-family rules
+    source_doc: str = "design_requirements.md"
+    source_loc: str = "manual entry"
+    source_quote: str = ""
+    fix_hint: str = ""
+
+
+@app.post("/api/review/rules/add")
+def review_rules_add(body: AddRuleBody) -> dict:
+    """Manually add a user-authored rule (semantic — a title + a prompt the LLM
+    judges). origin='user' so it survives any future tooling. Rejects duplicate
+    ids. This + edit + hard-delete are the manual rule-management path that
+    replaced the doc-driven Regenerate."""
+    import re as _re
+    from test1.review.rule_eval import load_rules, save_rules
+    from test1.review.rule_schema import (
+        SemanticRule, AppliesTo, SourceCitation)
+    rf = load_rules()
+    rid = body.id.strip()
+    if not _re.fullmatch(r"[A-Za-z0-9_]+", rid):
+        raise HTTPException(400, "rule id must be alphanumeric/underscore")
+    if any(r.id == rid for r in rf.rules):
+        raise HTTPException(409, f"rule id already exists: {rid}")
+    if body.family not in ("schematic", "design", "block"):
+        raise HTTPException(400, "family must be schematic, design, or block")
+    if body.severity not in ("ERROR", "WARNING", "INFO"):
+        raise HTTPException(400, "severity must be ERROR, WARNING, or INFO")
+    try:
+        rule = SemanticRule(
+            id=rid, family=body.family, severity=body.severity, title=body.title,
+            applies_to=AppliesTo(sheet=body.sheet, refdes=body.refdes,
+                                 net=body.net, block=body.block),
+            source=[SourceCitation(doc=body.source_doc, loc=body.source_loc,
+                                   quote=body.source_quote)],
+            fix_hint=body.fix_hint, origin="user", prompt=body.prompt,
+        )
+    except Exception as e:
+        raise HTTPException(400, f"invalid rule: {e}")
+    rf.rules.append(rule)
+    save_rules(rf)
+    return {"ok": True, "rule": rule.model_dump(exclude_none=True)}
 
 
 @app.get("/api/review/providers")
@@ -2442,27 +2614,103 @@ class LoopRejectBody(BaseModel):
     revert: list[str] | None = None    # refdes list for selective revert
 
 
-@app.post("/api/loop/{loop_id}/reject")
-async def loop_reject(loop_id: str, body: LoopRejectBody = LoopRejectBody()) -> dict:
-    L = _loop_mod.get_loop(loop_id)
-    if not L:
-        raise HTTPException(404, "no such loop")
-    _loop_mod.restore_from_snapshot(L, refdes_revert=body.revert)
-    # Rebuild once to refresh out/render
+async def _rebuild_project() -> tuple[bool, str]:
+    """Rebuild the Altium project; return (ok, log_tail)."""
     proc = await asyncio.create_subprocess_exec(
         sys.executable, "-m", "test1.altium.build_project",
         cwd=str(REPO_ROOT),
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
     )
     out, _ = await proc.communicate()
-    return {"ok": True, "rebuild_status": proc.returncode == 0,
-            "rebuild_log_tail": out.decode("utf-8", errors="replace")[-2000:]}
+    return proc.returncode == 0, out.decode("utf-8", errors="replace")[-2000:]
+
+
+@app.post("/api/loop/{loop_id}/reject")
+async def loop_reject(loop_id: str, body: LoopRejectBody = LoopRejectBody()) -> dict:
+    """Reject = revert to the pre-loop snapshot, with a VERIFY-AFTER-REVERT
+    'double revert' guard: we capture the current (post-loop) state first, do the
+    revert + rebuild, then check whether the reverted state is WORSE (build broke,
+    or lint ERRORs went up). If it is, we ROLL FORWARD — restore the post-loop
+    state — instead of leaving the user stranded in a bad baseline. Only on a
+    clean revert do we tear down the loop residue (changelog + snapshot)."""
+    L = _loop_mod.get_loop(loop_id)
+    if not L:
+        raise HTTPException(404, "no such loop")
+
+    # Health of the post-loop state, captured BEFORE we touch anything.
+    pre_err = _loop_mod.lint_error_count()
+    _loop_mod.capture_pre_revert(L)
+
+    _loop_mod.restore_from_snapshot(L, refdes_revert=body.revert)
+    rebuild_ok, log_tail = await _rebuild_project()
+    post_err = _loop_mod.lint_error_count()
+
+    # "Worse" = the rebuild failed, OR lint ERRORs increased vs the post-loop
+    # state. (Unknown counts -> None -> not treated as worse; build failure alone
+    # still trips it.) A reverted state that merely stays equal is fine.
+    worse = (not rebuild_ok) or (
+        pre_err is not None and post_err is not None and post_err > pre_err
+    )
+
+    if worse:
+        rolled = _loop_mod.roll_forward(L)
+        # Rebuild again so on-disk renders match the rolled-forward netlist.
+        rf_ok, rf_log = await _rebuild_project() if rolled else (False, "")
+        # Keep the loop + snapshot intact (no teardown) so the user can retry /
+        # inspect; surface a clear warning instead of a silent bad revert.
+        return {
+            "ok": False,
+            "rolled_forward": rolled,
+            "rebuild_status": rf_ok if rolled else rebuild_ok,
+            "reason": (
+                "Revert produced a worse state "
+                + (f"(lint ERRORs {pre_err}→{post_err})" if not (not rebuild_ok) else "(rebuild failed)")
+                + ("; rolled forward to the post-loop state."
+                   if rolled else "; could NOT roll forward (no captured state) — "
+                                   "design may be in the reverted state.")
+            ),
+            "rebuild_log_tail": (rf_log if rolled else log_tail),
+        }
+
+    # Clean revert — now safe to clear the loop residue (changelog + snapshot).
+    _loop_mod._teardown_after_reject(L)
+    return {"ok": True, "rolled_forward": False,
+            "rebuild_status": rebuild_ok, "rebuild_log_tail": log_tail}
 
 
 @app.get("/api/loop/{loop_id}/diff")
 def loop_diff(loop_id: str) -> dict:
     from test1.review.diff import compute_loop_diff
     return {"loop_id": loop_id, "sheets": compute_loop_diff(loop_id)}
+
+
+@app.post("/api/loop/{loop_id}/clear")
+def loop_clear(loop_id: str) -> dict:
+    """Manually clear a loop's review residue WITHOUT reverting the design:
+    drop the closed-loop changelog items + remove the snapshot so the diff stops
+    resurfacing. This is the explicit 'clear cache / delete these' control the
+    Review tab was missing — use it when you've ACCEPTED the design (kept the
+    changes) but the changelog/diff lingered. Does NOT touch netlist/*.yaml."""
+    import shutil as _shutil
+    # 1) Drop closed-loop changelog items (the only writer of that source).
+    items = agent_mod.load_changelog()
+    kept = [it for it in items if it.get("source") != "closed_loop"]
+    removed = len(items) - len(kept)
+    if removed:
+        agent_mod.save_changelog(kept)
+    # 2) Remove the snapshot dir (and any archived tar) so /diff returns empty.
+    snap = _loop_mod.SNAPSHOT_ROOT / loop_id
+    tar = _loop_mod.SNAPSHOT_ROOT / f"{loop_id}.tar.gz"
+    snap_removed = False
+    try:
+        if snap.exists():
+            _shutil.rmtree(snap)
+            snap_removed = True
+        if tar.exists():
+            tar.unlink()
+    except OSError:
+        pass
+    return {"ok": True, "changelog_removed": removed, "snapshot_removed": snap_removed}
 
 
 @app.get("/api/png_snapshot/{loop_id}/{name}")

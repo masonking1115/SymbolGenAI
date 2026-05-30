@@ -28,6 +28,26 @@ Deferred work items (not blocking; pick up when convenient).
 
 ## UI / GUI
 
+### Iteration / Findings legibility (2026-05-30, NEW)
+
+- [ ] **Describe the meaning of each pipeline step.** The loop's step strip
+      (round N/10: Plan · Apply · Sim · Missing · Lint fix · Build · Re-eval) is
+      not self-explanatory — "Missing" especially is opaque. Add a short
+      plain-English description per step (tooltip on hover and/or a one-line
+      caption) so a non-author understands what each stage does:
+        - Plan — decide which findings to act on this round
+        - Apply — edit the builders to implement the chosen fixes
+        - Sim — run ngspice on affected blocks to check the change physically
+        - Missing — source/author a part that the design references but lacks
+        - Lint fix — auto-correct cosmetic linter nits (overlaps, stub sides)
+        - Build — regenerate the Altium schematic from the edited builders
+        - Re-eval — re-run the rules to see if findings cleared
+- [ ] **Findings dropdown → structured summary.** The Findings view should be a
+      structured report, not a flat list: group by family/block, summarize
+      counts (pass/fail/severity) in a table, and add small graphs where genuinely
+      useful (e.g. severity breakdown, findings-over-rounds). Tables/graphs only
+      where they aid comprehension — don't decorate.
+
 - [ ] **Surface the changelog directly in the Schematic Generator tab**, under the
       Regenerate button (and above the Linter checklist). The user should be able to
       ADD to and VIEW the changelog from the Generator tab itself — not only from the
@@ -111,3 +131,19 @@ step that lives in the implementation plan, not a separate feature.
       Covered by the Diff & Accept section — buttons live next to the diff view,
       "Reject" restores the snapshot, "Accept" leaves `out/` as-is and clears the
       snapshot dir.
+
+## Rule-set audit (2026-05-30) — DONE
+- Verified all rules representative vs requirements + Bobcat PPT + datasheets.
+- GAP CLOSED: added 10 ROUTE_* rules (SAMPLE_OUTV/0-7 + MISO -> FMC via series 0Ω);
+  these signals had pull-up/down rules but nothing asserting they reach the FMC.
+- DUP DROPPED: SEM_SHARED_LDO_INTENT (BLK_LDO_SHARED_RAIL_INTENT covers it).
+- CHECKLIST APPLIED (user's general checklist): added 8 CHK_* semantic rules for
+  the items NOT already covered — MPN-present, passives-have-value, signal>=2-pins,
+  no-multi-driver, power-not-shorted-GND, value-matches-MPN, cap-derating, clock-net
+  naming. Skipped items already covered by existing rules / the layout linter
+  (shorted-components, decoupling, IC pwr/gnd, I2C pull-ups/names, open-drain pull-up,
+  designator/pin uniqueness, pin-names-match-datasheet, diff-pair _P/_N + polarity).
+- 115 rules total (general 80, components 9, blocks 26). All validate; ROUTE_ rules
+  pass on the as-built design; PDF export + UI serve them.
+- OPEN (flagged by CHK_VALUE_MATCHES_MPN): R40/R41 value=3.65k but lib_id still the
+  5.11k MPN (TNPW06035K11BEEA) — needs a real 3.65k 0.1% part selected.

@@ -87,7 +87,7 @@ rules:
       \ SAMPLE_TRIG."
   fix_hint: "Add a 10k\u03A9 resistor from MOSI to GND."
   enabled: true
-  origin: generated
+  origin: user
   evaluation: structural
   predicate:
     kind: pullup_pulldown
@@ -1496,50 +1496,6 @@ rules:
     kind: no_connect
     refdes: J2
     pin: D29
-- id: VAL_SENSE_R40
-  family: schematic
-  severity: ERROR
-  title: "Bias channel-0 sense resistor must be 5.11k\u03A9"
-  applies_to:
-    refdes: R40
-    pins: []
-    sheet: bias
-    role_spec: {}
-  source:
-  - doc: design_requirements.md
-    loc: Parts to implement / Bias circuit
-    quote: "PMOS source ties to 3.3 V through a 5.11 k\u03A9 0.1% thin-film sense\
-      \ resistor"
-  fix_hint: "Set R40 to 5.11k\u03A9 0.1% to set the 0\u2013646\xB5A full-scale."
-  enabled: true
-  origin: generated
-  evaluation: structural
-  predicate:
-    kind: value_in_range
-    refdes: R40
-    value_regex: 5\.11k
-- id: VAL_SENSE_R41
-  family: schematic
-  severity: ERROR
-  title: "Bias channel-1 sense resistor must be 5.11k\u03A9"
-  applies_to:
-    refdes: R41
-    pins: []
-    sheet: bias
-    role_spec: {}
-  source:
-  - doc: design_requirements.md
-    loc: Parts to implement / Bias circuit
-    quote: "PMOS source ties to 3.3 V through a 5.11 k\u03A9 0.1% thin-film sense\
-      \ resistor"
-  fix_hint: "Set R41 to 5.11k\u03A9 0.1% to set the 0\u2013646\xB5A full-scale."
-  enabled: true
-  origin: generated
-  evaluation: structural
-  predicate:
-    kind: value_in_range
-    refdes: R41
-    value_regex: 5\.11k
 - id: VAL_I2C_PULLUP_R60
   family: schematic
   severity: WARNING
@@ -1684,217 +1640,6 @@ rules:
     kind: present
     mpn: 2N7002
     role_spec: {}
-- id: SIM_BIAS0_DC_PASS
-  family: simulation
-  severity: ERROR
-  title: Bias channel-0 DC operating point must pass
-  applies_to:
-    pins: []
-    sim_block: opa_bias
-    sim_type: dc_sweep
-    role_spec: {}
-  source:
-  - doc: design_requirements.md
-    loc: Specs
-    quote: "BIAS0, BIAS1 \u2014 independent programmable current sources, 0\u2013\
-      640 \xB5A"
-  fix_hint: Inspect the bias0 DC sim verdict; fix the V-to-I loop if it fails.
-  enabled: true
-  origin: generated
-  evaluation: structural
-  predicate:
-    kind: sim_review
-    sim_block: opa_bias
-    sim_type: dc_sweep
-    criterion: 'Bias channel-0 DC operating point is valid: the V-to-I loop regulates
-      and I_BIAS tracks the DAC code within ~1% across the range (0-640uA programmable
-      current source).'
-- id: SIM_BIAS1_DC_PASS
-  family: simulation
-  severity: ERROR
-  title: Bias channel-1 DC operating point must pass
-  applies_to:
-    pins: []
-    sim_block: opa_bias
-    sim_type: dc_sweep
-    role_spec: {}
-  source:
-  - doc: design_requirements.md
-    loc: Specs
-    quote: "BIAS0, BIAS1 \u2014 independent programmable current sources, 0\u2013\
-      640 \xB5A"
-  fix_hint: Inspect the bias1 DC sim verdict; fix the V-to-I loop if it fails.
-  enabled: true
-  origin: generated
-  evaluation: structural
-  predicate:
-    kind: sim_review
-    sim_block: opa_bias
-    sim_type: dc_sweep
-    criterion: 'Bias channel-1 DC operating point is valid: the V-to-I loop regulates
-      and I_BIAS tracks within ~1% (0-640uA). (Both channels share the opa_bias topology.)'
-- id: SIM_BIAS0_FULL_SCALE
-  family: simulation
-  severity: WARNING
-  title: "Bias channel-0 full-scale current \u2264 646\xB5A"
-  applies_to:
-    pins: []
-    sim_block: opa_bias
-    sim_type: dc_sweep
-    role_spec: {}
-  source:
-  - doc: design_requirements.md
-    loc: Parts to implement / Bias circuit
-    quote: "0\u2013646 \xB5A FS, ~0.16 \xB5A/LSB"
-  fix_hint: "Verify the 5.11k\u03A9 sense R yields \u2264646\xB5A full-scale."
-  enabled: true
-  origin: generated
-  evaluation: structural
-  predicate:
-    kind: sim_review
-    sim_block: opa_bias
-    sim_type: dc_sweep
-    criterion: Bias full-scale current must be <= ~646uA (note analysis full_scale_A
-      is in AMPS; 646uA = 6.46e-4 A).
-- id: SIM_BIAS0_NOMINAL
-  family: simulation
-  severity: INFO
-  title: "Bias channel-0 should reach ~320\xB5A nominal"
-  applies_to:
-    pins: []
-    sim_block: opa_bias
-    sim_type: dc_sweep
-    role_spec: {}
-  source:
-  - doc: design_requirements.md
-    loc: Specs
-    quote: "nominal 320 \xB5A @ 0.5 V"
-  fix_hint: "Check the nominal 320\xB5A @ 0.5V operating point in the bias0 DC sweep."
-  enabled: true
-  origin: generated
-  evaluation: structural
-  predicate:
-    kind: sim_review
-    sim_block: opa_bias
-    sim_type: dc_sweep
-    criterion: Bias should reach roughly the nominal regulated current (~320uA mid-range);
-      i_max_regulated_A in the analysis is in AMPS.
-- id: SIM_LDO_DC_PASS
-  family: simulation
-  severity: ERROR
-  title: LDO DC operating point must pass
-  applies_to:
-    pins: []
-    sim_block: ldo_rail
-    sim_type: dc_op_point
-    role_spec: {}
-  source:
-  - doc: design_requirements.md
-    loc: Parts to implement / TPS7A8401A
-    quote: 3 A LDO
-  fix_hint: Inspect the LDO DC sim verdict.
-  enabled: true
-  origin: generated
-  evaluation: structural
-  predicate:
-    kind: sim_review
-    sim_block: ldo_rail
-    sim_type: dc_op_point
-    criterion: 'LDO DC operating point passes: the rails (+3V3 / LDO_OUT / VADJ) settle
-      within tolerance per the deck''s per-rail check (analysis.rails).'
-- id: SIM_LDO_VOUT_MIN
-  family: simulation
-  severity: WARNING
-  title: LDO output must cover 0.6V floor
-  applies_to:
-    pins: []
-    rail: +VDDD
-    sim_block: ldo_rail
-    sim_type: dc_op_point
-    role_spec: {}
-  source:
-  - doc: design_requirements.md
-    loc: Specs
-    quote: "VDDD, VDDA1, VDDA2 = 0.6\u20131.0V (from on-board LDO)"
-  fix_hint: "Confirm the ANY-OUT straps can set Vout \u2265 0.6V."
-  enabled: true
-  origin: generated
-  evaluation: structural
-  predicate:
-    kind: sim_review
-    sim_block: ldo_rail
-    sim_type: dc_op_point
-    criterion: LDO output must be able to cover the 0.6V floor (the ANY-OUT lower
-      bound); inspect the LDO_OUT rail in analysis.rails.
-- id: SIM_LDO_VOUT_RANGE
-  family: simulation
-  severity: WARNING
-  title: LDO output must stay within ANY-OUT range
-  applies_to:
-    pins: []
-    sim_block: ldo_rail
-    sim_type: dc_op_point
-    role_spec: {}
-  source:
-  - doc: design_requirements.md
-    loc: Parts to implement / TPS7A8401A
-    quote: "ANY-OUT pin-programmable output **0.5\u20132.075 V** at 25 mV resolution"
-  fix_hint: "Confirm Vout \u2264 2.075V (ANY-OUT max)."
-  enabled: true
-  origin: generated
-  evaluation: structural
-  predicate:
-    kind: sim_review
-    sim_block: ldo_rail
-    sim_type: dc_op_point
-    criterion: LDO output stays within the ANY-OUT range (<= ~2.075V upper bound);
-      inspect the LDO_OUT rail in analysis.rails.
-- id: SIM_LDO_DROPOUT
-  family: simulation
-  severity: WARNING
-  title: "LDO dropout must be \u2264 180mV"
-  applies_to:
-    pins: []
-    sim_block: ldo_rail
-    sim_type: dc_op_point
-    role_spec: {}
-  source:
-  - doc: design_requirements.md
-    loc: Parts to implement / TPS7A8401A
-    quote: 180 mV max dropout
-  fix_hint: "Verify dropout \u2264 180mV at the worst-case load."
-  enabled: true
-  origin: generated
-  evaluation: structural
-  predicate:
-    kind: sim_review
-    sim_block: ldo_rail
-    sim_type: dc_op_point
-    criterion: LDO dropout must be <= 180mV (Vin-Vout at the regulated point); inspect
-      the rails / op_point.
-- id: SIM_LOADSW_VDDIO_PASS
-  family: simulation
-  severity: INFO
-  title: Load switch must pass VADJ to VDDIO
-  applies_to:
-    pins: []
-    sim_block: vddio_pdn
-    sim_type: transient_load_step
-    role_spec: {}
-  source:
-  - doc: design_requirements.md
-    loc: Parts to implement / Load switch
-    quote: "gates VADJ (1.2\u20133.3V) to Bobcat VDDIO."
-  fix_hint: "Inspect the load-switch DC sim verdict for VADJ\u2192VDDIO pass-through."
-  enabled: true
-  origin: generated
-  evaluation: structural
-  predicate:
-    kind: sim_review
-    sim_block: vddio_pdn
-    sim_type: transient_load_step
-    criterion: "The VDDIO rail (fed via the load switch from VADJ) holds up under\
-      \ a load step \u2014 droop within the deck's limit (analysis.droop_mV vs droop_limit)."
 - id: SEM_BIAS_DEFAULT_OFF
   family: design
   severity: ERROR
@@ -1936,27 +1681,6 @@ rules:
   prompt: "Confirm the parallel 0\u03A9 jumpers across the isolation NMOS drain-source\
     \ (R42/R43) are marked DNP by default. Populating them bypasses FPGA isolation\
     \ control and re-exposes the EEPROM-provisioning hazard."
-- id: SEM_MCP4728_VREF_EXTERNAL
-  family: design
-  severity: ERROR
-  title: MCP4728 must use external VREF tied to 3.3V
-  applies_to:
-    refdes: U40
-    pins: []
-    sheet: bias
-    role_spec: {}
-  source:
-  - doc: design_requirements.md
-    loc: Parts to implement / Bias circuit
-    quote: external V_REF tied to 3.3 V
-  fix_hint: Tie the MCP4728 VREF to 3.3V (not the internal 2.048V ref) for rail-to-rail
-    output.
-  enabled: false
-  origin: generated
-  evaluation: semantic
-  prompt: Verify the MCP4728 is configured for external VREF tied to 3.3V rather than
-    the internal 2.048V reference, so the DAC output swings rail-to-rail across the
-    full bias range.
 - id: SEM_MCP4728_POR_CODE
   family: design
   severity: WARNING
@@ -1977,51 +1701,6 @@ rules:
   evaluation: semantic
   prompt: "Confirm the MCP4728 EEPROM is programmed to 0xFFF at bring-up so V_OUT=3.3V\
     \ drives the PMOS off and delivers 0\xB5A at power-on."
-- id: SEM_SHARED_LDO_INTENT
-  family: design
-  severity: WARNING
-  title: "Single LDO feeds VDDD/VDDA1/VDDA2 \u2014 only one jumper may be installed\
-    \ at a time"
-  applies_to:
-    refdes: U10
-    pins: []
-    sheet: power
-    role_spec: {}
-  source:
-  - doc: design_requirements.md
-    loc: Notes / open questions
-    quote: installing more than one shorts the rails to a single voltage
-  fix_hint: Document that only one of J10/J11/J12 may be installed; the three rails
-    track together.
-  enabled: true
-  origin: generated
-  evaluation: semantic
-  prompt: "The design intentionally uses one TPS7A8401A feeding VDDD, VDDA1, VDDA2\
-    \ through three 1\xD72 jumpers off the same OUT bus. Verify the schematic/notes\
-    \ warn that installing more than one jumper shorts the rails to a single voltage."
-- id: SEM_LDO_PG_OPEN_DRAIN
-  family: design
-  severity: INFO
-  title: LDO PG is open-drain and needs a pull-up
-  applies_to:
-    refdes: U10
-    pins: []
-    sheet: power
-    role_spec: {}
-  source:
-  - doc: design_requirements.md
-    loc: Parts to implement / TPS7A8401A
-    quote: Open-drain PG output back to FPGA.
-  fix_hint: Add a pull-up on the open-drain LDO PG net before it returns to the FPGA.
-  enabled: true
-  origin: generated
-  evaluation: semantic
-  prompt: "The TPS7A8401A PG output is open-drain. Verify a pull-up resistor reaches\
-    \ the PG net. IMPORTANT: examine the FULL membership of the net on U10's PG pin\
-    \ (provided below) \u2014 a pull-up counts if ANY resistor on that node goes to\
-    \ a supply rail (+3V3 etc.), INCLUDING through a series resistor. Only FAIL if\
-    \ no such pull-up path exists anywhere on the PG node. PASS if a pull-up resistor\
-    \ is present on the net (e.g. a 10k to +3V3)."
 - id: SEM_BIAS_SOURCE_INTO_PIN
   family: design
   severity: ERROR
@@ -2043,22 +1722,1132 @@ rules:
   prompt: Verify the bias topology sources current INTO the Bobcat BIASx pins via
     the high-side PMOS drain (confirmed against Bobcat PDF page 7), rather than sinking
     current.
-- id: SEM_VDDIO_LOADSWITCH
-  family: design
+- id: BLK_BIAS_FS_CEILING
+  family: block
+  severity: ERROR
+  title: "Bias reaches the full 0\u2013640 \xB5A spec in regulation (op-amp/headroom\
+    \ ceiling)"
+  applies_to:
+    pins: []
+    sheet: bias
+    sim_block: opa_bias
+    sim_type: dc_sweep
+    role_spec: {}
+    block: opa_bias
+  source:
+  - doc: design_requirements.md
+    loc: Specs / Bias outputs
+    quote: "BIAS0, BIAS1 \u2014 independent programmable current sources, 0\u2013\
+      640 \xB5A, ~1 \xB5A step"
+  - doc: '[External] Bobcat Board Design.pdf'
+    loc: Bias
+    quote: Programmable range of 0-640uA with a step size of 1uA
+  fix_hint: "Lower R_sense (R40/R41) so 640 \xB5A fits the 3V3-0.5V headroom (\u2248\
+    3.65k); do not raise it."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: sim_review
+    sim_block: opa_bias
+    sim_type: dc_sweep
+    criterion: "The regulated full-scale current (i_max_regulated_A) MUST reach at\
+      \ least 640 \xB5A. The OPA2388 is single-supply and the sense-R drop I\xB7R\
+      \ must fit within 3.3 V minus the 0.5 V DUT compliance, so an over-large R_sense\
+      \ caps the loop below 640 \xB5A. PASS only if i_max_regulated_A >= 640 \xB5\
+      A; FAIL with the observed ceiling otherwise."
+- id: BLK_BIAS_COMPLIANCE_0V5
+  family: block
+  severity: ERROR
+  title: "Bias delivers 320 \xB5A nominal with BIASx held at the 0.5 V compliance\
+    \ point"
+  applies_to:
+    pins: []
+    sheet: bias
+    sim_block: opa_bias
+    sim_type: dc_compliance
+    role_spec: {}
+    block: opa_bias
+  source:
+  - doc: design_requirements.md
+    loc: Specs / Bias outputs
+    quote: "nominal 320 \xB5A @ 0.5 V"
+  - doc: '[External] Bobcat Board Design.pdf'
+    loc: Bias
+    quote: nominally 320uA at 0.5V
+  fix_hint: "Ensure R_sense + pass-FET/isolator headroom let 320 \xB5A flow with the\
+    \ output at 0.5 V."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: sim_review
+    sim_block: opa_bias
+    sim_type: dc_compliance
+    criterion: "With BIAS0 pinned at the 0.5 V DUT compliance point, the loop must\
+      \ source the ideal current within 1% over the regulated range AND hit ~320 \xB5\
+      A at the nominal code (within ~1%), with the PMOS drain staying >= 0.5 V. PASS\
+      \ if i_at_nominal_uA \u2248 320 (\xB11%) and pmos_drain_min_V >= 0.5; FAIL otherwise."
+- id: BLK_BIAS_ACCURACY_BUDGET
+  family: block
   severity: WARNING
-  title: Bobcat VDDIO must come from VADJ through the load switch
+  title: "Bias accuracy budget closes: 0.1% sense-R + OPA2388 0.25 \xB5V Vos + 12-bit\
+    \ DAC"
+  applies_to:
+    refdes: R40
+    pins: []
+    sheet: bias
+    role_spec: {}
+    block: opa_bias
+  source:
+  - doc: design_requirements.md
+    loc: Specs / Bias outputs
+    quote: "0\u2013640 \xB5A, ~1 \xB5A step (nominal 320 \xB5A @ 0.5 V)"
+  - doc: opa2388.pdf
+    loc: Offset
+    quote: "Ultra-low offset voltage: \xB10.25 \xB5V; zero drift \xB10.005 \xB5V/\xB0\
+      C"
+  fix_hint: If the budget fails, tighten R40/R41 tolerance; offset/DAC terms are already
+    negligible.
+  enabled: true
+  origin: generated
+  evaluation: semantic
+  prompt: "Judge whether the bias-current accuracy budget closes against the spec\
+    \ (0\u2013640 \xB5A, ~1 \xB5A step \u21D2 ~12-bit, ~0.16 \xB5A LSB, \u22641% V-to-I\
+    \ accuracy). I = (3.3\u2212V_DAC)/R_sense. Stack the dominant error terms and\
+    \ report each as a % of full scale:\n 1. R_sense tolerance \u2014 R40/R41 are\
+    \ 0.1% thin-film \u2192 \xB10.1% current error (dominant).\n 2. Op-amp offset\
+    \ \u2014 OPA2388 Vos \u2248 \xB10.25 \xB5V (zero-drift). Error = Vos/(3.3\u2212\
+    V_DAC); even at 5% FS the sense voltage is ~0.1 V so this is < 0.001% \u2014 negligible.\n\
+    \ 3. DAC INL/DNL \u2014 MCP4728 12-bit, \xB10.2 LSB DNL typ \u2192 small.\nPASS\
+    \ if the RSS stack stays within ~1% across the usable range (it should be R-tolerance-dominated\
+    \ at ~0.1%). FAIL only if a term clearly blows the budget."
+- id: BLK_BIAS_LOOP_STABILITY
+  family: block
+  severity: WARNING
+  title: Bias feedback loop is stable driving the PMOS gate capacitance
+  applies_to:
+    pins: []
+    sheet: bias
+    sim_block: opa_bias
+    sim_type: ac_stability
+    role_spec: {}
+    block: opa_bias
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / Bias circuit
+    quote: Op-amp output drives the gate of a small-signal PMOS (PMZ1200UPEYL).
+  - doc: opa2388.pdf
+    loc: Bandwidth
+    quote: 'Gain bandwidth: 10 MHz'
+  fix_hint: If peaking > 3 dB, add a small series gate R or feedback Cff for phase
+    margin.
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: sim_review
+    sim_block: opa_bias
+    sim_type: ac_stability
+    criterion: "Closed-loop peaking <= 3 dB (phase margin >= ~45\xB0). PASS if peaking_dB\
+      \ <= 3; FAIL if it peaks higher."
+- id: BLK_BIAS_POR_FAILSAFE
+  family: block
+  severity: ERROR
+  title: No bias current reaches Bobcat at POR (Q42/Q43 isolation holds)
+  applies_to:
+    pins: []
+    sheet: bias
+    sim_block: opa_bias
+    sim_type: por_failsafe
+    role_spec: {}
+    block: opa_bias
+  source:
+  - doc: design_requirements.md
+    loc: Assembly / provisioning notes / MCP4728 EEPROM (W8)
+    quote: "the Q42/Q43 isolation NMOSes (populated default, default-OFF) \u2026 cannot\
+      \ reach Bobcat"
+  fix_hint: Verify the isolation NMOS is populated and the BIAS_ISO gate pull-down
+    (R44/R45) is present.
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: sim_review
+    sim_block: opa_bias
+    sim_type: por_failsafe
+    criterion: "Bias current into the DUT at POR (BIAS_ISO low) must be <= 1 \xB5\
+      A. PASS if bias_current_at_por_A <= 1e-6; FAIL otherwise."
+- id: BLK_BIAS_DAC_VREF_EXTERNAL
+  family: block
+  severity: WARNING
+  title: MCP4728 uses external VREF = VDD (rail-to-rail), not the 2.048 V internal
+    ref
+  applies_to:
+    refdes: U40
+    pins: []
+    sheet: bias
+    role_spec: {}
+    block: opa_bias
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / Bias circuit
+    quote: "MCP4728 quad 12-bit I\xB2C voltage DAC with external V_REF tied to 3.3\
+      \ V (not internal 2.048 V ref)"
+  - doc: 22187E.pdf
+    loc: VREF
+    quote: Internal or External Voltage Reference Selection; External VREF (VDD)
+  fix_hint: Document external-VREF=VDD in the MCP4728 provisioning; it is register-selected,
+    not a pin.
+  enabled: true
+  origin: generated
+  evaluation: semantic
+  prompt: "Confirm the bias design intends the MCP4728 to run with EXTERNAL VREF =\
+    \ VDD (3.3 V) so the DAC output spans 0\u20133.3 V rail-to-rail. The internal\
+    \ 2.048 V ref would cap V_DAC at 2.048 V, shrinking the controllable current range.\
+    \ This is a configuration/provisioning intent \u2014 PASS if the netlist/notes\
+    \ reflect external-VREF (VDD) operation; the MCP4728 has no dedicated VREF pin\
+    \ (it is register-selected), so judge from the design notes, not a pin."
+- id: BLK_BIAS_ISO_PULLDOWN
+  family: block
+  severity: ERROR
+  title: "BIAS_ISO0/1 have 10 k\u03A9 gate pull-downs (default-OFF at POR)"
+  applies_to:
+    pins: []
+    net: BIAS_ISO0
+    sheet: bias
+    role_spec: {}
+    block: opa_bias
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / Bias circuit
+    quote: "gated by BIAS_ISO0/1 from the FPGA with 10 k\u03A9 pull-downs (R44/R45)\
+      \ at the gates"
+  fix_hint: "Add a 10 k\u03A9 pull-down from BIAS_ISO0/1 to GND (R44/R45)."
+  enabled: true
+  origin: generated
+  evaluation: semantic
+  prompt: "Verify each isolation-FET gate net (BIAS_ISO0, BIAS_ISO1) has a ~10 k\u03A9\
+    \ pull-down to GND so the 2N7002 is OFF at POR until the FPGA drives it HIGH.\
+    \ Examine the full net membership \u2014 PASS if a 10 k\u03A9 resistor to GND\
+    \ is present on each; FAIL if either floats or lacks the pull-down."
+- id: BLK_LDO_SETPOINT_COVERAGE
+  family: block
+  severity: ERROR
+  title: "LDO ANY-OUT regulates every 0.6\u20131.0 V Bobcat rail with dropout headroom"
+  applies_to:
+    refdes: U10
+    pins: []
+    sheet: power
+    sim_block: ldo_rail
+    sim_type: setpoint_coverage
+    role_spec: {}
+    block: ldo_rail
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / TPS7A8401A
+    quote: "ANY-OUT pin-programmable output 0.5\u20132.075 V at 25 mV resolution (covers\
+      \ Bobcat 0.6\u20131.0 V rails)"
+  - doc: tps7a84a.pdf
+    loc: ANY-OUT
+    quote: 'ANY-OUT operation: 0.5 V to 2.075 V, 25-mV resolution'
+  fix_hint: Check ANY-OUT setpoint-pin strapping / VOUT_SET mapping for the failing
+    rail.
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: sim_review
+    sim_block: ldo_rail
+    sim_type: setpoint_coverage
+    criterion: "Every selectable Bobcat rail in 0.6\u20131.0 V must regulate within\
+      \ ~50 mV with dropout headroom (Vin=3.3 V). PASS if all tested setpoints regulate;\
+      \ FAIL if any in-range setpoint fails."
+- id: BLK_LDO_DROPOUT_MARGIN
+  family: block
+  severity: WARNING
+  title: "LDO dropout (180 mV max @ 3 A) leaves ample headroom from 3.3 V to \u2264\
+    1.0 V"
+  applies_to:
+    refdes: U10
+    pins: []
+    sheet: power
+    role_spec: {}
+    block: ldo_rail
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / TPS7A8401A
+    quote: "180 mV max dropout \u2026 3 A LDO"
+  - doc: tps7a84a.pdf
+    loc: Dropout
+    quote: 'Low dropout: 180 mV (maximum) at 3 A with BIAS'
+  fix_hint: Only flag if Vin is mis-rooted or Vout set too high; headroom is large
+    by design.
+  enabled: true
+  origin: generated
+  evaluation: semantic
+  prompt: "Confirm dropout headroom by first principles: Vin=3.3 V, Vout \u2264 1.0\
+    \ V, datasheet dropout = 180 mV max @ 3 A. Headroom = Vin\u2212Vout\u2212dropout\
+    \ \u2248 3.3\u22121.0\u22120.18 = 2.1 V, comfortably positive. PASS unless the\
+    \ netlist shows Vin is not the 3.3 V rail or Vout is set above ~3.1 V."
+- id: BLK_LDO_LINE_REG
+  family: block
+  severity: WARNING
+  title: "LDO holds 0.75% accuracy across the FMC +3V3 tolerance (3.0\u20133.6 V)"
+  applies_to:
+    refdes: U10
+    pins: []
+    sheet: power
+    sim_block: ldo_rail
+    sim_type: line_regulation
+    role_spec: {}
+    block: ldo_rail
+  source:
+  - doc: design_requirements.md
+    loc: Specs
+    quote: 'Power in (from FMC): 3P3V'
+  - doc: tps7a84a.pdf
+    loc: Accuracy
+    quote: 0.75% (maximum) accuracy over line, load, and temperature
+  fix_hint: "If Vout tracks Vin the LDO is in dropout or Vin is mis-rooted \u2014\
+    \ re-check."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: sim_review
+    sim_block: ldo_rail
+    sim_type: line_regulation
+    criterion: "As +3V3 sweeps 3.0\u20133.6 V the output must hold regulation: Vout\
+      \ span small (\u2264 ~10 mV) and mean within ~50 mV of setpoint (datasheet line\
+      \ accuracy 0.75%). FAIL if Vout tracks Vin."
+- id: BLK_LDO_DC_OK
+  family: block
+  severity: ERROR
+  title: All LDO/switch rails settle at the expected DC operating point (not in dropout)
+  applies_to:
+    refdes: U10
+    pins: []
+    sheet: power
+    sim_block: ldo_rail
+    sim_type: dc_op_point
+    role_spec: {}
+    block: ldo_rail
+  source:
+  - doc: design_requirements.md
+    loc: Topology / block diagram
+    quote: "The LDO generates 0.6\u20131.0V for Bobcat VDDD/VDDA1/VDDA2"
+  fix_hint: If a rail is off, check the setpoint, the source rail, or load-switch
+    Rdson.
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: sim_review
+    sim_block: ldo_rail
+    sim_type: dc_op_point
+    criterion: "Every rail (+3V3, LDO_OUT, VADJ, +VDDIO) must settle within tolerance\
+      \ (\xB150 mV core, \xB1100 mV +VDDIO for Rdson drop) and the LDO must not be\
+      \ in dropout. PASS if all rails are on-target; FAIL with the offending rail."
+- id: BLK_LDO_VIN_RANGE
+  family: block
+  severity: WARNING
+  title: "LDO Vin (3.3 V from FMC) is within the device input range (1.1\u20136.5\
+    \ V with BIAS)"
+  applies_to:
+    refdes: U10
+    pins: []
+    sheet: power
+    role_spec: {}
+    block: ldo_rail
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / TPS7A8401A
+    quote: "Vin 1.1\u20136.5 V (with BIAS) \u2026 3P3V from FMC drives Vin and BIAS"
+  - doc: tps7a84a.pdf
+    loc: Vin
+    quote: 'Input voltage range with BIAS: 1.1 V to 6.5 V'
+  fix_hint: Route LDO IN + BIAS to +3V3 (FMC).
+  enabled: true
+  origin: generated
+  evaluation: semantic
+  prompt: "Confirm the LDO's IN (and BIAS) pins are driven from the FMC +3V3 rail,\
+    \ which sits inside the 1.1\u20136.5 V input range. PASS if IN/BIAS connect to\
+    \ +3V3; FAIL if rooted to a rail outside the range."
+- id: BLK_LDO_EN_PULLDOWN
+  family: block
+  severity: ERROR
+  title: "LDO EN has a 10 k\u03A9 pull-down (off at POR until FPGA enables)"
+  applies_to:
+    pins: []
+    net: LDO_EN
+    sheet: power
+    role_spec: {}
+    block: ldo_rail
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / TPS7A8401A
+    quote: "EN driven by FPGA with 10k\u03A9 pull-down"
+  fix_hint: "Add a 10 k\u03A9 pull-down from LDO_EN to GND."
+  enabled: true
+  origin: generated
+  evaluation: semantic
+  prompt: "Verify the LDO EN net has a ~10 k\u03A9 pull-down to GND so the LDO is\
+    \ OFF at power-on until the FPGA drives EN high. Examine the full EN net \u2014\
+    \ PASS if a 10 k\u03A9 pull-down is present; FAIL if EN floats/tied high."
+- id: BLK_LDO_PG_PULLUP
+  family: block
+  severity: WARNING
+  title: LDO PG (open-drain) has a pull-up before returning to the FPGA
+  applies_to:
+    refdes: U10
+    pins: []
+    sheet: power
+    role_spec: {}
+    block: ldo_rail
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / TPS7A8401A
+    quote: Open-drain PG output back to FPGA.
+  - doc: tps7a84a.pdf
+    loc: PG
+    quote: Power-good is an open-drain output
+  fix_hint: "Add a pull-up (e.g. 10 k\u03A9 to +3V3) on the LDO PG net."
+  enabled: true
+  origin: generated
+  evaluation: semantic
+  prompt: "The TPS7A8401A PG output is open-drain and needs a pull-up to read high.\
+    \ Examine the full PG-net membership \u2014 a pull-up counts if ANY resistor on\
+    \ that node reaches a supply (incl. through a series R). PASS if such a pull-up\
+    \ exists; FAIL only if none does."
+- id: BLK_LDO_SHARED_RAIL_INTENT
+  family: block
+  severity: INFO
+  title: "Single LDO feeds VDDD/VDDA1/VDDA2 via 3\xD7 jumpers (rails track together\
+    \ \u2014 intended)"
+  applies_to:
+    refdes: U10
+    pins: []
+    sheet: power
+    role_spec: {}
+    block: ldo_rail
+  source:
+  - doc: design_requirements.md
+    loc: Notes / open questions
+    quote: "one TPS7A8401A feeding VDDD, VDDA1, VDDA2 through 3\xD71\xD72 jumpers\
+      \ (all three tap the same LDO output bus)"
+  fix_hint: "Keep one LDO \u2192 3 jumpers off the same bus; replicate the LDO block\
+    \ to get independent rails."
+  enabled: true
+  origin: generated
+  evaluation: semantic
+  prompt: "Confirm the design intentionally uses ONE LDO output bus fanned to VDDD/VDDA1/VDDA2\
+    \ via three 1\xD72 jumpers (so the three rails track together). PASS if that is\
+    \ the topology; only FAIL if the rails are wired to imply independent setpoints\
+    \ from one LDO (which is not achievable)."
+- id: BLK_LOADSW_DEFAULT_OFF
+  family: block
+  severity: ERROR
+  title: "Load switch is OFF by default (LSW_EN 10 k\u03A9 pull-down) \u2014 no VDDIO\
+    \ before FPGA enables"
+  applies_to:
+    pins: []
+    net: LSW_EN
+    sheet: power
+    role_spec: {}
+    block: loadsw
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / Load switch
+    quote: "EN driven by FPGA with 10k\u03A9 pull-down"
+  - doc: TPS22916CNYFPR.pdf
+    loc: EN
+    quote: Active-low/high enable; quick output discharge (QOD)
+  fix_hint: "Add a 10 k\u03A9 pull-down from LSW_EN to GND."
+  enabled: true
+  origin: generated
+  evaluation: semantic
+  prompt: "Verify the VADJ\u2192VDDIO load switch EN (LSW_EN) has a ~10 k\u03A9 pull-down\
+    \ to GND so VDDIO is not energized until the FPGA drives EN. Examine the full\
+    \ LSW_EN net \u2014 PASS if a 10 k\u03A9 pull-down to GND is present; FAIL if\
+    \ EN floats or is tied to a supply."
+- id: BLK_LOADSW_VIN_RANGE
+  family: block
+  severity: WARNING
+  title: "Load switch passes VADJ (1.2\u20133.3 V) within the device input range (1\u2013\
+    5.5 V)"
+  applies_to:
+    pins: []
+    sheet: power
+    role_spec: {}
+    block: loadsw
+  source:
+  - doc: design_requirements.md
+    loc: Specs
+    quote: "VADJ 1.2\u20133.3V (to Bobcat VDDIO via load switch)"
+  - doc: TPS22916CNYFPR.pdf
+    loc: Vin
+    quote: "Input operating voltage range (VIN): 1 V\u20135.5 V"
+  fix_hint: "Route VADJ \u2192 load switch VIN \u2192 VDDIO via 1\xD72 jumper."
+  enabled: true
+  origin: generated
+  evaluation: semantic
+  prompt: "Confirm the load switch input is VADJ (1.2\u20133.3 V), inside the device's\
+    \ 1\u20135.5 V VIN range, and its output feeds Bobcat VDDIO through a 1\xD72 jumper.\
+    \ PASS if so; FAIL if the input rail is outside range or the output is not VDDIO-via-jumper."
+- id: BLK_LOADSW_VDDIO_PATH
+  family: block
+  severity: WARNING
+  title: Bobcat VDDIO comes from VADJ through the load switch (not directly)
   applies_to:
     pins: []
     rail: +VDDIO
     sheet: power
     role_spec: {}
+    block: loadsw
   source:
   - doc: design_requirements.md
     loc: Specs
     quote: "VADJ 1.2\u20133.3V (to Bobcat VDDIO via load switch)"
-  fix_hint: "Route VADJ \u2192 load switch \u2192 +VDDIO (via 1\xD72 jumper)."
+  fix_hint: Insert the load switch between VADJ and +VDDIO.
   enabled: true
   origin: generated
   evaluation: semantic
-  prompt: Verify Bobcat VDDIO is fed from FMC VADJ through the load switch (gated
-    by LSW_EN), not directly from VADJ or another rail.
+  prompt: "Verify +VDDIO is fed from VADJ via the load switch (gated by LSW_EN), not\
+    \ directly from VADJ or another rail. PASS if the path is VADJ\u2192switch\u2192\
+    VDDIO; FAIL otherwise."
+- id: BLK_PDN_VDDIO_DROOP
+  family: block
+  severity: ERROR
+  title: VDDIO digital-rail decoupling holds under a Bobcat load step
+  applies_to:
+    pins: []
+    net: +VDDIO
+    sheet: bobcat
+    sim_block: vddio_pdn
+    sim_type: transient_load_step
+    role_spec: {}
+    block: vddio_pdn
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / Bobcat
+    quote: Decoupling caps on VDDD, VDDIO, VDDA1, VDDA2.
+  - doc: '[External] Bobcat Board Design.pdf'
+    loc: Bobcat
+    quote: Decoupling capacitors on VDDD, VDDIO, VDDA1, VDDA2
+  fix_hint: Add/upgrade +VDDIO decoupling near the pin.
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: sim_review
+    sim_block: vddio_pdn
+    sim_type: transient_load_step
+    criterion: "The +VDDIO decoupling bank must supply the transient charge without\
+      \ excessive droop. PASS if Droop <= 30 mV for a 50\u2192250 mA step (100 ns\
+      \ edge). FAIL if droop exceeds the budget (a missing/short decap)."
+- id: BLK_PDN_VDDD_DROOP
+  family: block
+  severity: WARNING
+  title: "VDDD decoupling (C20 0.1\xB5F + C21 1\xB5F) holds under a load step"
+  applies_to:
+    pins: []
+    net: +VDDD
+    sheet: bobcat
+    sim_block: vddd_pdn
+    sim_type: transient_load_step
+    role_spec: {}
+    block: vddd_pdn
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / Bobcat
+    quote: Decoupling caps on VDDD, VDDIO, VDDA1, VDDA2.
+  - doc: '[External] Bobcat Board Design.pdf'
+    loc: Bobcat
+    quote: Decoupling capacitors on VDDD, VDDIO, VDDA1, VDDA2
+  fix_hint: Add/upgrade +VDDD decoupling near the pin.
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: sim_review
+    sim_block: vddd_pdn
+    sim_type: transient_load_step
+    criterion: "The +VDDD decoupling bank must supply the transient charge without\
+      \ excessive droop. PASS if Droop <= 50 mV for a 50\u2192250 mA step (100 ns\
+      \ edge). FAIL if droop exceeds the budget (a missing/short decap)."
+- id: BLK_PDN_VDDA1_DROOP
+  family: block
+  severity: WARNING
+  title: "VDDA1 analog decoupling holds; series 0\u03A9 (R20) present"
+  applies_to:
+    pins: []
+    net: internal_VDDA1_path
+    sheet: bobcat
+    sim_block: vdda1_pdn
+    sim_type: transient_load_step
+    role_spec: {}
+    block: vdda1_pdn
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / Bobcat
+    quote: Decoupling caps on VDDD, VDDIO, VDDA1, VDDA2.
+  - doc: '[External] Bobcat Board Design.pdf'
+    loc: Bobcat
+    quote: Decoupling capacitors on VDDD, VDDIO, VDDA1, VDDA2
+  fix_hint: Add/upgrade internal_VDDA1_path decoupling near the pin.
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: sim_review
+    sim_block: vdda1_pdn
+    sim_type: transient_load_step
+    criterion: "The internal_VDDA1_path decoupling bank must supply the transient\
+      \ charge without excessive droop. PASS if Droop <= 50 mV for a 5\u219225 mA\
+      \ analog step (100 ns edge). FAIL if droop exceeds the budget (a missing/short\
+      \ decap)."
+- id: BLK_PDN_VDDA2_DROOP
+  family: block
+  severity: WARNING
+  title: "VDDA2 analog decoupling holds; series 0\u03A9 (R21) present"
+  applies_to:
+    pins: []
+    net: internal_VDDA2_path
+    sheet: bobcat
+    sim_block: vdda2_pdn
+    sim_type: transient_load_step
+    role_spec: {}
+    block: vdda2_pdn
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / Bobcat
+    quote: Decoupling caps on VDDD, VDDIO, VDDA1, VDDA2.
+  - doc: '[External] Bobcat Board Design.pdf'
+    loc: Bobcat
+    quote: Decoupling capacitors on VDDD, VDDIO, VDDA1, VDDA2
+  fix_hint: Add/upgrade internal_VDDA2_path decoupling near the pin.
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: sim_review
+    sim_block: vdda2_pdn
+    sim_type: transient_load_step
+    criterion: "The internal_VDDA2_path decoupling bank must supply the transient\
+      \ charge without excessive droop. PASS if Droop <= 50 mV for a 5\u219225 mA\
+      \ analog step (100 ns edge). FAIL if droop exceeds the budget (a missing/short\
+      \ decap)."
+- id: BLK_PDN_VDDA1_SERIES0R
+  family: block
+  severity: WARNING
+  title: "VDDA1 has the series 0\u03A9 isolation resistor (R20)"
+  applies_to:
+    refdes: R20
+    pins: []
+    sheet: bobcat
+    role_spec: {}
+    block: vdda1_pdn
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / Bobcat
+    quote: "Series 0\u03A9 on VDDA1, VDDA2."
+  - doc: '[External] Bobcat Board Design.pdf'
+    loc: Bobcat
+    quote: "Series 0\u03A9 on VDDA1, VDDA2"
+  fix_hint: "Insert a series 0\u03A9 (R20) on the VDDA1 rail between the LDO bus and\
+    \ the pin."
+  enabled: true
+  origin: generated
+  evaluation: semantic
+  prompt: "Verify the VDDA1 analog rail has a series 0\u03A9 resistor (R20) between\
+    \ the LDO bus and the Bobcat VDDA1 pin (analog/digital isolation). PASS if present\
+    \ on the VDDA1 path; FAIL if absent."
+- id: BLK_PDN_VDDA2_SERIES0R
+  family: block
+  severity: WARNING
+  title: "VDDA2 has the series 0\u03A9 isolation resistor (R21)"
+  applies_to:
+    refdes: R21
+    pins: []
+    sheet: bobcat
+    role_spec: {}
+    block: vdda2_pdn
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / Bobcat
+    quote: "Series 0\u03A9 on VDDA1, VDDA2."
+  - doc: '[External] Bobcat Board Design.pdf'
+    loc: Bobcat
+    quote: "Series 0\u03A9 on VDDA1, VDDA2"
+  fix_hint: "Insert a series 0\u03A9 (R21) on the VDDA2 rail between the LDO bus and\
+    \ the pin."
+  enabled: true
+  origin: generated
+  evaluation: semantic
+  prompt: "Verify the VDDA2 analog rail has a series 0\u03A9 resistor (R21) between\
+    \ the LDO bus and the Bobcat VDDA2 pin (analog/digital isolation). PASS if present\
+    \ on the VDDA2 path; FAIL if absent."
+- id: BLK_EEPROM_SUPPLY
+  family: block
+  severity: WARNING
+  title: "EEPROM Vcc is +3V3, within the 24AA08 1.7\u20135.5 V range, with local decoupling"
+  applies_to:
+    pins: []
+    sheet: eeprom
+    role_spec: {}
+    block: eeprom
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / EEPROM
+    quote: "8-Kbit, I\xB2C, 3.3V supply (for FMC IPMI / board ID)."
+  - doc: 20001710L.pdf
+    loc: Vcc
+    quote: VCC Range 1.7V-5.5V
+  fix_hint: "Route EEPROM Vcc to +3V3 and add a 0.1\xB5F decoupling cap."
+  enabled: true
+  origin: generated
+  evaluation: semantic
+  prompt: "Confirm the 24AA08 EEPROM Vcc pin is on +3V3 (inside 1.7\u20135.5 V) and\
+    \ has a local decoupling cap (~0.1\xB5F). PASS if both hold; FAIL if Vcc is mis-rooted\
+    \ or no decap is present on the Vcc net."
+- id: BLK_EEPROM_I2C_PULLUPS
+  family: block
+  severity: WARNING
+  title: I2C SCL/SDA have pull-ups (shared EEPROM + bias DAC bus)
+  applies_to:
+    pins: []
+    net: SCL
+    sheet: eeprom
+    role_spec: {}
+    block: eeprom
+  source:
+  - doc: design_requirements.md
+    loc: "Assembly / provisioning notes / I\xB2C pull-ups (W4)"
+    quote: "R60 and R61 (2.2 k\u03A9 to +3V3 on EEPROM sheet) provide local SCL/SDA\
+      \ pull-ups"
+  fix_hint: "Add 2.2 k\u03A9 pull-ups to +3V3 on SCL and SDA (R60/R61)."
+  enabled: true
+  origin: generated
+  evaluation: semantic
+  prompt: "Verify the I2C SCL and SDA nets each have a pull-up to +3V3 (e.g. 2.2 k\u03A9\
+    , R60/R61). The bus is shared by the EEPROM and the MCP4728 bias DAC. Examine\
+    \ each net's membership \u2014 PASS if a pull-up to +3V3 is present on both SCL\
+    \ and SDA; FAIL if either lacks one."
+- id: ROUTE_SAMPLE_OUTV
+  family: schematic
+  severity: ERROR
+  title: "SAMPLE_OUTV must route to the FMC through its series 0\u03A9 (R100)"
+  applies_to:
+    refdes: U20
+    pins: []
+    net: SAMPLE_OUTV
+    sheet: bobcat
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: FMC LPC pinout / LA bank
+    quote: "Bobcat \u2192 FMC LA bank (via 0\u03A9): SAMPLE_OUTV, SAMPLE_OUT0\u2013\
+      7, CS_L, SCLK, MOSI, MISO, SPI_DMODE, RESET_N"
+  fix_hint: "Route U20.2 (SAMPLE_OUTV) to the FMC LA pin through R100 (series 0\u03A9\
+    )."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: net_routing
+    from_pin: U20.2
+    to_pin: R100.2
+    via: series_R
+- id: ROUTE_SAMPLE_OUT0
+  family: schematic
+  severity: ERROR
+  title: "SAMPLE_OUT0 must route to the FMC through its series 0\u03A9 (R101)"
+  applies_to:
+    refdes: U20
+    pins: []
+    net: SAMPLE_OUT0
+    sheet: bobcat
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: FMC LPC pinout / LA bank
+    quote: "Bobcat \u2192 FMC LA bank (via 0\u03A9): SAMPLE_OUTV, SAMPLE_OUT0\u2013\
+      7, CS_L, SCLK, MOSI, MISO, SPI_DMODE, RESET_N"
+  fix_hint: "Route U20.3 (SAMPLE_OUT0) to the FMC LA pin through R101 (series 0\u03A9\
+    )."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: net_routing
+    from_pin: U20.3
+    to_pin: R101.2
+    via: series_R
+- id: ROUTE_SAMPLE_OUT1
+  family: schematic
+  severity: ERROR
+  title: "SAMPLE_OUT1 must route to the FMC through its series 0\u03A9 (R102)"
+  applies_to:
+    refdes: U20
+    pins: []
+    net: SAMPLE_OUT1
+    sheet: bobcat
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: FMC LPC pinout / LA bank
+    quote: "Bobcat \u2192 FMC LA bank (via 0\u03A9): SAMPLE_OUTV, SAMPLE_OUT0\u2013\
+      7, CS_L, SCLK, MOSI, MISO, SPI_DMODE, RESET_N"
+  fix_hint: "Route U20.4 (SAMPLE_OUT1) to the FMC LA pin through R102 (series 0\u03A9\
+    )."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: net_routing
+    from_pin: U20.4
+    to_pin: R102.2
+    via: series_R
+- id: ROUTE_SAMPLE_OUT2
+  family: schematic
+  severity: ERROR
+  title: "SAMPLE_OUT2 must route to the FMC through its series 0\u03A9 (R103)"
+  applies_to:
+    refdes: U20
+    pins: []
+    net: SAMPLE_OUT2
+    sheet: bobcat
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: FMC LPC pinout / LA bank
+    quote: "Bobcat \u2192 FMC LA bank (via 0\u03A9): SAMPLE_OUTV, SAMPLE_OUT0\u2013\
+      7, CS_L, SCLK, MOSI, MISO, SPI_DMODE, RESET_N"
+  fix_hint: "Route U20.5 (SAMPLE_OUT2) to the FMC LA pin through R103 (series 0\u03A9\
+    )."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: net_routing
+    from_pin: U20.5
+    to_pin: R103.2
+    via: series_R
+- id: ROUTE_SAMPLE_OUT3
+  family: schematic
+  severity: ERROR
+  title: "SAMPLE_OUT3 must route to the FMC through its series 0\u03A9 (R104)"
+  applies_to:
+    refdes: U20
+    pins: []
+    net: SAMPLE_OUT3
+    sheet: bobcat
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: FMC LPC pinout / LA bank
+    quote: "Bobcat \u2192 FMC LA bank (via 0\u03A9): SAMPLE_OUTV, SAMPLE_OUT0\u2013\
+      7, CS_L, SCLK, MOSI, MISO, SPI_DMODE, RESET_N"
+  fix_hint: "Route U20.6 (SAMPLE_OUT3) to the FMC LA pin through R104 (series 0\u03A9\
+    )."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: net_routing
+    from_pin: U20.6
+    to_pin: R104.2
+    via: series_R
+- id: ROUTE_SAMPLE_OUT4
+  family: schematic
+  severity: ERROR
+  title: "SAMPLE_OUT4 must route to the FMC through its series 0\u03A9 (R105)"
+  applies_to:
+    refdes: U20
+    pins: []
+    net: SAMPLE_OUT4
+    sheet: bobcat
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: FMC LPC pinout / LA bank
+    quote: "Bobcat \u2192 FMC LA bank (via 0\u03A9): SAMPLE_OUTV, SAMPLE_OUT0\u2013\
+      7, CS_L, SCLK, MOSI, MISO, SPI_DMODE, RESET_N"
+  fix_hint: "Route U20.8 (SAMPLE_OUT4) to the FMC LA pin through R105 (series 0\u03A9\
+    )."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: net_routing
+    from_pin: U20.8
+    to_pin: R105.2
+    via: series_R
+- id: ROUTE_SAMPLE_OUT5
+  family: schematic
+  severity: ERROR
+  title: "SAMPLE_OUT5 must route to the FMC through its series 0\u03A9 (R106)"
+  applies_to:
+    refdes: U20
+    pins: []
+    net: SAMPLE_OUT5
+    sheet: bobcat
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: FMC LPC pinout / LA bank
+    quote: "Bobcat \u2192 FMC LA bank (via 0\u03A9): SAMPLE_OUTV, SAMPLE_OUT0\u2013\
+      7, CS_L, SCLK, MOSI, MISO, SPI_DMODE, RESET_N"
+  fix_hint: "Route U20.9 (SAMPLE_OUT5) to the FMC LA pin through R106 (series 0\u03A9\
+    )."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: net_routing
+    from_pin: U20.9
+    to_pin: R106.2
+    via: series_R
+- id: ROUTE_SAMPLE_OUT6
+  family: schematic
+  severity: ERROR
+  title: "SAMPLE_OUT6 must route to the FMC through its series 0\u03A9 (R107)"
+  applies_to:
+    refdes: U20
+    pins: []
+    net: SAMPLE_OUT6
+    sheet: bobcat
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: FMC LPC pinout / LA bank
+    quote: "Bobcat \u2192 FMC LA bank (via 0\u03A9): SAMPLE_OUTV, SAMPLE_OUT0\u2013\
+      7, CS_L, SCLK, MOSI, MISO, SPI_DMODE, RESET_N"
+  fix_hint: "Route U20.10 (SAMPLE_OUT6) to the FMC LA pin through R107 (series 0\u03A9\
+    )."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: net_routing
+    from_pin: U20.10
+    to_pin: R107.2
+    via: series_R
+- id: ROUTE_SAMPLE_OUT7
+  family: schematic
+  severity: ERROR
+  title: "SAMPLE_OUT7 must route to the FMC through its series 0\u03A9 (R108)"
+  applies_to:
+    refdes: U20
+    pins: []
+    net: SAMPLE_OUT7
+    sheet: bobcat
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: FMC LPC pinout / LA bank
+    quote: "Bobcat \u2192 FMC LA bank (via 0\u03A9): SAMPLE_OUTV, SAMPLE_OUT0\u2013\
+      7, CS_L, SCLK, MOSI, MISO, SPI_DMODE, RESET_N"
+  fix_hint: "Route U20.11 (SAMPLE_OUT7) to the FMC LA pin through R108 (series 0\u03A9\
+    )."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: net_routing
+    from_pin: U20.11
+    to_pin: R108.2
+    via: series_R
+- id: ROUTE_MISO
+  family: schematic
+  severity: ERROR
+  title: "MISO must route to the FMC through its series 0\u03A9 (R112)"
+  applies_to:
+    refdes: U20
+    pins: []
+    net: MISO
+    sheet: bobcat
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: FMC LPC pinout / LA bank
+    quote: "Bobcat \u2192 FMC LA bank (via 0\u03A9): SAMPLE_OUTV, SAMPLE_OUT0\u2013\
+      7, CS_L, SCLK, MOSI, MISO, SPI_DMODE, RESET_N"
+  fix_hint: "Route U20.15 (MISO) to the FMC LA pin through R112 (series 0\u03A9)."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: net_routing
+    from_pin: U20.15
+    to_pin: R112.2
+    via: series_R
+- id: CHK_PARTS_HAVE_MPN
+  family: schematic
+  severity: WARNING
+  title: Every component should have a Manufacturer Part Number / library part
+  applies_to:
+    pins: []
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement
+    quote: 'Parts to implement: Bobcat, TPS7A8401A, Load switch, EEPROM, Bias circuit,
+      SMAs, header.'
+  fix_hint: "Assign an MPN / library part to every component (esp. connectors J50\u2013\
+    J56, headers)."
+  enabled: true
+  origin: generated
+  evaluation: semantic
+  prompt: Check that every placed component carries a real Manufacturer Part Number
+    (the lib_id / value is an MPN or a defined library part, not a placeholder). Connectors
+    (J*), SMAs, and headers count. PASS if all parts are MPN-associated; FAIL listing
+    any with a missing/placeholder MPN.
+- id: CHK_PASSIVES_HAVE_VALUE
+  family: schematic
+  severity: WARNING
+  title: Every R/C/L/crystal/fuse must have a value
+  applies_to:
+    pins: []
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement
+    quote: "Decoupling caps \u2026 10k\u03A9 pull-downs \u2026 5.11 k\u03A9 \u2026\
+      \ series 0\u03A9 \u2026"
+  fix_hint: "Give every passive a value (a 0\u03A9 jumper is '0', not blank)."
+  enabled: true
+  origin: generated
+  evaluation: semantic
+  prompt: "Check that every resistor, capacitor, inductor, crystal, and fuse has a\
+    \ defined value (e.g. '10k', '0.1uF', '0'); a 0\u03A9 jumper counts as a value.\
+    \ PASS if all passives are valued; FAIL listing any with an empty/missing value."
+- id: CHK_SIGNAL_NET_MIN_TWO_PINS
+  family: schematic
+  severity: WARNING
+  title: Every signal net should connect to at least two pins (no single-pin/floating
+    nets)
+  applies_to:
+    pins: []
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Topology / block diagram
+    quote: "Bobcat SPI, RESET_N, and SAMPLE_OUT signals route to the FMC through series\
+      \ 0\u03A9 resistors"
+  fix_hint: Terminate every signal net at >=2 pins (route the output to its destination).
+  enabled: true
+  origin: generated
+  evaluation: semantic
+  prompt: "Check that each non-power signal net connects to at least two pins (a source\
+    \ and a destination). A net with only ONE pin is floating/unterminated \u2014\
+    \ e.g. a SAMPLE_OUT that reaches its series-R but whose far side never reaches\
+    \ the FMC. Ignore intentional single-pin test points / NC. PASS if all signal\
+    \ nets have >=2 pins; FAIL listing any single-pin signal net."
+- id: CHK_NO_MULTI_DRIVER
+  family: schematic
+  severity: ERROR
+  title: No signal net may have multiple output drivers (contention)
+  applies_to:
+    pins: []
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Interfaces
+    quote: "SPI (CS_L, SCLK, MOSI, MISO, SPI_DMODE, RESET_N), I\xB2C (EEPROM + Bias),\
+      \ GPIO0\u20133"
+  fix_hint: Ensure each signal net has a single push-pull driver (or open-drain +
+    pull-up for shared buses).
+  enabled: true
+  origin: generated
+  evaluation: semantic
+  prompt: "Check that no signal net is driven by two or more push-pull OUTPUT pins\
+    \ simultaneously (driver contention). Open-drain/I\xB2C buses with multiple devices\
+    \ + a pull-up are fine. PASS if no net has \u22652 conflicting push-pull drivers;\
+    \ FAIL listing the contended net(s)."
+- id: CHK_POWER_NOT_SHORTED_GND
+  family: schematic
+  severity: ERROR
+  title: Power rails must not be shorted to GND
+  applies_to:
+    pins: []
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Specs
+    quote: "Power in (from FMC): 3P3V; VADJ 1.2\u20133.3V; Bobcat rails VDDD/VDDA1/VDDA2\
+      \ = 0.6\u20131.0V; VDDIO = VADJ"
+  fix_hint: "Remove any direct rail-to-GND connection (decoupling caps are fine; a\
+    \ 0\u03A9/wire short is not)."
+  enabled: true
+  origin: generated
+  evaluation: semantic
+  prompt: "Check that no power rail (+3V3, VADJ, +VDDIO, +VDDD, +VDDA1, +VDDA2, LDO\
+    \ output) is directly connected to GND (a dead short). A decoupling cap from rail\
+    \ to GND is expected and fine; a direct wire/0\u03A9 from rail to GND is not.\
+    \ PASS if no rail is shorted to GND; FAIL listing the shorted rail."
+- id: CHK_VALUE_MATCHES_MPN
+  family: schematic
+  severity: INFO
+  title: Component schematic value should match the manufacturer part value
+  applies_to:
+    pins: []
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement
+    quote: "5.11 k\u03A9 0.1% thin-film sense resistor \u2026 10k\u03A9 pull-downs\
+      \ \u2026 2.2 k\u03A9 I\xB2C pull-ups"
+  fix_hint: 'Reconcile each schematic value with its MPN (notably R40/R41: 3.65k value
+    vs the 5.11k MPN lib_id).'
+  enabled: true
+  origin: generated
+  evaluation: semantic
+  prompt: "Spot-check that each component's displayed schematic value is consistent\
+    \ with its MPN (e.g. a part labeled '10k' uses a 10k-MPN resistor; the 3.65k sense\
+    \ R uses a 3.65k part \u2014 NOTE: R40/R41 were changed to 3.65k but may still\
+    \ reference the 5.11k MPN lib_id TNPW06035K11BEEA, which is a real mismatch to\
+    \ flag). PASS if values match their MPNs; FAIL listing mismatches."
+- id: CHK_CAP_VOLTAGE_DERATING
+  family: schematic
+  severity: INFO
+  title: Capacitors on power rails must have adequate voltage derating
+  applies_to:
+    pins: []
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Specs
+    quote: "Power in (from FMC): 3P3V \u2026 VADJ 1.2\u20133.3V"
+  fix_hint: "Confirm rail-cap voltage ratings give \u22652\xD7 margin over the rail\
+    \ (check at BOM if not in the netlist)."
+  enabled: true
+  origin: generated
+  evaluation: semantic
+  prompt: "Check that capacitors on power rails are rated comfortably above the rail\
+    \ voltage (a common rule is \u22652\xD7 derating, e.g. a 3.3 V rail wants \u2265\
+    6.3 V caps; MLCC capacitance also derates with DC bias). The netlist may not carry\
+    \ voltage ratings \u2014 if absent, PASS with a note that ratings should be confirmed\
+    \ at BOM. FAIL only if a cap's rating is present and clearly too low for its rail."
+- id: CHK_CLOCK_PINS_CLOCK_NETS
+  family: schematic
+  severity: INFO
+  title: Clock pins should connect to clock-named nets
+  applies_to:
+    pins: []
+    sheet: connectors
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Signal outputs
+    quote: "Signal outputs: CLK_OUT0\u20133, SAMPLE_OUTV, SAMPLE_OUT0\u20137, OSC_EN,\
+      \ WEIGHT_EN, SAMPLE_TRIG"
+  fix_hint: Name clock nets CLK_OUT* and route the clock pins to them.
+  enabled: true
+  origin: generated
+  evaluation: semantic
+  prompt: "Check that clock pins connect to clock-named nets \u2014 the CLK_OUT0\u2013\
+    3 outputs should land on nets named CLK_OUT* (and reach their SMAs). PASS if clock\
+    \ pins are on clock-named nets; FAIL if a clock pin is on a mis-named or non-clock\
+    \ net."

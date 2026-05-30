@@ -36,6 +36,8 @@ test1/sim/results/
 
 # Review pipeline transient output
 test1/review/findings.json
+# block_harness scratch output (per-run rule-eval JSON + log); regenerated each run
+test1/review/state/
 
 # Voltai review-PDF intake — keep the drop folder + tooling (README + the
 # install_review.py parser) but never commit user-uploaded PDFs or the
