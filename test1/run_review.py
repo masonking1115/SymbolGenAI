@@ -57,13 +57,18 @@ def main() -> int:
     findings: list[Finding] = []
 
     print()
-    print("Phase 2a: deterministic rules …")
+    print("Phase 2a: rule_eval against rules.yaml …")
     try:
-        from review import rules
-        findings.extend(rules.run_all(idx))
-        print(f"  {len(findings)} findings so far")
-    except ImportError:
-        print("  (rules.py not yet implemented — skipping)")
+        from review import rule_eval
+        new_findings = rule_eval.run_all()
+        findings.extend(new_findings)
+        rf = rule_eval.load_rules()
+        print(f"  {len(new_findings)} findings from "
+              f"{sum(1 for r in rf.rules if r.enabled)}/{len(rf.rules)} active rules")
+    except FileNotFoundError:
+        print("  (rules.yaml not yet generated — run /api/review/rules/generate)")
+    except Exception as e:
+        print(f"  rule_eval error: {e}")
 
     # Phase 2b retired 2026-05-29 — semantic rules now live in rules.yaml
     # and are evaluated by rule_eval.py alongside structural rules.
