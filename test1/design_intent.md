@@ -34,5 +34,21 @@ involved so it's verifiable.
 - **R42/R43 are DNP (0Ω jumpers left unpopulated)** — the 2N7002 isolator is the
   active POR-failsafe path, not the jumper. Don't model/treat them as closed.
 
+- **U40 (MCP4728) "external VREF tied to 3.3V" is an EEPROM config BIT, not a
+  pin.** The MCP4728 has NO VREF pin (10-pin VQFN: VDD/SCL/SDA/*LDAC/RDY/4×VOUT/
+  VSS). "External reference" per the datasheet (22187E p.1) *is* VDD — selecting
+  it (per channel, in the config register/EEPROM) sets output range 0–VDD for
+  rail-to-rail swing. VDD is already on +3V3 (U40.1), so the requirement is
+  satisfied by config alone. **Do not add a VREF net/pin to "tie VREF to 3.3V"**
+  — it would be a phantom pin and break connectivity. Rule SEM_MCP4728_VREF_EXTERNAL
+  is a config/firmware assertion, not a schematic-wireable one.
+
+- **U10 (TPS7A8401A) open-drain PG already has its pull-up — R12 (10kΩ→+3V3)
+  sits on the PG node (`internal_LDO_PG_stub`: U10.4 + R12.2 + R13.2), with R13
+  (1kΩ series) out to the FMC `LDO_PG` net.** Rule SEM_LDO_PG_OPEN_DRAIN is
+  already satisfied; don't add a second pull-up. The semantic evaluator can't see
+  R12's far-side wiring (it only gets the rule-refdes pin→net map + the sheet
+  part list), so this rule may re-fire spuriously — it's not a missing part.
+
 <!-- Add new cross-sheet facts here as they're discovered. Prefer adding a fact
      the moment an agent had to rediscover it the hard way. -->

@@ -490,6 +490,13 @@ class AltiumSheet:
             return out
 
         bodies = _body_boxes()
+        # Page-boundary guard: nudging must never push a note outside the usable
+        # area (the region inside Altium's border/reference-zone margin). Compute
+        # once from the actual chosen paper (set after save; fall back to declared).
+        _paper = getattr(self, "_chosen_paper", None) or self.paper
+        _W, _H = self._PAPER_MIL.get(_paper, (0, 0))
+        _m = self._PAPER_MARGIN.get(_paper, 0)
+        _lo_y, _hi_y = _m, _H - _m
         changes: list[tuple[str, int]] = []
         for note in [l for l in self._labels
                      if l.kind == "text" and l.obj is not None and l.box]:
@@ -503,6 +510,10 @@ class AltiumSheet:
             for d in range(step, step * max_steps + 1, step):
                 for dy in (-d, d):           # prefer nudging DOWN first
                     cand = (bx0, by0 + dy, bx1, by1 + dy)
+                    # Never nudge a note outside the printable area — the linter
+                    # would flag it and the user can't easily fix an auto-moved note.
+                    if _H and (cand[1] < _lo_y or cand[3] >= _hi_y):
+                        continue
                     if not any(_ov(cand, b) for b in obstacles):
                         placed = (dy, cand)
                         break

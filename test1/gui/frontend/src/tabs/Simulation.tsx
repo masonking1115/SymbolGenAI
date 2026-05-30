@@ -459,9 +459,15 @@ export function Simulation({ setHealth, blocks, selected, onBlocksChanged }: Pro
     setClStatus((prev) => prune(prev));
   }, []);
 
-  // Derive each sim's changelog lifecycle from the live changelog: if this
-  // (block, sim_type) still has a queued sim-originated item → pending; if we
-  // had marked it logged but it's no longer queued → applied. Polls cheaply.
+  // Derive each sim's changelog lifecycle from the live changelog. A badge is
+  // only meaningful for a suggestion we've actually SEEN queued this session:
+  //   • currently queued            → PENDING
+  //   • seen-queued, now gone       → APPLIED (it was consumed by an apply pass)
+  //   • logged but never seen queued (orphaned flag from a prior session, or
+  //     cleared externally) → NO badge (clear the stale logged flag).
+  // This kills the stale "PENDING/APPLIED" that lingered when an item was
+  // drained/cleared without this tab ever seeing it queued.
+  const seenQueuedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     let alive = true;
     const tick = async () => {
@@ -473,12 +479,14 @@ export function Simulation({ setHealth, blocks, selected, onBlocksChanged }: Pro
             .filter((it) => it.source === "sim" && it.sim_block && it.sim_type)
             .map((it) => `${it.sim_block}:${it.sim_type}`),
         );
+        queued.forEach((k) => seenQueuedRef.current.add(k));
         setClStatus(() => {
           const next: Record<string, "pending" | "applied"> = {};
-          // anything we've logged is either still pending or now applied
           for (const k of Object.keys(loggedRef.current)) {
             if (!loggedRef.current[k]) continue;
-            next[k] = queued.has(k) ? "pending" : "applied";
+            if (queued.has(k)) next[k] = "pending";
+            else if (seenQueuedRef.current.has(k)) next[k] = "applied";
+            // else: orphaned/stale → no badge (omit from clStatus)
           }
           return next;
         });
@@ -531,8 +539,10 @@ export function Simulation({ setHealth, blocks, selected, onBlocksChanged }: Pro
         }
         setLogged((prev) => ({ ...prev, [key]: true }));
         // Sim circuit-edits enter the changelog as PENDING immediately; the
-        // poller flips it to APPLIED once the apply pass drains the queue.
+        // poller flips it to APPLIED once the apply pass drains the queue. Record
+        // that we've seen it queued so the "gone => applied" transition is valid.
         if (sel.length > 0) {
+          seenQueuedRef.current.add(key);
           setClStatus((prev) => ({ ...prev, [key]: "pending" }));
         }
       } catch {

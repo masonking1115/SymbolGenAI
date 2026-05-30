@@ -3,6 +3,7 @@ import { api } from "./api";
 import { Sidebar } from "./components/Sidebar";
 import { TopBar } from "./components/TopBar";
 import { PngViewer } from "./components/PngViewer";
+import { DiffPanes, type DiffMode } from "./components/DiffPanes";
 import { Splitter } from "./components/Splitter";
 import { AgentRail } from "./components/AgentRail";
 import { Generator } from "./tabs/Generator";
@@ -10,7 +11,20 @@ import { Library } from "./tabs/Library";
 import { Resources } from "./tabs/Resources";
 import { Review } from "./tabs/Review";
 import { Simulation } from "./tabs/Simulation";
-import type { PhaseEvent, SimBlock, SimGroup, StagePhase, TabKey } from "./types";
+import type { LoopSummary, PhaseEvent, SimBlock, SimGroup, StagePhase, TabKey } from "./types";
+
+// Diff data shape (kept in App.tsx because the right pane reads it). Matches
+// the structure returned by api.loopDiff(loopId).
+interface DiffData {
+  loop_id: string;
+  sheets: Record<string, {
+    viewBox: string;
+    added: Record<string, { x: number; y: number; kind: "added" }>;
+    removed: Record<string, { x: number; y: number; kind: "removed" }>;
+    changed: Record<string, { x: number; y: number; kind: "changed"; from_value: string; to_value: string }>;
+    count: number;
+  }>;
+}
 
 const TAB_TITLES: Record<TabKey, string> = {
   resources: "Design Resources / test1",
@@ -84,6 +98,48 @@ export default function App() {
       .catch(() => {});
   }, []);
 
+  // ---- Closed-loop review state (lifted from Review.tsx) ----
+  // Shared with the Review tab AND the right-pane <DiffPanes> swap.
+  const [activeLoopId, setActiveLoopId] = useState<string | null>(null);
+  const [loopSummary, setLoopSummary] = useState<LoopSummary | null>(null);
+  const [loopDiff, setLoopDiff] = useState<DiffData | null>(null);
+  const [diffSheet, setDiffSheet] = useState<string | null>(null);
+  const [diffMode, setDiffMode] = useState<DiffMode>("side");
+  // User toggle for "force diff view in right pane". null = auto (follow
+  // hasRealDiff), true = always show, false = always hide. Reset on loop
+  // resolution so the next loop starts fresh.
+  const [diffVisibleOverride, setDiffVisibleOverride] = useState<boolean | null>(null);
+  const loopComplete = loopSummary && loopSummary.status !== "running";
+  const diffActive = !!(loopComplete && activeLoopId);
+
+  // Fetch the diff once when a loop completes; reset when activeLoopId clears.
+  useEffect(() => {
+    if (!diffActive || !activeLoopId) {
+      setLoopDiff(null);
+      setDiffSheet(null);
+      setDiffVisibleOverride(null);
+      return;
+    }
+    let cancelled = false;
+    api.loopDiff(activeLoopId).then((d) => {
+      if (cancelled) return;
+      setLoopDiff(d);
+      setDiffSheet((prev) => {
+        if (prev) return prev;
+        const entries = Object.entries(d.sheets);
+        if (entries.length === 0) return null;
+        return entries.sort((a, b) => b[1].count - a[1].count)[0][0];
+      });
+    }).catch(() => { /* ignore */ });
+    return () => { cancelled = true; };
+  }, [diffActive, activeLoopId]);
+
+  // Auto-show diff only when there's ACTUAL content to confirm. A clean
+  // all-clear loop produces a snapshot with zero sheet changes — no reason to
+  // hide the schematic. The user can still force-open via the toggle.
+  const hasRealDiff = !!(loopDiff && Object.values(loopDiff.sheets).some(s => s.count > 0));
+  const diffVisible = diffVisibleOverride ?? hasRealDiff;
+
   const onArtifactsChanged = useCallback(() => setBust((b) => b + 1), []);
   const onRefresh = useCallback(() => {
     // Increment bust to force re-fetch of sheets/PNG in PngViewer
@@ -141,6 +197,18 @@ export default function App() {
         onArtifactsChanged={onArtifactsChanged}
         setHealth={setHealth}
         onAutofixCompleted={() => setTab("generator")}
+        activeLoopId={activeLoopId}
+        setActiveLoopId={setActiveLoopId}
+        loopSummary={loopSummary}
+        setLoopSummary={setLoopSummary}
+        loopDiff={loopDiff}
+        diffSheet={diffSheet}
+        setDiffSheet={setDiffSheet}
+        diffMode={diffMode}
+        setDiffMode={setDiffMode}
+        hasRealDiff={hasRealDiff}
+        diffVisible={diffVisible}
+        setDiffVisibleOverride={setDiffVisibleOverride}
       />
     ) : tab === "generator" ? (
       <Generator
@@ -188,7 +256,22 @@ export default function App() {
   const canvasGrows = tab === "generator" || tab === "review" || tab === "simulation";
   // On the Simulation tab the right pane can also show the SPICE model of the
   // selected block (what's actually simulated), toggled inside the viewer.
-  const pngView = (
+  // Right pane is normally the PngViewer (current schematic). When the Review
+  // tab has an awaiting-decision diff, replace PngViewer with DiffPanes so the
+  // user sees BEFORE/AFTER (or OVERLAY) in the big canvas instead of a
+  // duplicated schematic. Diff data lives here in App.tsx; controls + Accept/
+  // Reject live in the Review tab content column.
+  const rightPaneIsDiff = tab === "review" && diffActive && !!loopDiff && diffVisible;
+  const pngView = rightPaneIsDiff ? (
+    <DiffPanes
+      loopId={activeLoopId!}
+      diff={loopDiff!}
+      activeSheet={diffSheet}
+      setActiveSheet={setDiffSheet}
+      mode={diffMode}
+      setMode={setDiffMode}
+    />
+  ) : (
     <PngViewer
       bust={bust}
       simMode={tab === "simulation"}

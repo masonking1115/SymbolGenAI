@@ -913,11 +913,13 @@ def _check_wire_through_port(s):
 def _check_offpage_text(s):
     """A drawn label/value/note box (or component body) spills past the sheet's
     USABLE area — the region inside Altium's border/reference-zone margin. Checks
-    against the DECLARED paper size (s.paper), not auto-fitted. The bounds are
-    Altium's real drawable frame (s._PAPER_MIL) inset by the border margin
-    (s._PAPER_MARGIN), so content landing in the border or title-block zone is
-    caught — not just content past the raw ISO page rectangle."""
-    paper = s.paper  # Use declared paper, not auto-fitted
+    against the ACTUAL paper size chosen by auto-fit (s._chosen_paper when
+    available, else s.paper), matching the paper Altium renders. Consistent with
+    _check_out_of_bounds which also uses _chosen_paper. Boundary is inclusive:
+    content whose edge sits EXACTLY at the margin line is flagged (>= not >) so a
+    port body flush against A3's 15300-mil usable-area edge is caught — the
+    original (strict >) missed this exact-boundary case."""
+    paper = getattr(s, "_chosen_paper", None) or s.paper
     W, H = s._PAPER_MIL.get(paper, (0, 0))
     if not W:
         return []
@@ -927,7 +929,7 @@ def _check_offpage_text(s):
     items = [(k, n, b) for (k, n, b) in _label_boxes(s)]
     items += [("body", r, b) for (r, b) in _body_boxes(s)]
     for (kind, name, (x0, y0, x1, y1)) in items:
-        if x0 < lo_x or y0 < lo_y or x1 > hi_x or y1 > hi_y:
+        if x0 < lo_x or y0 < lo_y or x1 >= hi_x or y1 >= hi_y:
             out.append(LintIssue("WARNING", "offpage_text",
                 f"{kind} {name!r} box ({x0},{y0})..({x1},{y1}) spills past the "
                 f"{paper} usable area ({lo_x},{lo_y})..({hi_x},{hi_y}) "

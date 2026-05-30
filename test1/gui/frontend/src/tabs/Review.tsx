@@ -2,17 +2,48 @@ import { useCallback, useEffect, useState } from "react";
 import { api, subscribeRun } from "../api";
 import { Console } from "../components/Console";
 import { DiffAndAccept } from "../components/DiffAndAccept";
+import type { DiffMode } from "../components/DiffPanes";
 import { I } from "../components/Icon";
 import { IterationSection } from "../components/IterationSection";
 import { RulesSection } from "../components/RulesSection";
 import type { Finding, FindingAction, FindingsReport, FixQueueEntry,
   LoopSummary, Severity } from "../types";
 
+// Diff data shape mirrored from DiffPanes for the controls' props. Kept inline
+// to avoid pulling the visual-pane module into this tab's import graph.
+interface DiffData {
+  loop_id: string;
+  sheets: Record<string, {
+    viewBox: string;
+    added: Record<string, { x: number; y: number; kind: "added" }>;
+    removed: Record<string, { x: number; y: number; kind: "removed" }>;
+    changed: Record<string, { x: number; y: number; kind: "changed"; from_value: string; to_value: string }>;
+    count: number;
+  }>;
+}
+
 interface Props {
   onArtifactsChanged: () => void;
   setHealth: (h: { text: string; tone: "ok" | "warn" | "err" | "neutral" } | undefined) => void;
   /** Navigate back to the Generator tab after autofix completes. */
   onAutofixCompleted: () => void;
+  // Loop state lifted to App.tsx so the right pane can swap PngViewer for
+  // DiffPanes when a completed loop is awaiting accept/reject.
+  activeLoopId: string | null;
+  setActiveLoopId: (id: string | null) => void;
+  loopSummary: LoopSummary | null;
+  setLoopSummary: (s: LoopSummary | null) => void;
+  loopDiff: DiffData | null;
+  diffSheet: string | null;
+  setDiffSheet: (s: string) => void;
+  diffMode: DiffMode;
+  setDiffMode: (m: DiffMode) => void;
+  // Right-pane diff-view gating. hasRealDiff = at least one sheet has changes.
+  // diffVisible = current effective visibility (auto OR override). The setter
+  // accepts null to clear the override (revert to auto).
+  hasRealDiff: boolean;
+  diffVisible: boolean;
+  setDiffVisibleOverride: (v: boolean | null) => void;
 }
 
 type RunState = "idle" | "running" | "ok" | "fail";
@@ -31,17 +62,17 @@ function indexQueue(q: FixQueueEntry[]): Map<string, FixQueueEntry> {
   return m;
 }
 
-export function Review({ onArtifactsChanged, setHealth, onAutofixCompleted }: Props) {
+export function Review({
+  onArtifactsChanged, setHealth, onAutofixCompleted,
+  activeLoopId, setActiveLoopId, loopSummary, setLoopSummary,
+  loopDiff, diffSheet, setDiffSheet, diffMode, setDiffMode,
+  hasRealDiff, diffVisible, setDiffVisibleOverride,
+}: Props) {
   const [report, setReport] = useState<FindingsReport | null>(null);
   const [lines, setLines] = useState<string[]>([]);
   const [runState, setRunState] = useState<RunState>("idle");
   const [errorLog, setErrorLog] = useState<string>("");
   const [queue, setQueue] = useState<Map<string, FixQueueEntry>>(new Map());
-  const [activeLoopId, setActiveLoopId] = useState<string | null>(null);
-  // Loop summary lifted from IterationSection (via onSummary callback). Used
-  // to gate the DiffAndAccept section on status !== "running" so it only
-  // renders once the loop has terminated.
-  const [loopSummary, setLoopSummary] = useState<LoopSummary | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -94,6 +125,19 @@ export function Review({ onArtifactsChanged, setHealth, onAutofixCompleted }: Pr
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Stable callbacks passed to IterationSection + DiffAndAccept. Without
+  // useCallback these would be fresh fns on every render, and the children's
+  // effects (with these in deps) would re-subscribe to SSE / refetch on every
+  // parent render — causing a fetch loop + visible schematic flicker.
+  const onLoopCompleted = useCallback((status: string) => {
+    setRunState(status === "all_clear" ? "ok" : "fail");
+    onArtifactsChanged();
+  }, [onArtifactsChanged]);
+  const onDiffResolved = useCallback(() => {
+    setActiveLoopId(null);
+    onArtifactsChanged();
+  }, [onArtifactsChanged]);
+
   const startLoop = async () => {
     setLines([]);
     setRunState("running");
@@ -101,6 +145,17 @@ export function Review({ onArtifactsChanged, setHealth, onAutofixCompleted }: Pr
     try {
       const { loop_id } = await api.loopStart();
       setActiveLoopId(loop_id);
+      // The loop can finish almost instantly when the design already passes
+      // every rule (0 findings → 0 rounds → all_clear in ~100ms). In that case
+      // the SSE may deliver only a terminal frame; fetch the summary directly so
+      // the Iteration panel always shows a result (and runState resolves) rather
+      // than appearing to do "nothing".
+      try {
+        const s = await api.loopGet(loop_id);
+        if (s.status !== "running") onLoopCompleted(s.status);
+      } catch {
+        /* IterationSection's own fetch/subscribe will still populate it */
+      }
     } catch {
       setHealth({ text: "loop start failed", tone: "err" });
       setRunState("fail");
@@ -197,19 +252,24 @@ export function Review({ onArtifactsChanged, setHealth, onAutofixCompleted }: Pr
 
         <IterationSection
           loopId={activeLoopId}
-          onLoopCompleted={(status) => {
-            setRunState(status === "all_clear" ? "ok" : "fail");
-            onArtifactsChanged();
-          }}
+          onLoopCompleted={onLoopCompleted}
           setHealth={setHealth}
           onSummary={setLoopSummary}
         />
 
-        {activeLoopId && loopSummary && loopSummary.status !== "running" && (
+        {activeLoopId && loopSummary && loopSummary.status !== "running" && loopDiff && (
           <DiffAndAccept
             loopId={activeLoopId}
             loopStatus={loopSummary.status}
-            onResolved={() => { setActiveLoopId(null); onArtifactsChanged(); }}
+            diff={loopDiff}
+            activeSheet={diffSheet}
+            setActiveSheet={setDiffSheet}
+            mode={diffMode}
+            setMode={setDiffMode}
+            hasRealDiff={hasRealDiff}
+            diffVisible={diffVisible}
+            setDiffVisibleOverride={setDiffVisibleOverride}
+            onResolved={onDiffResolved}
           />
         )}
 

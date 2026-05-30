@@ -29,7 +29,7 @@ export function LiveConsole({
   maxHeightPx = 280,
 }: Props) {
   const [lines, setLines] = useState<string[]>([]);
-  const endRef = useRef<HTMLDivElement | null>(null);
+  const preRef = useRef<HTMLPreElement | null>(null);
 
   // Subscribe to the agent's stream. Reset on agent_run_id change so a new
   // agent doesn't inherit the previous one's trailing output.
@@ -44,9 +44,16 @@ export function LiveConsole({
     return () => { unsub(); };
   }, [agentRunId]);
 
-  // Auto-scroll to the bottom whenever new lines arrive.
+  // Auto-scroll the <pre> itself (NOT the page). scrollIntoView on a child
+  // would walk up to the document scroller and jump the entire viewport when
+  // the console isn't already on-screen. Only autoscroll when the user is
+  // already near the bottom — if they've scrolled up to read older output,
+  // don't yank them back.
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "auto" });
+    const el = preRef.current;
+    if (!el) return;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+    if (nearBottom) el.scrollTop = el.scrollHeight;
   }, [lines]);
 
   const headerLabel = label ?? (
@@ -66,13 +73,13 @@ export function LiveConsole({
         <span className="ml-auto text-[10px] text-ink-400">{lines.length} lines</span>
       </div>
       <pre
-        className="text-[11px] font-mono bg-ink-900 text-ink-100 p-2.5 rounded overflow-auto whitespace-pre-wrap"
+        ref={preRef}
+        className="text-[11px] font-mono bg-white text-ink-900 border border-edge p-2.5 rounded overflow-auto whitespace-pre-wrap"
         style={{ minHeight: `${minHeightPx}px`, maxHeight: `${maxHeightPx}px` }}
       >
 {lines.length === 0
-  ? <span className="text-ink-300 italic">{agentRunId ? "(waiting for first line…)" : "(no active agent)"}</span>
+  ? <span className="text-ink-400 italic">{agentRunId ? "(waiting for first line…)" : "(no active agent)"}</span>
   : lines.join("\n")}
-        <div ref={endRef} />
       </pre>
     </div>
   );

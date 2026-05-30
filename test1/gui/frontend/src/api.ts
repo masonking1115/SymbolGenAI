@@ -395,7 +395,10 @@ export const api = {
     if (!r.ok) throw new Error("accept failed");
     return r.json();
   },
-  loopReject: async (loop_id: string, revert?: string[]): Promise<{ ok: boolean }> => {
+  loopReject: async (
+    loop_id: string,
+    revert?: string[],
+  ): Promise<{ ok: boolean; rebuild_status?: boolean; rebuild_log_tail?: string }> => {
     const r = await fetch(`/api/loop/${loop_id}/reject`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -491,6 +494,7 @@ export function subscribeLoop(
     } catch { /* ignore parse errors */ }
   };
   for (const name of [
+    "eval_start", "eval_progress", "eval_done",
     "loop_start", "round_start", "action_start", "action_end", "build_start",
     "build_end", "sim_results", "round_done", "plateau", "error",
   ]) {

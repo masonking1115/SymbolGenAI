@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, subscribeLoop } from "../api";
 import { I } from "./Icon";
 import { LiveConsole } from "./LiveConsole";
@@ -64,8 +64,50 @@ function pipelineSteps(phase: PhaseId, currentRound: LoopRound | undefined, term
   return steps;
 }
 
+// Render a loop SSE event as a readable console line (null = don't log it).
+function loopEventLine(ev: LoopEvent): string | null {
+  switch (ev.event) {
+    case "eval_start":
+      return `▶ evaluating rules (${ev.data.phase})…`;
+    case "eval_progress": {
+      const d = ev.data;
+      const mark = d.result === "fail" ? "✗ FAIL" : "✓ pass";
+      const tag = d.evaluation === "semantic" ? " [semantic]" : "";
+      return `  [${d.i}/${d.total}] ${d.id}${tag} — ${mark}`;
+    }
+    case "eval_done":
+      return `  → ${ev.data.findings} finding(s)`;
+    case "loop_start":
+      return `loop start · ${ev.data.findings} finding(s) to resolve`;
+    case "round_start":
+      return `── round ${ev.data.round} · ${ev.data.findings} finding(s) ──`;
+    case "action_start":
+      return `▶ ${ev.data.kind} [${(ev.data.targets || []).join(", ")}]`;
+    case "action_end":
+      return `  ${ev.data.status === "ok" ? "✓" : "✗"} ${ev.data.kind} — ${ev.data.summary || ev.data.status}`;
+    case "build_start":
+      return `▶ rebuild…`;
+    case "build_end": {
+      const l = ev.data.lint;
+      return `  build ${ev.data.status}${l ? ` · lint ${l.ERROR}/${l.WARNING}/${l.INFO}` : ""}`;
+    }
+    case "round_done":
+      return `  round ${ev.data.round} done · Δ${ev.data.delta} · ${ev.data.remaining} remaining`;
+    case "plateau":
+      return `⚠ plateau — ${ev.data.remaining} finding(s) unresolved after no progress`;
+    case "error":
+      return `error: ${ev.data.message}`;
+    case "done":
+      return `loop done · ${ev.data.status} · ${ev.data.remaining} remaining`;
+    default:
+      return null;
+  }
+}
+
 function inferPhaseFromEvent(ev: LoopEvent, prev: PhaseId): PhaseId {
   switch (ev.event) {
+    case "eval_start":  return "plan";
+    case "eval_progress": return "plan";
     case "loop_start":  return "plan";
     case "round_start": return "plan";
     case "action_start":
@@ -92,6 +134,10 @@ export function IterationSection({ loopId, onLoopCompleted, setHealth, onSummary
   const [phase, setPhase] = useState<PhaseId>("idle");
   const [activeAgentId, setActiveAgentId] = useState<string | null>(null);
   const [pinnedAgentId, setPinnedAgentId] = useState<string | null>(null);
+  // Loop-level activity feed — readable lines from the SSE events (esp. the
+  // rule-evaluation phase, which spawns no tracked agent). This is what makes
+  // the review console show activity from the first second, like the sim tab.
+  const [loopLog, setLoopLog] = useState<string[]>([]);
 
   // Subscribe to the loop stream
   useEffect(() => {
@@ -114,9 +160,12 @@ export function IterationSection({ loopId, onLoopCompleted, setHealth, onSummary
     };
 
     void refresh();
+    setLoopLog([]);
 
     const unsub = subscribeLoop(loopId, async (ev: LoopEvent) => {
       setPhase((p) => inferPhaseFromEvent(ev, p));
+      const line = loopEventLine(ev);
+      if (line) setLoopLog((prev) => [...prev.slice(-300), line]);
       if (Date.now() - lastFetch > 250) {
         lastFetch = Date.now();
         await refresh();
@@ -192,7 +241,15 @@ export function IterationSection({ loopId, onLoopCompleted, setHealth, onSummary
       )}
       {summary?.status === "all_clear" && (
         <div className="px-4 py-2 text-[12px] bg-ok/[0.06] text-ok border-y border-edge">
-          ✓ All findings resolved in {summary.rounds.length} rounds.
+          {summary.rounds.length === 0 ? (
+            <>
+              ✓ Already clean — the design passes every review rule, so the loop
+              had nothing to fix. (No findings to begin with.)
+            </>
+          ) : (
+            <>✓ All findings resolved in {summary.rounds.length} round
+              {summary.rounds.length === 1 ? "" : "s"}.</>
+          )}
         </div>
       )}
       {summary?.error && (
@@ -201,16 +258,22 @@ export function IterationSection({ loopId, onLoopCompleted, setHealth, onSummary
         </div>
       )}
 
-      {/* Live console — always present once a loop has started. Shows the
-          active or pinned sub-agent's stream via the shared LiveConsole. */}
-      <LiveConsole
-        agentRunId={pinnedAgentId ?? activeAgentId}
-        idlePlaceholder={isRunning ? "waiting for agent action…" : "no active agent"}
-        headerRight={pinnedAgentId ? (
-          <button onClick={() => setPinnedAgentId(null)}
-            className="ml-2 text-ink-500 hover:text-ink-900 underline">unpin</button>
-        ) : undefined}
-      />
+      {/* Console — always present once a loop has started. When a sub-agent is
+          active/pinned, show its live stream; otherwise show the loop ACTIVITY
+          FEED (rule evaluation, rounds, builds) so the console is never empty —
+          this is what fills it during the eval phase, like the sim tab. */}
+      {(pinnedAgentId ?? activeAgentId) ? (
+        <LiveConsole
+          agentRunId={pinnedAgentId ?? activeAgentId}
+          idlePlaceholder={isRunning ? "waiting for agent action…" : "no active agent"}
+          headerRight={pinnedAgentId ? (
+            <button onClick={() => setPinnedAgentId(null)}
+              className="ml-2 text-ink-500 hover:text-ink-900 underline">unpin</button>
+          ) : undefined}
+        />
+      ) : (
+        <LoopActivityConsole lines={loopLog} running={isRunning} />
+      )}
 
       {/* Per-round history — collapsed by default once finished */}
       {summary && summary.rounds.length > 0 && (
@@ -266,21 +329,99 @@ function RoundCard({ r, activeAgentId, onPin }:
 
 function ActionRow({ a, onPin, active }:
   { a: LoopAction; onPin: (id: string) => void; active: boolean }) {
+  // Each spawned agent gets its OWN dropdown: the row is a toggle, and expanding
+  // it reveals that agent's live "doing + thinking" stream inline (its tool calls,
+  // assistant lines, and thinking: lines via the shared LiveConsole). Auto-opens
+  // while the action is running so you watch it work without clicking.
+  const [open, setOpen] = useState(false);
+  const running = a.status === "running";
+  useEffect(() => { if (running) setOpen(true); }, [running]);
+
   const dot = a.status === "ok" ? "●" : a.status === "fail" ? "✗" :
               a.status === "cancelled" ? "⊗" : "◐";
   const tone = a.status === "ok" ? "text-ok" : a.status === "fail" ? "text-err" :
                a.status === "cancelled" ? "text-ink-500" : "text-ink-700";
+  const hasAgent = !!a.agent_run_id;
+
   return (
-    <div className={"text-[11.5px] flex items-center gap-1.5 " + (active ? "bg-rail/30 rounded px-1" : "")}>
-      <span className={tone}>{dot}</span>
-      <span className="font-mono text-ink-500">{a.kind}</span>
-      <span className="text-ink-700">· {a.summary}</span>
-      {a.agent_run_id && (
-        <button onClick={() => onPin(a.agent_run_id!)}
-          className="ml-auto text-[10px] text-ink-500 hover:text-ink-900">
-          pin
-        </button>
+    <div className={"rounded " + (active ? "bg-rail/30" : "")}>
+      <div className="text-[11.5px] flex items-center gap-1.5 px-1">
+        {hasAgent ? (
+          <button
+            onClick={() => setOpen((v) => !v)}
+            className="flex items-center gap-1.5 flex-1 text-left hover:opacity-80"
+            title={open ? "hide agent activity" : "show what this agent is doing + thinking"}
+          >
+            <span className={"transition-transform text-ink-500 " + (open ? "rotate-180" : "")}>
+              <I.Caret size={10} />
+            </span>
+            <span className={tone}>{dot}</span>
+            <span className="font-mono text-ink-500">{a.kind}</span>
+            {a.targets.length > 0 && (
+              <span className="font-mono text-[10px] text-ink-400">
+                {a.targets.slice(0, 3).join(", ")}{a.targets.length > 3 ? "…" : ""}
+              </span>
+            )}
+            <span className="text-ink-700 truncate">· {a.summary || (running ? "working…" : "")}</span>
+          </button>
+        ) : (
+          <div className="flex items-center gap-1.5 flex-1">
+            <span className={tone}>{dot}</span>
+            <span className="font-mono text-ink-500">{a.kind}</span>
+            <span className="text-ink-700">· {a.summary}</span>
+          </div>
+        )}
+        {hasAgent && (
+          <button onClick={() => onPin(a.agent_run_id!)}
+            className="text-[10px] text-ink-500 hover:text-ink-900 shrink-0"
+            title="pin this agent to the main console below">
+            pin
+          </button>
+        )}
+      </div>
+      {hasAgent && open && (
+        <div className="mt-1 mb-1.5 ml-3">
+          <LiveConsole
+            agentRunId={a.agent_run_id!}
+            label={`${a.kind} agent · ${a.status}`}
+            idlePlaceholder={running ? "waiting for agent output…" : "(agent finished — reasoning below)"}
+            minHeightPx={72}
+            maxHeightPx={220}
+          />
+        </div>
       )}
+    </div>
+  );
+}
+
+// Loop-level activity console. Shows the readable event feed (rule evaluation,
+// rounds, builds) so the review console streams from the first second — the
+// fix for the previously-empty console during the eval phase. Styling matches
+// the shared LiveConsole (white pre, auto-scroll when near the bottom).
+function LoopActivityConsole({ lines, running }: { lines: string[]; running: boolean }) {
+  const preRef = useRef<HTMLPreElement | null>(null);
+  useEffect(() => {
+    const el = preRef.current;
+    if (!el) return;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+    if (nearBottom) el.scrollTop = el.scrollHeight;
+  }, [lines]);
+  return (
+    <div className="border-t border-edge px-4 py-2.5 bg-rail/20">
+      <div className="text-[11px] text-ink-500 mb-1.5 flex items-center gap-2">
+        <I.Terminal size={11} />
+        <span>loop activity</span>
+        <span className="ml-auto text-[10px] text-ink-400">{lines.length} lines</span>
+      </div>
+      <pre
+        ref={preRef}
+        className="text-[11px] font-mono bg-white text-ink-900 border border-edge p-2.5 rounded overflow-auto whitespace-pre-wrap"
+        style={{ minHeight: "120px", maxHeight: "240px" }}
+      >
+{lines.length === 0
+  ? <span className="text-ink-400 italic">{running ? "starting — evaluating rules…" : "(idle)"}</span>
+  : lines.join("\n")}
+      </pre>
     </div>
   );
 }

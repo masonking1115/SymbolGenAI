@@ -1,9 +1,2064 @@
-# Generated rules for the closed-loop design review.
-# Populated by test1/review/rule_gen.py (Phase 2). User-origin edits
-# survive regeneration (see rules with `origin: user`).
-#
-# Spec: docs/superpowers/specs/2026-05-29-closed-loop-design-review-design.md §3
 version: 1
-generated_at: ""
-sources_seen: []
-rules: []
+generated_at: '2026-05-30T02:25:50.446034+00:00'
+sources_seen:
+- path: test1\design_requirements.md
+  mtime: 1779931620.624925
+- path: test1\[External] Bobcat Board Design.pdf
+  mtime: 1779894724.8913655
+- path: test1\Parts Library\24AA08-I-SN\20001710L.pdf
+  mtime: 1779942736.8604088
+- path: test1\Parts Library\24AA08-I-SN\24AA08-24LC08B-24FC08-8K-I2C-Serial-EEPROM-DS20001710.pdf
+  mtime: 1779894724.5367603
+- path: test1\Parts Library\2N7002\2n7002.pdf
+  mtime: 1779894724.5533729
+- path: test1\Parts Library\ASP-134606-01\ASP-134606-01.pdf
+  mtime: 1779894724.571329
+- path: test1\Parts Library\Bobcat\Bobcat_preview.pdf
+  mtime: 1779894724.576615
+- path: test1\Parts Library\Bobcat\[External] Bobcat Board Design.pdf
+  mtime: 1779894724.5892162
+- path: test1\Parts Library\CR0402-FX-1002GLF\cr.pdf
+  mtime: 1779894724.6222692
+- path: test1\Parts Library\CRCW04020000Z0ED\dcrcw.pdf
+  mtime: 1779894724.6293623
+- path: test1\Parts Library\CRCW04020000Z0ED\dcrcwe3.pdf
+  mtime: 1779942511.527243
+- path: test1\Parts Library\GRM155R70J105KA12D\GRM155R70J105KA12-01.pdf
+  mtime: 1779894724.6394575
+- path: test1\Parts Library\GRM155R70J105KA12D\GRM155R70J105KA12-01__2.pdf
+  mtime: 1779942412.0865543
+- path: test1\Parts Library\GRM155R71C104KA88D\GRM155R71C104KA88-01.pdf
+  mtime: 1779894724.6548474
+- path: test1\Parts Library\GRM155R71C104KA88D\GRM155R71C104KA88-01__2.pdf
+  mtime: 1779942226.6973176
+- path: test1\Parts Library\GRM155R71H103KA88D\GRM155R71H103KA88-01.pdf
+  mtime: 1779942296.7106862
+- path: test1\Parts Library\GRM21BR61A226ME44L\GRM21BR61A226ME44-01.pdf
+  mtime: 1779942340.817188
+- path: test1\Parts Library\GRM21BR71A106KA73L\GRM21BR71A106KA73-01.pdf
+  mtime: 1779942120.6654193
+- path: test1\Parts Library\HRM-G-300-467B-1\HRM(G)-300-467B-1.pdf
+  mtime: 1779942453.4329145
+- path: test1\Parts Library\HRM-G-300-467B-1\HRM(G)-300-467B-1_CL0323-0937-0-00_SpecSheet_0000360327.pdf
+  mtime: 1779894724.666566
+- path: test1\Parts Library\Keystone-5011\K75p62.pdf
+  mtime: 1779894724.6720996
+- path: test1\Parts Library\Keystone-5011\K75p62__2.pdf
+  mtime: 1779942572.3961284
+- path: test1\Parts Library\MCP4728\22187E.pdf
+  mtime: 1779894724.698329
+- path: test1\Parts Library\MCP4728\22187E__2.pdf
+  mtime: 1779942776.7196457
+- path: test1\Parts Library\OPA2388\opa2388.pdf
+  mtime: 1779894724.7425537
+- path: test1\Parts Library\OPA2388\opa2388__2.pdf
+  mtime: 1779942828.2649832
+- path: test1\Parts Library\PMZ1200UPEYL\PMZ1200UPE.pdf
+  mtime: 1779894724.7518094
+- path: test1\Parts Library\PMZ1200UPEYL\PMZ1200UPEYL_preview.pdf
+  mtime: 1779894724.7518094
+- path: test1\Parts Library\TNPW06035K11BEEA\tnpw_e3.pdf
+  mtime: 1779894724.7597964
+- path: test1\Parts Library\TPS22916CNYFPR\TPS22916CNYFPR.pdf
+  mtime: 1779894724.7809985
+- path: test1\Parts Library\TPS7A8401A\tps7a84a.pdf
+  mtime: 1779894724.8464491
+- path: test1\Parts Library\TPS7A8401A\tps7a84a__2.pdf
+  mtime: 1779942666.62764
+- path: test1\Parts Library\TSW-102-05-G-S\tsw_th.pdf
+  mtime: 1779894724.8624337
+- path: test1\Parts Library\TSW-104-05-G-S\tsw_th.pdf
+  mtime: 1779894724.8768501
+rules:
+- id: PULLDOWN_MOSI
+  family: schematic
+  severity: ERROR
+  title: "MOSI requires a 10k\u03A9 pull-down to GND"
+  applies_to:
+    pins: []
+    net: MOSI
+    rail: GND
+    sheet: bobcat
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / Bobcat
+    quote: "10k\u03A9 pull-downs on GPIO0\u20133, SPI_DMODE, SCLK, MOSI, OSC_EN, WEIGHT_EN,\
+      \ SAMPLE_TRIG."
+  fix_hint: "Add a 10k\u03A9 resistor from MOSI to GND."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: pullup_pulldown
+    net: MOSI
+    rail: GND
+    value_match: 10k
+    direction: down
+- id: PULLDOWN_SCLK
+  family: schematic
+  severity: ERROR
+  title: "SCLK requires a 10k\u03A9 pull-down to GND"
+  applies_to:
+    pins: []
+    net: SCLK
+    rail: GND
+    sheet: bobcat
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / Bobcat
+    quote: "10k\u03A9 pull-downs on GPIO0\u20133, SPI_DMODE, SCLK, MOSI, OSC_EN, WEIGHT_EN,\
+      \ SAMPLE_TRIG."
+  fix_hint: "Add a 10k\u03A9 resistor from SCLK to GND."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: pullup_pulldown
+    net: SCLK
+    rail: GND
+    value_match: 10k
+    direction: down
+- id: PULLDOWN_SPI_DMODE
+  family: schematic
+  severity: ERROR
+  title: "SPI_DMODE requires a 10k\u03A9 pull-down to GND"
+  applies_to:
+    pins: []
+    net: SPI_DMODE
+    rail: GND
+    sheet: bobcat
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / Bobcat
+    quote: "10k\u03A9 pull-downs on GPIO0\u20133, SPI_DMODE, SCLK, MOSI, OSC_EN, WEIGHT_EN,\
+      \ SAMPLE_TRIG."
+  fix_hint: "Add a 10k\u03A9 resistor from SPI_DMODE to GND."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: pullup_pulldown
+    net: SPI_DMODE
+    rail: GND
+    value_match: 10k
+    direction: down
+- id: PULLDOWN_OSC_EN
+  family: schematic
+  severity: ERROR
+  title: "OSC_EN requires a 10k\u03A9 pull-down to GND"
+  applies_to:
+    pins: []
+    net: OSC_EN
+    rail: GND
+    sheet: bobcat
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / Bobcat
+    quote: "10k\u03A9 pull-downs on GPIO0\u20133, SPI_DMODE, SCLK, MOSI, OSC_EN, WEIGHT_EN,\
+      \ SAMPLE_TRIG."
+  fix_hint: "Add a 10k\u03A9 resistor from OSC_EN to GND."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: pullup_pulldown
+    net: OSC_EN
+    rail: GND
+    value_match: 10k
+    direction: down
+- id: PULLDOWN_WEIGHT_EN
+  family: schematic
+  severity: ERROR
+  title: "WEIGHT_EN requires a 10k\u03A9 pull-down to GND"
+  applies_to:
+    pins: []
+    net: WEIGHT_EN
+    rail: GND
+    sheet: bobcat
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / Bobcat
+    quote: "10k\u03A9 pull-downs on GPIO0\u20133, SPI_DMODE, SCLK, MOSI, OSC_EN, WEIGHT_EN,\
+      \ SAMPLE_TRIG."
+  fix_hint: "Add a 10k\u03A9 resistor from WEIGHT_EN to GND."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: pullup_pulldown
+    net: WEIGHT_EN
+    rail: GND
+    value_match: 10k
+    direction: down
+- id: PULLDOWN_SAMPLE_TRIG
+  family: schematic
+  severity: ERROR
+  title: "SAMPLE_TRIG requires a 10k\u03A9 pull-down to GND"
+  applies_to:
+    pins: []
+    net: SAMPLE_TRIG
+    rail: GND
+    sheet: bobcat
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / Bobcat
+    quote: "10k\u03A9 pull-downs on GPIO0\u20133, SPI_DMODE, SCLK, MOSI, OSC_EN, WEIGHT_EN,\
+      \ SAMPLE_TRIG."
+  fix_hint: "Add a 10k\u03A9 resistor from SAMPLE_TRIG to GND."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: pullup_pulldown
+    net: SAMPLE_TRIG
+    rail: GND
+    value_match: 10k
+    direction: down
+- id: PULLDOWN_GPIO0
+  family: schematic
+  severity: ERROR
+  title: "GPIO0 requires a 10k\u03A9 pull-down to GND"
+  applies_to:
+    pins: []
+    net: GPIO0
+    rail: GND
+    sheet: bobcat
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / Bobcat
+    quote: "10k\u03A9 pull-downs on GPIO0\u20133, SPI_DMODE, SCLK, MOSI, OSC_EN, WEIGHT_EN,\
+      \ SAMPLE_TRIG."
+  fix_hint: "Add a 10k\u03A9 resistor from GPIO0 to GND."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: pullup_pulldown
+    net: GPIO0
+    rail: GND
+    value_match: 10k
+    direction: down
+- id: PULLDOWN_GPIO1
+  family: schematic
+  severity: ERROR
+  title: "GPIO1 requires a 10k\u03A9 pull-down to GND"
+  applies_to:
+    pins: []
+    net: GPIO1
+    rail: GND
+    sheet: bobcat
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / Bobcat
+    quote: "10k\u03A9 pull-downs on GPIO0\u20133, SPI_DMODE, SCLK, MOSI, OSC_EN, WEIGHT_EN,\
+      \ SAMPLE_TRIG."
+  fix_hint: "Add a 10k\u03A9 resistor from GPIO1 to GND."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: pullup_pulldown
+    net: GPIO1
+    rail: GND
+    value_match: 10k
+    direction: down
+- id: PULLDOWN_GPIO2
+  family: schematic
+  severity: ERROR
+  title: "GPIO2 requires a 10k\u03A9 pull-down to GND"
+  applies_to:
+    pins: []
+    net: GPIO2
+    rail: GND
+    sheet: bobcat
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / Bobcat
+    quote: "10k\u03A9 pull-downs on GPIO0\u20133, SPI_DMODE, SCLK, MOSI, OSC_EN, WEIGHT_EN,\
+      \ SAMPLE_TRIG."
+  fix_hint: "Add a 10k\u03A9 resistor from GPIO2 to GND."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: pullup_pulldown
+    net: GPIO2
+    rail: GND
+    value_match: 10k
+    direction: down
+- id: PULLDOWN_GPIO3
+  family: schematic
+  severity: ERROR
+  title: "GPIO3 requires a 10k\u03A9 pull-down to GND"
+  applies_to:
+    pins: []
+    net: GPIO3
+    rail: GND
+    sheet: bobcat
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / Bobcat
+    quote: "10k\u03A9 pull-downs on GPIO0\u20133, SPI_DMODE, SCLK, MOSI, OSC_EN, WEIGHT_EN,\
+      \ SAMPLE_TRIG."
+  fix_hint: "Add a 10k\u03A9 resistor from GPIO3 to GND."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: pullup_pulldown
+    net: GPIO3
+    rail: GND
+    value_match: 10k
+    direction: down
+- id: PULLUP_CS_L
+  family: schematic
+  severity: ERROR
+  title: "CS_L requires a 10k\u03A9 pull-up to +VDDIO"
+  applies_to:
+    pins: []
+    net: CS_L
+    rail: +VDDIO
+    sheet: bobcat
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / Bobcat
+    quote: "10k\u03A9 pull-ups on CS_L, RESET_N."
+  fix_hint: "Add a 10k\u03A9 resistor from CS_L to +VDDIO."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: pullup_pulldown
+    net: CS_L
+    rail: +VDDIO
+    value_match: 10k
+    direction: up
+- id: PULLUP_RESET_N
+  family: schematic
+  severity: ERROR
+  title: "RESET_N requires a 10k\u03A9 pull-up to +VDDIO"
+  applies_to:
+    pins: []
+    net: RESET_N
+    rail: +VDDIO
+    sheet: bobcat
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / Bobcat
+    quote: "10k\u03A9 pull-ups on CS_L, RESET_N."
+  fix_hint: "Add a 10k\u03A9 resistor from RESET_N to +VDDIO."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: pullup_pulldown
+    net: RESET_N
+    rail: +VDDIO
+    value_match: 10k
+    direction: up
+- id: PULLDOWN_LDO_EN
+  family: schematic
+  severity: ERROR
+  title: "LDO_EN requires a 10k\u03A9 pull-down to GND"
+  applies_to:
+    refdes: U10
+    pins: []
+    net: LDO_EN
+    rail: GND
+    sheet: power
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / TPS7A8401A
+    quote: "EN driven by FPGA with 10k\u03A9 pull-down."
+  fix_hint: "Add a 10k\u03A9 resistor from LDO_EN to GND (FPGA drives high to enable)."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: pullup_pulldown
+    net: LDO_EN
+    rail: GND
+    value_match: 10k
+    direction: down
+- id: PULLDOWN_LSW_EN
+  family: schematic
+  severity: ERROR
+  title: "LSW_EN requires a 10k\u03A9 pull-down to GND"
+  applies_to:
+    refdes: U11
+    pins: []
+    net: LSW_EN
+    rail: GND
+    sheet: power
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / TPS7A8401A
+    quote: "EN driven by FPGA with 10k\u03A9 pull-down."
+  fix_hint: "Add a 10k\u03A9 resistor from LSW_EN to GND (FPGA drives high to enable)."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: pullup_pulldown
+    net: LSW_EN
+    rail: GND
+    value_match: 10k
+    direction: down
+- id: PULLDOWN_BIAS_ISO0
+  family: schematic
+  severity: ERROR
+  title: "BIAS_ISO0 gate requires a 10k\u03A9 pull-down (fail-safe OFF at POR)"
+  applies_to:
+    refdes: R44
+    pins: []
+    net: BIAS_ISO0
+    rail: GND
+    sheet: bias
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Bias circuit topology
+    quote: "gated by `BIAS_ISO0/1` from the FPGA with 10 k\u03A9 pull-downs (R44/R45)\
+      \ at the gates"
+  fix_hint: "Add a 10k\u03A9 pull-down (R44) on the BIAS_ISO0 gate so the isolation\
+    \ NMOS is OFF at POR."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: pullup_pulldown
+    net: BIAS_ISO0
+    rail: GND
+    value_match: 10k
+    direction: down
+- id: PULLDOWN_BIAS_ISO1
+  family: schematic
+  severity: ERROR
+  title: "BIAS_ISO1 gate requires a 10k\u03A9 pull-down (fail-safe OFF at POR)"
+  applies_to:
+    refdes: R45
+    pins: []
+    net: BIAS_ISO1
+    rail: GND
+    sheet: bias
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Bias circuit topology
+    quote: "gated by `BIAS_ISO0/1` from the FPGA with 10 k\u03A9 pull-downs (R44/R45)\
+      \ at the gates"
+  fix_hint: "Add a 10k\u03A9 pull-down (R45) on the BIAS_ISO1 gate so the isolation\
+    \ NMOS is OFF at POR."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: pullup_pulldown
+    net: BIAS_ISO1
+    rail: GND
+    value_match: 10k
+    direction: down
+- id: DECOUPLE_VDDD
+  family: schematic
+  severity: WARNING
+  title: Bobcat VDDD rail needs decoupling caps
+  applies_to:
+    refdes: U20
+    pins: []
+    rail: +VDDD
+    sheet: bobcat
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / Bobcat
+    quote: "Decoupling caps on VDDD, VDDIO, VDDA1, VDDA2. Series 0\u03A9 on VDDA1,\
+      \ VDDA2."
+  fix_hint: Place at least 2 decoupling caps on the +VDDD pins (12, 20).
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: decoupling_count
+    refdes: U20
+    pins:
+    - '12'
+    - '20'
+    min: 2
+- id: DECOUPLE_VDDIO
+  family: schematic
+  severity: WARNING
+  title: Bobcat VDDIO rail needs decoupling caps
+  applies_to:
+    refdes: U20
+    pins: []
+    rail: +VDDIO
+    sheet: bobcat
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / Bobcat
+    quote: "Decoupling caps on VDDD, VDDIO, VDDA1, VDDA2. Series 0\u03A9 on VDDA1,\
+      \ VDDA2."
+  fix_hint: "Place decoupling caps across the VDDIO pins (W2: 5\xD70.1\xB5F + 1\xD7\
+    1\xB5F)."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: decoupling_count
+    refdes: U20
+    pins:
+    - '7'
+    - '13'
+    - '22'
+    - '33'
+    - '34'
+    min: 5
+- id: DECOUPLE_VDDA1
+  family: schematic
+  severity: WARNING
+  title: Bobcat VDDA1 rail needs a decoupling cap
+  applies_to:
+    refdes: U20
+    pins: []
+    rail: +VDDA1
+    sheet: bobcat
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / Bobcat
+    quote: "Decoupling caps on VDDD, VDDIO, VDDA1, VDDA2. Series 0\u03A9 on VDDA1,\
+      \ VDDA2."
+  fix_hint: "Place a decoupling cap on the chip side of the VDDA1 series 0\u03A9 (pin\
+    \ 1)."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: decoupling_count
+    refdes: U20
+    pins:
+    - '1'
+    min: 1
+- id: DECOUPLE_VDDA2
+  family: schematic
+  severity: WARNING
+  title: Bobcat VDDA2 rail needs a decoupling cap
+  applies_to:
+    refdes: U20
+    pins: []
+    rail: +VDDA2
+    sheet: bobcat
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / Bobcat
+    quote: "Decoupling caps on VDDD, VDDIO, VDDA1, VDDA2. Series 0\u03A9 on VDDA1,\
+      \ VDDA2."
+  fix_hint: "Place a decoupling cap on the chip side of the VDDA2 series 0\u03A9 (pins\
+    \ 26/27)."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: decoupling_count
+    refdes: U20
+    pins:
+    - '26'
+    - '27'
+    min: 1
+- id: DECOUPLE_EEPROM_VCC
+  family: schematic
+  severity: WARNING
+  title: EEPROM VCC needs a decoupling cap
+  applies_to:
+    refdes: U30
+    pins: []
+    rail: +3V3
+    sheet: eeprom
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / EEPROM
+    quote: "8-Kbit, I\xB2C, 3.3V supply"
+  fix_hint: "Place a 0.1\xB5F cap on the EEPROM VCC pin (8)."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: decoupling_count
+    refdes: U30
+    pins:
+    - '8'
+    min: 1
+- id: DECOUPLE_MCP4728_VDD
+  family: schematic
+  severity: WARNING
+  title: MCP4728 VDD needs a decoupling cap
+  applies_to:
+    refdes: U40
+    pins: []
+    rail: +3V3
+    sheet: bias
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / Bias circuit
+    quote: "**MCP4728** quad 12-bit I\xB2C voltage DAC"
+  fix_hint: "Place a 0.1\xB5F cap on the MCP4728 VDD pin (1)."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: decoupling_count
+    refdes: U40
+    pins:
+    - '1'
+    min: 1
+- id: SERIESR_VDDA1
+  family: schematic
+  severity: WARNING
+  title: "VDDA1 must reach Bobcat through a series 0\u03A9"
+  applies_to:
+    refdes: U20
+    pins: []
+    rail: +VDDA1
+    sheet: bobcat
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / Bobcat
+    quote: "Decoupling caps on VDDD, VDDIO, VDDA1, VDDA2. Series 0\u03A9 on VDDA1,\
+      \ VDDA2."
+  fix_hint: Route +VDDA1 to Bobcat pin 1 through series resistor R20.
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: net_routing
+    from_pin: U20.1
+    to_pin: R20.2
+    via: series_R
+- id: SERIESR_VDDA2
+  family: schematic
+  severity: WARNING
+  title: "VDDA2 must reach Bobcat through a series 0\u03A9"
+  applies_to:
+    refdes: U20
+    pins: []
+    rail: +VDDA2
+    sheet: bobcat
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / Bobcat
+    quote: "Decoupling caps on VDDD, VDDIO, VDDA1, VDDA2. Series 0\u03A9 on VDDA1,\
+      \ VDDA2."
+  fix_hint: Route +VDDA2 to Bobcat pins 26/27 through series resistor R21.
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: net_routing
+    from_pin: U20.26
+    to_pin: R21.1
+    via: series_R
+- id: JUMPER_VDDD
+  family: schematic
+  severity: INFO
+  title: "LDO output must reach +VDDD via a 1\xD72 jumper"
+  applies_to:
+    refdes: U10
+    pins: []
+    rail: +VDDD
+    sheet: power
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / TPS7A8401A
+    quote: "Output fans out to Bobcat VDDD, VDDA1, VDDA2 each through a 1\xD72 jumper."
+  fix_hint: Route the LDO OUT bus to +VDDD through jumper J10.
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: net_routing
+    from_pin: U10.1
+    to_pin: J10.2
+    via: jumper
+- id: JUMPER_VDDA1
+  family: schematic
+  severity: INFO
+  title: "LDO output must reach +VDDA1 via a 1\xD72 jumper"
+  applies_to:
+    refdes: U10
+    pins: []
+    rail: +VDDA1
+    sheet: power
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / TPS7A8401A
+    quote: "Output fans out to Bobcat VDDD, VDDA1, VDDA2 each through a 1\xD72 jumper."
+  fix_hint: Route the LDO OUT bus to +VDDA1 through jumper J11.
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: net_routing
+    from_pin: U10.1
+    to_pin: J11.2
+    via: jumper
+- id: JUMPER_VDDA2
+  family: schematic
+  severity: INFO
+  title: "LDO output must reach +VDDA2 via a 1\xD72 jumper"
+  applies_to:
+    refdes: U10
+    pins: []
+    rail: +VDDA2
+    sheet: power
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / TPS7A8401A
+    quote: "Output fans out to Bobcat VDDD, VDDA1, VDDA2 each through a 1\xD72 jumper."
+  fix_hint: Route the LDO OUT bus to +VDDA2 through jumper J12.
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: net_routing
+    from_pin: U10.1
+    to_pin: J12.2
+    via: jumper
+- id: FMC_3P3V_C39
+  family: schematic
+  severity: ERROR
+  title: FMC C39 must connect to +3V3
+  applies_to:
+    refdes: J1
+    pins: []
+    net: +3V3
+    sheet: fmc
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: FMC LPC pinout / Power & management pins
+    quote: C39, D36, D38, D40 | **3P3V**
+  fix_hint: Wire FMC pin C39 to +3V3.
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: connector_pin
+    refdes: J1
+    pin: C39
+    net: +3V3
+- id: FMC_3P3V_D36
+  family: schematic
+  severity: ERROR
+  title: FMC D36 must connect to +3V3
+  applies_to:
+    refdes: J2
+    pins: []
+    net: +3V3
+    sheet: fmc
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: FMC LPC pinout / Power & management pins
+    quote: C39, D36, D38, D40 | **3P3V**
+  fix_hint: Wire FMC pin D36 to +3V3.
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: connector_pin
+    refdes: J2
+    pin: D36
+    net: +3V3
+- id: FMC_3P3V_D38
+  family: schematic
+  severity: ERROR
+  title: FMC D38 must connect to +3V3
+  applies_to:
+    refdes: J2
+    pins: []
+    net: +3V3
+    sheet: fmc
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: FMC LPC pinout / Power & management pins
+    quote: C39, D36, D38, D40 | **3P3V**
+  fix_hint: Wire FMC pin D38 to +3V3.
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: connector_pin
+    refdes: J2
+    pin: D38
+    net: +3V3
+- id: FMC_3P3V_D40
+  family: schematic
+  severity: ERROR
+  title: FMC D40 must connect to +3V3
+  applies_to:
+    refdes: J2
+    pins: []
+    net: +3V3
+    sheet: fmc
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: FMC LPC pinout / Power & management pins
+    quote: C39, D36, D38, D40 | **3P3V**
+  fix_hint: Wire FMC pin D40 to +3V3.
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: connector_pin
+    refdes: J2
+    pin: D40
+    net: +3V3
+- id: FMC_VADJ_G39
+  family: schematic
+  severity: ERROR
+  title: FMC G39 must connect to VADJ
+  applies_to:
+    refdes: J3
+    pins: []
+    net: VADJ
+    sheet: fmc
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: FMC LPC pinout / Power & management pins
+    quote: G39, H40 | **VADJ**
+  fix_hint: Wire FMC pin G39 to VADJ.
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: connector_pin
+    refdes: J3
+    pin: G39
+    net: VADJ
+- id: FMC_VADJ_H40
+  family: schematic
+  severity: ERROR
+  title: FMC H40 must connect to VADJ
+  applies_to:
+    refdes: J4
+    pins: []
+    net: VADJ
+    sheet: fmc
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: FMC LPC pinout / Power & management pins
+    quote: G39, H40 | **VADJ**
+  fix_hint: Wire FMC pin H40 to VADJ.
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: connector_pin
+    refdes: J4
+    pin: H40
+    net: VADJ
+- id: FMC_SCL_C30
+  family: schematic
+  severity: ERROR
+  title: FMC C30 must connect to SCL
+  applies_to:
+    refdes: J1
+    pins: []
+    net: SCL
+    sheet: fmc
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: FMC LPC pinout / Control & sideband
+    quote: C30 | **SCL**
+  fix_hint: "Wire FMC pin C30 to the I\xB2C SCL net."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: connector_pin
+    refdes: J1
+    pin: C30
+    net: SCL
+- id: FMC_SDA_C31
+  family: schematic
+  severity: ERROR
+  title: FMC C31 must connect to SDA
+  applies_to:
+    refdes: J1
+    pins: []
+    net: SDA
+    sheet: fmc
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: FMC LPC pinout / Control & sideband
+    quote: C31 | **SDA**
+  fix_hint: "Wire FMC pin C31 to the I\xB2C SDA net."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: connector_pin
+    refdes: J1
+    pin: C31
+    net: SDA
+- id: FMC_PRSNT_GND
+  family: schematic
+  severity: ERROR
+  title: FMC H2 (PRSNT_M2C_L) must be tied to GND
+  applies_to:
+    refdes: J4
+    pins: []
+    net: GND
+    sheet: fmc
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: FMC LPC pinout / Power & management pins
+    quote: Tie to GND on mezzanine
+  fix_hint: Tie FMC pin H2 to GND for mezzanine presence detect.
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: connector_pin
+    refdes: J4
+    pin: H2
+    net: GND
+- id: FMC_GA0_GND
+  family: schematic
+  severity: WARNING
+  title: FMC C34 (GA0) strap should be tied (GND default)
+  applies_to:
+    refdes: J1
+    pins: []
+    net: GND
+    sheet: fmc
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: FMC LPC pinout / Power & management pins
+    quote: C34, D35 | GA0, GA1
+  fix_hint: "Strap FMC pin C34 (GA0) per carrier slot \u2014 GND by default."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: connector_pin
+    refdes: J1
+    pin: C34
+    net: GND
+- id: FMC_GA1_GND
+  family: schematic
+  severity: WARNING
+  title: FMC D35 (GA1) strap should be tied (GND default)
+  applies_to:
+    refdes: J2
+    pins: []
+    net: GND
+    sheet: fmc
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: FMC LPC pinout / Power & management pins
+    quote: C34, D35 | GA0, GA1
+  fix_hint: "Strap FMC pin D35 (GA1) per carrier slot \u2014 GND by default."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: connector_pin
+    refdes: J2
+    pin: D35
+    net: GND
+- id: FMC_PG_C2M
+  family: schematic
+  severity: WARNING
+  title: FMC C1 (PG_C2M) should connect to LDO_PG
+  applies_to:
+    refdes: J1
+    pins: []
+    net: LDO_PG
+    sheet: fmc
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: FMC LPC pinout / Power & management pins
+    quote: "Power-good back to carrier \u2014 drive from LDO PG / tie HIGH via pull-up\
+      \ if unused"
+  fix_hint: Wire FMC pin C1 to the LDO PG net (or pull HIGH if unused).
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: connector_pin
+    refdes: J1
+    pin: C1
+    net: LDO_PG
+- id: HDR_GPIO0
+  family: schematic
+  severity: INFO
+  title: GPIO header pin 1 must break out GPIO0
+  applies_to:
+    refdes: J57
+    pins: []
+    net: GPIO0
+    sheet: connectors
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement
+    quote: "1\xD74 100-mil header** \u2014 GPIO0\u20133 breakout."
+  fix_hint: "Wire 1\xD74 header J57 pin 1 to GPIO0."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: connector_pin
+    refdes: J57
+    pin: '1'
+    net: GPIO0
+- id: HDR_GPIO1
+  family: schematic
+  severity: INFO
+  title: GPIO header pin 2 must break out GPIO1
+  applies_to:
+    refdes: J57
+    pins: []
+    net: GPIO1
+    sheet: connectors
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement
+    quote: "1\xD74 100-mil header** \u2014 GPIO0\u20133 breakout."
+  fix_hint: "Wire 1\xD74 header J57 pin 2 to GPIO1."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: connector_pin
+    refdes: J57
+    pin: '2'
+    net: GPIO1
+- id: HDR_GPIO2
+  family: schematic
+  severity: INFO
+  title: GPIO header pin 3 must break out GPIO2
+  applies_to:
+    refdes: J57
+    pins: []
+    net: GPIO2
+    sheet: connectors
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement
+    quote: "1\xD74 100-mil header** \u2014 GPIO0\u20133 breakout."
+  fix_hint: "Wire 1\xD74 header J57 pin 3 to GPIO2."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: connector_pin
+    refdes: J57
+    pin: '3'
+    net: GPIO2
+- id: HDR_GPIO3
+  family: schematic
+  severity: INFO
+  title: GPIO header pin 4 must break out GPIO3
+  applies_to:
+    refdes: J57
+    pins: []
+    net: GPIO3
+    sheet: connectors
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement
+    quote: "1\xD74 100-mil header** \u2014 GPIO0\u20133 breakout."
+  fix_hint: "Wire 1\xD74 header J57 pin 4 to GPIO3."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: connector_pin
+    refdes: J57
+    pin: '4'
+    net: GPIO3
+- id: SMA_CLK_OUT0
+  family: schematic
+  severity: INFO
+  title: CLK_OUT0 must route to its SMA
+  applies_to:
+    refdes: J50
+    pins: []
+    net: CLK_OUT0
+    sheet: connectors
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Topology / block diagram
+    quote: "CLK_OUT0\u20133 route directly to SMAs"
+  fix_hint: Wire CLK_OUT0 to SMA J50 pin 1.
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: connector_pin
+    refdes: J50
+    pin: '1'
+    net: CLK_OUT0
+- id: SMA_CLK_OUT1
+  family: schematic
+  severity: INFO
+  title: CLK_OUT1 must route to its SMA
+  applies_to:
+    refdes: J51
+    pins: []
+    net: CLK_OUT1
+    sheet: connectors
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Topology / block diagram
+    quote: "CLK_OUT0\u20133 route directly to SMAs"
+  fix_hint: Wire CLK_OUT1 to SMA J51 pin 1.
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: connector_pin
+    refdes: J51
+    pin: '1'
+    net: CLK_OUT1
+- id: SMA_CLK_OUT2
+  family: schematic
+  severity: INFO
+  title: CLK_OUT2 must route to its SMA
+  applies_to:
+    refdes: J52
+    pins: []
+    net: CLK_OUT2
+    sheet: connectors
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Topology / block diagram
+    quote: "CLK_OUT0\u20133 route directly to SMAs"
+  fix_hint: Wire CLK_OUT2 to SMA J52 pin 1.
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: connector_pin
+    refdes: J52
+    pin: '1'
+    net: CLK_OUT2
+- id: SMA_CLK_OUT3
+  family: schematic
+  severity: INFO
+  title: CLK_OUT3 must route to its SMA
+  applies_to:
+    refdes: J53
+    pins: []
+    net: CLK_OUT3
+    sheet: connectors
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Topology / block diagram
+    quote: "CLK_OUT0\u20133 route directly to SMAs"
+  fix_hint: Wire CLK_OUT3 to SMA J53 pin 1.
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: connector_pin
+    refdes: J53
+    pin: '1'
+    net: CLK_OUT3
+- id: RAIL_LDO_VIN15
+  family: schematic
+  severity: ERROR
+  title: U10.15 must sit on the +3V3 rail
+  applies_to:
+    refdes: U10
+    pins: []
+    rail: +3V3
+    sheet: power
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Specs
+    quote: 3P3V (to EEPROM, LDO, Bias)
+  fix_hint: Connect U10 pin 15 to +3V3.
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: power_rail_membership
+    refdes: U10
+    pin: '15'
+    rail: +3V3
+- id: RAIL_LDO_VIN16
+  family: schematic
+  severity: ERROR
+  title: U10.16 must sit on the +3V3 rail
+  applies_to:
+    refdes: U10
+    pins: []
+    rail: +3V3
+    sheet: power
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Specs
+    quote: 3P3V (to EEPROM, LDO, Bias)
+  fix_hint: Connect U10 pin 16 to +3V3.
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: power_rail_membership
+    refdes: U10
+    pin: '16'
+    rail: +3V3
+- id: RAIL_LDO_VIN17
+  family: schematic
+  severity: ERROR
+  title: U10.17 must sit on the +3V3 rail
+  applies_to:
+    refdes: U10
+    pins: []
+    rail: +3V3
+    sheet: power
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Specs
+    quote: 3P3V (to EEPROM, LDO, Bias)
+  fix_hint: Connect U10 pin 17 to +3V3.
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: power_rail_membership
+    refdes: U10
+    pin: '17'
+    rail: +3V3
+- id: RAIL_LDO_BIAS12
+  family: schematic
+  severity: ERROR
+  title: U10.12 must sit on the +3V3 rail
+  applies_to:
+    refdes: U10
+    pins: []
+    rail: +3V3
+    sheet: power
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Specs
+    quote: 3P3V (to EEPROM, LDO, Bias)
+  fix_hint: Connect U10 pin 12 to +3V3.
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: power_rail_membership
+    refdes: U10
+    pin: '12'
+    rail: +3V3
+- id: RAIL_EEPROM_VCC
+  family: schematic
+  severity: ERROR
+  title: U30.8 must sit on the +3V3 rail
+  applies_to:
+    refdes: U30
+    pins: []
+    rail: +3V3
+    sheet: eeprom
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Specs
+    quote: 3P3V (to EEPROM, LDO, Bias)
+  fix_hint: Connect U30 pin 8 to +3V3.
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: power_rail_membership
+    refdes: U30
+    pin: '8'
+    rail: +3V3
+- id: RAIL_MCP4728_VDD
+  family: schematic
+  severity: ERROR
+  title: U40.1 must sit on the +3V3 rail
+  applies_to:
+    refdes: U40
+    pins: []
+    rail: +3V3
+    sheet: bias
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Specs
+    quote: 3P3V (to EEPROM, LDO, Bias)
+  fix_hint: Connect U40 pin 1 to +3V3.
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: power_rail_membership
+    refdes: U40
+    pin: '1'
+    rail: +3V3
+- id: RAIL_OPA2388_VPLUS
+  family: schematic
+  severity: ERROR
+  title: U41.8 must sit on the +3V3 rail
+  applies_to:
+    refdes: U41
+    pins: []
+    rail: +3V3
+    sheet: bias
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Specs
+    quote: 3P3V (to EEPROM, LDO, Bias)
+  fix_hint: Connect U41 pin 8 to +3V3.
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: power_rail_membership
+    refdes: U41
+    pin: '8'
+    rail: +3V3
+- id: RAIL_BOBCAT_EP_GND
+  family: schematic
+  severity: ERROR
+  title: Bobcat exposed pad (41) must be GND
+  applies_to:
+    refdes: U20
+    pins: []
+    rail: GND
+    sheet: bobcat
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Application
+    quote: "40-pin QFN (5\xD75 mm, 0.4 mm pitch, exposed GND pad 41)"
+  fix_hint: Tie the Bobcat exposed pad (pin 41) to GND.
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: power_rail_membership
+    refdes: U20
+    pin: '41'
+    rail: GND
+- id: NC_FMC_3P3VAUX
+  family: schematic
+  severity: WARNING
+  title: FMC D32 (3P3VAUX) must be left NC
+  applies_to:
+    refdes: J2
+    pins: []
+    sheet: fmc
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: FMC LPC pinout / Power & management pins
+    quote: D32 | 3P3VAUX | Leave NC (not required)
+  fix_hint: Leave FMC pin D32 unconnected.
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: no_connect
+    refdes: J2
+    pin: D32
+- id: NC_FMC_12P0V_C35
+  family: schematic
+  severity: WARNING
+  title: FMC C35 (12P0V) must be left NC
+  applies_to:
+    refdes: J1
+    pins: []
+    sheet: fmc
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: FMC LPC pinout / Power & management pins
+    quote: C35, C37 | 12P0V | Leave NC (unused)
+  fix_hint: Leave FMC pin C35 unconnected.
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: no_connect
+    refdes: J1
+    pin: C35
+- id: NC_FMC_12P0V_C37
+  family: schematic
+  severity: WARNING
+  title: FMC C37 (12P0V) must be left NC
+  applies_to:
+    refdes: J1
+    pins: []
+    sheet: fmc
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: FMC LPC pinout / Power & management pins
+    quote: C35, C37 | 12P0V | Leave NC (unused)
+  fix_hint: Leave FMC pin C37 unconnected.
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: no_connect
+    refdes: J1
+    pin: C37
+- id: NC_FMC_VREF_A_M2C
+  family: schematic
+  severity: WARNING
+  title: FMC H1 (VREF_A_M2C) must be left NC
+  applies_to:
+    refdes: J4
+    pins: []
+    sheet: fmc
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: FMC LPC pinout / Power & management pins
+    quote: H1 | VREF_A_M2C | Leave NC (LPC, no analog reference used)
+  fix_hint: Leave FMC pin H1 unconnected.
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: no_connect
+    refdes: J4
+    pin: H1
+- id: NC_FMC_JTAG_TCK
+  family: schematic
+  severity: INFO
+  title: FMC D29 (TCK) left NC unless JTAG chained
+  applies_to:
+    refdes: J2
+    pins: []
+    sheet: fmc
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: FMC LPC pinout / Control & sideband
+    quote: "TCK | JTAG \u2014 leave NC unless chained"
+  fix_hint: Leave FMC pin D29 (TCK) unconnected unless JTAG is chained.
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: no_connect
+    refdes: J2
+    pin: D29
+- id: VAL_SENSE_R40
+  family: schematic
+  severity: ERROR
+  title: "Bias channel-0 sense resistor must be 5.11k\u03A9"
+  applies_to:
+    refdes: R40
+    pins: []
+    sheet: bias
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / Bias circuit
+    quote: "PMOS source ties to 3.3 V through a 5.11 k\u03A9 0.1% thin-film sense\
+      \ resistor"
+  fix_hint: "Set R40 to 5.11k\u03A9 0.1% to set the 0\u2013646\xB5A full-scale."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: value_in_range
+    refdes: R40
+    value_regex: 5\.11k
+- id: VAL_SENSE_R41
+  family: schematic
+  severity: ERROR
+  title: "Bias channel-1 sense resistor must be 5.11k\u03A9"
+  applies_to:
+    refdes: R41
+    pins: []
+    sheet: bias
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / Bias circuit
+    quote: "PMOS source ties to 3.3 V through a 5.11 k\u03A9 0.1% thin-film sense\
+      \ resistor"
+  fix_hint: "Set R41 to 5.11k\u03A9 0.1% to set the 0\u2013646\xB5A full-scale."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: value_in_range
+    refdes: R41
+    value_regex: 5\.11k
+- id: VAL_I2C_PULLUP_R60
+  family: schematic
+  severity: WARNING
+  title: "I\xB2C SCL pull-up R60 should be 2.2k\u03A9"
+  applies_to:
+    refdes: R60
+    pins: []
+    sheet: eeprom
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Assembly / provisioning notes
+    quote: "R60 and R61 (2.2 k\u03A9 to +3V3 on EEPROM sheet) provide local SCL/SDA\
+      \ pull-ups"
+  fix_hint: "Set R60 (SCL pull-up to +3V3) to 2.2k\u03A9."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: value_in_range
+    refdes: R60
+    value_regex: 2\.2k
+- id: VAL_I2C_PULLUP_R61
+  family: schematic
+  severity: WARNING
+  title: "I\xB2C SDA pull-up R61 should be 2.2k\u03A9"
+  applies_to:
+    refdes: R61
+    pins: []
+    sheet: eeprom
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Assembly / provisioning notes
+    quote: "R60 and R61 (2.2 k\u03A9 to +3V3 on EEPROM sheet) provide local SCL/SDA\
+      \ pull-ups"
+  fix_hint: "Set R61 (SDA pull-up to +3V3) to 2.2k\u03A9."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: value_in_range
+    refdes: R61
+    value_regex: 2\.2k
+- id: PRESENT_LDO
+  family: design
+  severity: ERROR
+  title: TPS7A8401A LDO must be present
+  applies_to:
+    pins: []
+    mpn: TPS7A8401A
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / TPS7A8401A
+    quote: "**TPS7A8401A** (TI, VQFN-20, 3.5\xD73.5 mm)"
+  fix_hint: Add the TPS7A8401A LDO to the power sheet.
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: present
+    mpn: TPS7A8401A
+    role_spec: {}
+- id: PRESENT_DAC
+  family: design
+  severity: ERROR
+  title: MCP4728 bias DAC must be present
+  applies_to:
+    pins: []
+    mpn: MCP4728
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / Bias circuit
+    quote: "**MCP4728** quad 12-bit I\xB2C voltage DAC"
+  fix_hint: Add the MCP4728 quad DAC to the bias sheet.
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: present
+    mpn: MCP4728
+    role_spec: {}
+- id: PRESENT_OPAMP
+  family: design
+  severity: ERROR
+  title: Bias op-amp (OPA2388) must be present
+  applies_to:
+    pins: []
+    mpn: OPA2388
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / Bias circuit
+    quote: OPA2388 preferred
+  fix_hint: Add the OPA2388 RRIO op-amp to the bias sheet.
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: present
+    mpn: OPA2388
+    role_spec: {}
+- id: PRESENT_PMOS
+  family: design
+  severity: ERROR
+  title: Bias pass PMOS (PMZ1200UPEYL) must be present
+  applies_to:
+    pins: []
+    mpn: PMZ1200UPEYL
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / Bias circuit
+    quote: small-signal PMOS (PMZ1200UPEYL)
+  fix_hint: Add the PMZ1200UPEYL PMOS pass element(s) to the bias sheet.
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: present
+    mpn: PMZ1200UPEYL
+    role_spec: {}
+- id: PRESENT_BIAS_ISO_FET
+  family: design
+  severity: ERROR
+  title: Bias isolation NMOS (2N7002) must be populated by default
+  applies_to:
+    pins: []
+    mpn: 2N7002
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / Bias circuit
+    quote: Series NMOS isolation FETs (POPULATED default, 2N7002)
+  fix_hint: Populate the 2N7002 isolation FETs (Q42/Q43) by default.
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: present
+    mpn: 2N7002
+    role_spec: {}
+- id: SIM_BIAS0_DC_PASS
+  family: simulation
+  severity: ERROR
+  title: Bias channel-0 DC operating point must pass
+  applies_to:
+    pins: []
+    sim_block: opa_bias
+    sim_type: dc_sweep
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Specs
+    quote: "BIAS0, BIAS1 \u2014 independent programmable current sources, 0\u2013\
+      640 \xB5A"
+  fix_hint: Inspect the bias0 DC sim verdict; fix the V-to-I loop if it fails.
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: sim_review
+    sim_block: opa_bias
+    sim_type: dc_sweep
+    criterion: 'Bias channel-0 DC operating point is valid: the V-to-I loop regulates
+      and I_BIAS tracks the DAC code within ~1% across the range (0-640uA programmable
+      current source).'
+- id: SIM_BIAS1_DC_PASS
+  family: simulation
+  severity: ERROR
+  title: Bias channel-1 DC operating point must pass
+  applies_to:
+    pins: []
+    sim_block: opa_bias
+    sim_type: dc_sweep
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Specs
+    quote: "BIAS0, BIAS1 \u2014 independent programmable current sources, 0\u2013\
+      640 \xB5A"
+  fix_hint: Inspect the bias1 DC sim verdict; fix the V-to-I loop if it fails.
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: sim_review
+    sim_block: opa_bias
+    sim_type: dc_sweep
+    criterion: 'Bias channel-1 DC operating point is valid: the V-to-I loop regulates
+      and I_BIAS tracks within ~1% (0-640uA). (Both channels share the opa_bias topology.)'
+- id: SIM_BIAS0_FULL_SCALE
+  family: simulation
+  severity: WARNING
+  title: "Bias channel-0 full-scale current \u2264 646\xB5A"
+  applies_to:
+    pins: []
+    sim_block: opa_bias
+    sim_type: dc_sweep
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / Bias circuit
+    quote: "0\u2013646 \xB5A FS, ~0.16 \xB5A/LSB"
+  fix_hint: "Verify the 5.11k\u03A9 sense R yields \u2264646\xB5A full-scale."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: sim_review
+    sim_block: opa_bias
+    sim_type: dc_sweep
+    criterion: Bias full-scale current must be <= ~646uA (note analysis full_scale_A
+      is in AMPS; 646uA = 6.46e-4 A).
+- id: SIM_BIAS0_NOMINAL
+  family: simulation
+  severity: INFO
+  title: "Bias channel-0 should reach ~320\xB5A nominal"
+  applies_to:
+    pins: []
+    sim_block: opa_bias
+    sim_type: dc_sweep
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Specs
+    quote: "nominal 320 \xB5A @ 0.5 V"
+  fix_hint: "Check the nominal 320\xB5A @ 0.5V operating point in the bias0 DC sweep."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: sim_review
+    sim_block: opa_bias
+    sim_type: dc_sweep
+    criterion: Bias should reach roughly the nominal regulated current (~320uA mid-range);
+      i_max_regulated_A in the analysis is in AMPS.
+- id: SIM_LDO_DC_PASS
+  family: simulation
+  severity: ERROR
+  title: LDO DC operating point must pass
+  applies_to:
+    pins: []
+    sim_block: ldo_rail
+    sim_type: dc_op_point
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / TPS7A8401A
+    quote: 3 A LDO
+  fix_hint: Inspect the LDO DC sim verdict.
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: sim_review
+    sim_block: ldo_rail
+    sim_type: dc_op_point
+    criterion: 'LDO DC operating point passes: the rails (+3V3 / LDO_OUT / VADJ) settle
+      within tolerance per the deck''s per-rail check (analysis.rails).'
+- id: SIM_LDO_VOUT_MIN
+  family: simulation
+  severity: WARNING
+  title: LDO output must cover 0.6V floor
+  applies_to:
+    pins: []
+    rail: +VDDD
+    sim_block: ldo_rail
+    sim_type: dc_op_point
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Specs
+    quote: "VDDD, VDDA1, VDDA2 = 0.6\u20131.0V (from on-board LDO)"
+  fix_hint: "Confirm the ANY-OUT straps can set Vout \u2265 0.6V."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: sim_review
+    sim_block: ldo_rail
+    sim_type: dc_op_point
+    criterion: LDO output must be able to cover the 0.6V floor (the ANY-OUT lower
+      bound); inspect the LDO_OUT rail in analysis.rails.
+- id: SIM_LDO_VOUT_RANGE
+  family: simulation
+  severity: WARNING
+  title: LDO output must stay within ANY-OUT range
+  applies_to:
+    pins: []
+    sim_block: ldo_rail
+    sim_type: dc_op_point
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / TPS7A8401A
+    quote: "ANY-OUT pin-programmable output **0.5\u20132.075 V** at 25 mV resolution"
+  fix_hint: "Confirm Vout \u2264 2.075V (ANY-OUT max)."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: sim_review
+    sim_block: ldo_rail
+    sim_type: dc_op_point
+    criterion: LDO output stays within the ANY-OUT range (<= ~2.075V upper bound);
+      inspect the LDO_OUT rail in analysis.rails.
+- id: SIM_LDO_DROPOUT
+  family: simulation
+  severity: WARNING
+  title: "LDO dropout must be \u2264 180mV"
+  applies_to:
+    pins: []
+    sim_block: ldo_rail
+    sim_type: dc_op_point
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / TPS7A8401A
+    quote: 180 mV max dropout
+  fix_hint: "Verify dropout \u2264 180mV at the worst-case load."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: sim_review
+    sim_block: ldo_rail
+    sim_type: dc_op_point
+    criterion: LDO dropout must be <= 180mV (Vin-Vout at the regulated point); inspect
+      the rails / op_point.
+- id: SIM_LOADSW_VDDIO_PASS
+  family: simulation
+  severity: INFO
+  title: Load switch must pass VADJ to VDDIO
+  applies_to:
+    pins: []
+    sim_block: vddio_pdn
+    sim_type: transient_load_step
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / Load switch
+    quote: "gates VADJ (1.2\u20133.3V) to Bobcat VDDIO."
+  fix_hint: "Inspect the load-switch DC sim verdict for VADJ\u2192VDDIO pass-through."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: sim_review
+    sim_block: vddio_pdn
+    sim_type: transient_load_step
+    criterion: "The VDDIO rail (fed via the load switch from VADJ) holds up under\
+      \ a load step \u2014 droop within the deck's limit (analysis.droop_mV vs droop_limit)."
+- id: SEM_BIAS_DEFAULT_OFF
+  family: design
+  severity: ERROR
+  title: Bias circuit must be fail-safe OFF at POR
+  applies_to:
+    pins: []
+    sheet: bias
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / Bias circuit
+    quote: Default-OFF at POR
+  fix_hint: Ensure the isolation NMOSes default OFF (gate pull-downs) so no bias reaches
+    Bobcat at POR.
+  enabled: true
+  origin: generated
+  evaluation: semantic
+  prompt: "The bias circuit must deliver zero current into Bobcat at power-on-reset.\
+    \ Verify the isolation NMOS gates (BIAS_ISO0/1) have pull-downs to GND and that\
+    \ the parallel 0\u03A9 override jumpers (R42/R43) are DNP by default, so an unprogrammed\
+    \ MCP4728 cannot push current into Bobcat until the FPGA explicitly asserts the\
+    \ isolation enable."
+- id: SEM_BIAS_OVERRIDE_DNP
+  family: design
+  severity: WARNING
+  title: "Parallel 0\u03A9 bias override jumpers must be DNP by default"
+  applies_to:
+    pins: []
+    sheet: bias
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / Bias circuit
+    quote: "Parallel 0 \u03A9 jumpers R42/R43 across the NMOS D-S are **DNP by default**"
+  fix_hint: Mark R42/R43 as DNP; populate only for benchtop standalone use.
+  enabled: true
+  origin: generated
+  evaluation: semantic
+  prompt: "Confirm the parallel 0\u03A9 jumpers across the isolation NMOS drain-source\
+    \ (R42/R43) are marked DNP by default. Populating them bypasses FPGA isolation\
+    \ control and re-exposes the EEPROM-provisioning hazard."
+- id: SEM_MCP4728_VREF_EXTERNAL
+  family: design
+  severity: ERROR
+  title: MCP4728 must use external VREF tied to 3.3V
+  applies_to:
+    refdes: U40
+    pins: []
+    sheet: bias
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / Bias circuit
+    quote: external V_REF tied to 3.3 V
+  fix_hint: Tie the MCP4728 VREF to 3.3V (not the internal 2.048V ref) for rail-to-rail
+    output.
+  enabled: false
+  origin: generated
+  evaluation: semantic
+  prompt: Verify the MCP4728 is configured for external VREF tied to 3.3V rather than
+    the internal 2.048V reference, so the DAC output swings rail-to-rail across the
+    full bias range.
+- id: SEM_MCP4728_POR_CODE
+  family: design
+  severity: WARNING
+  title: MCP4728 EEPROM should default to 0xFFF (bias OFF) at bring-up
+  applies_to:
+    refdes: U40
+    pins: []
+    sheet: bias
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / Bias circuit
+    quote: MCP4728 EEPROM programmed to **0xFFF** at bring-up
+  fix_hint: "Program the MCP4728 EEPROM to 0xFFF so V_OUT=3.3V \u2192 PMOS off \u2192\
+    \ 0\xB5A at POR."
+  enabled: true
+  origin: generated
+  evaluation: semantic
+  prompt: "Confirm the MCP4728 EEPROM is programmed to 0xFFF at bring-up so V_OUT=3.3V\
+    \ drives the PMOS off and delivers 0\xB5A at power-on."
+- id: SEM_SHARED_LDO_INTENT
+  family: design
+  severity: WARNING
+  title: "Single LDO feeds VDDD/VDDA1/VDDA2 \u2014 only one jumper may be installed\
+    \ at a time"
+  applies_to:
+    refdes: U10
+    pins: []
+    sheet: power
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Notes / open questions
+    quote: installing more than one shorts the rails to a single voltage
+  fix_hint: Document that only one of J10/J11/J12 may be installed; the three rails
+    track together.
+  enabled: true
+  origin: generated
+  evaluation: semantic
+  prompt: "The design intentionally uses one TPS7A8401A feeding VDDD, VDDA1, VDDA2\
+    \ through three 1\xD72 jumpers off the same OUT bus. Verify the schematic/notes\
+    \ warn that installing more than one jumper shorts the rails to a single voltage."
+- id: SEM_LDO_PG_OPEN_DRAIN
+  family: design
+  severity: INFO
+  title: LDO PG is open-drain and needs a pull-up
+  applies_to:
+    refdes: U10
+    pins: []
+    sheet: power
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / TPS7A8401A
+    quote: Open-drain PG output back to FPGA.
+  fix_hint: Add a pull-up on the open-drain LDO PG net before it returns to the FPGA.
+  enabled: true
+  origin: generated
+  evaluation: semantic
+  prompt: "The TPS7A8401A PG output is open-drain. Verify a pull-up resistor reaches\
+    \ the PG net. IMPORTANT: examine the FULL membership of the net on U10's PG pin\
+    \ (provided below) \u2014 a pull-up counts if ANY resistor on that node goes to\
+    \ a supply rail (+3V3 etc.), INCLUDING through a series resistor. Only FAIL if\
+    \ no such pull-up path exists anywhere on the PG node. PASS if a pull-up resistor\
+    \ is present on the net (e.g. a 10k to +3V3)."
+- id: SEM_BIAS_SOURCE_INTO_PIN
+  family: design
+  severity: ERROR
+  title: Bias current must be sourced INTO the BIASx pins (high-side PMOS)
+  applies_to:
+    pins: []
+    sheet: bias
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement / Bias circuit
+    quote: "PMOS drain delivers regulated current INTO the BIASx pin via a 1\xD72\
+      \ jumper."
+  fix_hint: Keep the high-side PMOS topology so current is sourced into BIAS0/BIAS1
+    (not sunk).
+  enabled: true
+  origin: generated
+  evaluation: semantic
+  prompt: Verify the bias topology sources current INTO the Bobcat BIASx pins via
+    the high-side PMOS drain (confirmed against Bobcat PDF page 7), rather than sinking
+    current.
+- id: SEM_VDDIO_LOADSWITCH
+  family: design
+  severity: WARNING
+  title: Bobcat VDDIO must come from VADJ through the load switch
+  applies_to:
+    pins: []
+    rail: +VDDIO
+    sheet: power
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Specs
+    quote: "VADJ 1.2\u20133.3V (to Bobcat VDDIO via load switch)"
+  fix_hint: "Route VADJ \u2192 load switch \u2192 +VDDIO (via 1\xD72 jumper)."
+  enabled: true
+  origin: generated
+  evaluation: semantic
+  prompt: Verify Bobcat VDDIO is fed from FMC VADJ through the load switch (gated
+    by LSW_EN), not directly from VADJ or another rail.

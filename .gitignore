@@ -66,5 +66,22 @@ test1/altium/out/*.zip
 # GUI runtime chat state
 test1/gui/state/chats.json
 
+# Review/agentic-flow runtime artifacts — all regenerated per run; committing
+# them churns/bloats the repo. (changelog.json + runs/ are already ignored above.)
+# decisions.json = last apply/fix run's per-item outcomes
+test1/gui/state/decisions.json
+# loops/ = per-loop closed-loop audit JSONs
+test1/gui/state/loops/
+# render_snapshots/ = pre-loop SVG snapshots for the diff panes
+test1/altium/out/render_snapshots/
+# review_history/ = timestamped review/error report snapshots
+test1/review_history/
+
+# Agent scratch files (rule_gen / apply passes write temp builders + bundle
+# checks into the working tree; they are never inputs to real code).
+test1/_build_rules.py
+test1/_req.txt
+test1/_*.tmp.py
+
 # Regenerated merged Altium symbol library (rebuilt by build_symbols)
 test1/altium/out/lib/

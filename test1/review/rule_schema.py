@@ -115,12 +115,22 @@ class SimMetric(_PredBase):
     op: Literal[">=", "<=", "==", ">", "<"]
     value: float
 
+class SimReview(_PredBase):
+    """Agent-judged sim check. The evaluator RUNS the real sim block (deriving
+    params from requirements if the scenario is stale, iterating if needed) and
+    hands the result + analysis dict to claude -p to judge against `criterion`.
+    Avoids brittle metric-key matching against the deck's analysis schema."""
+    kind: Literal["sim_review"] = "sim_review"
+    sim_block: str
+    sim_type: str
+    criterion: str = ""   # requirement to judge the sim result against
+
 
 Predicate = Annotated[
     Union[
         DecouplingCount, PullupPulldown, NoConnect, NetRouting,
         ConnectorPin, PowerRailMembership, ValueInRange, Present,
-        SimPass, SimMetric,
+        SimPass, SimMetric, SimReview,
     ],
     Field(discriminator="kind"),
 ]

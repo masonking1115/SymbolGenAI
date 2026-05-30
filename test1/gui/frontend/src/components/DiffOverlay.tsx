@@ -6,7 +6,7 @@
  * Used in side-by-side mode by DiffAndAccept. Sized to match the host
  * SVG's viewBox via the parent's natural-size context.
  */
-import type { CSSProperties } from "react";
+import { useId, type CSSProperties } from "react";
 
 export interface DiffBox {
   x: number;
@@ -33,7 +33,10 @@ interface Props {
 }
 
 export function DiffOverlay({ boxes, viewBox, style }: Props) {
-  const maskId = "diff-mask-" + Math.random().toString(36).slice(2, 8);
+  // useId is stable across renders, so the SVG mask reference doesn't flicker.
+  // Math.random() here regenerated the id on every render and caused visible
+  // SVG re-flow.
+  const maskId = "diff-mask-" + useId().replace(/:/g, "");
   return (
     <svg viewBox={viewBox} style={style} preserveAspectRatio="xMidYMid meet">
       <defs>

@@ -60,11 +60,19 @@ def main() -> int:
     print("Phase 2a: rule_eval against rules.yaml …")
     try:
         from review import rule_eval
-        new_findings = rule_eval.run_all()
+        # --no-semantic now maps to the NEW semantic rules (the old Phase-2b
+        # per-IC LLM pass it originally gated was retired 2026-05-29). When
+        # semantic is on, each SemanticRule gets a read-only claude -p verdict
+        # (slower, fail-safe). Structural rules always run.
+        run_semantic = not args.no_semantic
+        new_findings = rule_eval.run_all(semantic=run_semantic)
         findings.extend(new_findings)
         rf = rule_eval.load_rules()
+        from review.rule_schema import SemanticRule
+        n_sem = sum(1 for r in rf.rules if isinstance(r, SemanticRule) and r.enabled)
         print(f"  {len(new_findings)} findings from "
-              f"{sum(1 for r in rf.rules if r.enabled)}/{len(rf.rules)} active rules")
+              f"{sum(1 for r in rf.rules if r.enabled)}/{len(rf.rules)} active rules"
+              f" (semantic {'ON' if run_semantic else 'OFF'}: {n_sem} LLM-judged rules)")
     except FileNotFoundError:
         print("  (rules.yaml not yet generated — run /api/review/rules/generate)")
     except Exception as e:

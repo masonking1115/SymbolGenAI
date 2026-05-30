@@ -463,10 +463,30 @@ async def run_loop(loop_id: str) -> None:
     L = _LOOPS[loop_id]
     try:
         snapshot_pre_loop(L)
+        _clear_sim_cache_for_review()
 
         from .rule_eval import run_all as eval_rules
-        L.findings_initial = eval_rules()
+        # Bridge run_all's per-rule progress (called from the worker thread) back
+        # to the loop's SSE via the running event loop, so the review console
+        # streams "evaluating rule i/N …" activity even before any apply agent
+        # spawns (the eval phase was previously invisible — empty console).
+        _ev_loop = asyncio.get_running_loop()
+
+        def _progress(kind: str, data: dict) -> None:
+            try:
+                asyncio.run_coroutine_threadsafe(
+                    emit(L, "eval_progress", **data), _ev_loop)
+            except Exception:
+                pass
+
+        # semantic=True exercises the LLM-judged rules too; run off the event
+        # loop thread since each is a blocking claude -p call (keeps SSE + cancel
+        # responsive). Fail-safe inside run_all: a flaky agent yields no finding.
+        await emit(L, "eval_start", phase="initial")
+        L.findings_initial = await asyncio.to_thread(
+            eval_rules, None, None, True, _progress)
         L.findings_current = list(L.findings_initial)
+        await emit(L, "eval_done", findings=len(L.findings_initial))
         await emit(L, "loop_start", findings=len(L.findings_initial))
 
         for r in range(1, MAX_ROUNDS + 1):
@@ -501,8 +521,11 @@ async def run_loop(loop_id: str) -> None:
                 await emit(L, "build_end", round=r,
                            status=R.build_status, lint=R.lint_summary)
 
-            # Re-evaluate
-            new_findings = eval_rules()
+            # Re-evaluate (semantic too, off-thread — see loop_start note)
+            await emit(L, "eval_start", phase=f"re-eval round {r}")
+            new_findings = await asyncio.to_thread(
+                eval_rules, None, None, True, _progress)
+            await emit(L, "eval_done", findings=len(new_findings))
             R.findings_after = len(new_findings)
             old_ids = {f.rule_id for f in L.findings_current}
             new_ids = {f.rule_id for f in new_findings}
@@ -537,8 +560,11 @@ async def run_loop(loop_id: str) -> None:
 
     L.finished_at = time.time()
     persist_audit(L)
-    if L.status == "plateau":
-        _post_plateau_changelog(L)
+    # NOTE: we deliberately do NOT write a plateau report into the changelog.
+    # The changelog is the ACTIONABLE queue (items an apply pass implements); a
+    # plateau is a status, not an action, so it would linger forever unconsumed.
+    # The plateau + unresolved count is already surfaced via the loop summary,
+    # the 'done' event, and the Iteration panel banner.
     await emit(L, "done", status=L.status,
                rounds=len(L.rounds),
                remaining=len(L.findings_current))
@@ -551,6 +577,28 @@ async def run_loop(loop_id: str) -> None:
             pass
 
 
+def _clear_sim_cache_for_review() -> None:
+    """Start the review's simulations from scratch: drop the cached scenario +
+    re-sim counters for every block referenced by a sim_review rule, so the
+    sim-setup pass re-derives params and the sim re-runs fresh (no stale result
+    reused across reviews). Best-effort; failures are non-fatal."""
+    try:
+        from .rule_eval import load_rules
+        from .rule_schema import StructuralRule
+        from test1.sim import simconfig
+        blocks = {r.predicate.sim_block for r in load_rules().rules
+                  if isinstance(r, StructuralRule)
+                  and r.predicate.kind == "sim_review"}
+        for b in blocks:
+            try:
+                simconfig.clear_scenario(b)
+                simconfig.clear_iter_counters(b)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
 def persist_audit(L: Loop) -> None:
     """Write the loop's audit JSON to disk for survives-restart Diff & Accept."""
     LOOPS_STATE_DIR.mkdir(parents=True, exist_ok=True)
@@ -559,21 +607,6 @@ def persist_audit(L: Loop) -> None:
                                      default=str), encoding="utf-8")
 
 
-def _post_plateau_changelog(L: Loop) -> None:
-    """Post a plateau notification line into the changelog with
-    source='closed_loop'."""
-    import sys
-    sys.path.insert(0, str(PROJECT_DIR / "gui" / "backend"))
-    import agent as agent_mod
-    by_sev = {"ERROR": 0, "WARNING": 0, "INFO": 0}
-    for f in L.findings_current:
-        key = f.severity.value if hasattr(f.severity, "value") else f.severity
-        if key in by_sev:
-            by_sev[key] += 1
-    msg = (f"loop {L.loop_id[:6]} halted at round {L.round} -- plateau, "
-           f"{len(L.findings_current)} unresolved "
-           f"({by_sev['ERROR']}E / {by_sev['WARNING']}W / {by_sev['INFO']}I)")
-    agent_mod.append_changelog(msg, source="closed_loop")
 
 
 def start_loop() -> str:

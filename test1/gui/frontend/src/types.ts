@@ -438,6 +438,9 @@ export interface LoopSummary {
 }
 
 export type LoopEvent =
+  | { event: "eval_start";    data: { phase: string } }
+  | { event: "eval_progress"; data: { i: number; total: number; id: string; evaluation: string; result: string } }
+  | { event: "eval_done";     data: { findings: number } }
   | { event: "loop_start";  data: { findings: number } }
   | { event: "round_start"; data: { round: number; findings: number } }
   | { event: "action_start"; data: { round: number; kind: string; targets: string[] } }

@@ -173,4 +173,10 @@ export const I = {
       <path d="M5 9h4M5 13h4M15 9h4M15 13h4M15 17h4" />
     </svg>
   ),
+  Terminal: (p: Props = {}) => (
+    <svg {...stroke(p)}>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M7 9l3 3-3 3M13 15h4" />
+    </svg>
+  ),
 };

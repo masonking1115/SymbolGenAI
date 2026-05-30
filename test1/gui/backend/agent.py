@@ -1790,10 +1790,21 @@ async def stream_run(run_id: str) -> AsyncIterator[bytes]:
     """SSE generator — replay buffered events then live-tail."""
     run = _RUNS.get(run_id)
     if not run:
-        yield b"event: done\ndata: {\"status\": \"not_found\"}\n\n"
+        # Not in memory (e.g. backend restarted after the run finished). Fall back
+        # to the persisted reasoning log so a per-agent dropdown still shows what
+        # the agent did + thought, then close.
+        log = STATE_DIR / "runs" / f"{run_id}.log"
+        if log.exists():
+            for line in log.read_text(encoding="utf-8", errors="replace").splitlines():
+                yield f"data: {json.dumps({'line': line})}\n\n".encode()
+            yield b"event: done\ndata: {\"status\": \"replayed\"}\n\n"
+        else:
+            yield b"event: done\ndata: {\"status\": \"not_found\"}\n\n"
         return
-    # Replay anything already buffered as text lines.
-    for line in run.text.splitlines():
+    # Replay the full concise stream (thinking/assistant/tool lines), not just the
+    # final answer — run.text gets overwritten with the final result on completion,
+    # but stream_log preserves the whole reasoning trace for the dropdown.
+    for line in (run.stream_log or run.text).splitlines():
         yield f"data: {json.dumps({'line': line})}\n\n".encode()
     q: asyncio.Queue = asyncio.Queue(maxsize=1000)
     run.subscribers.append(q)

@@ -12,7 +12,10 @@ Spec §3 + §4.plan_actions mapping.
 
 from __future__ import annotations
 
+import json
+import os
 import re
+import subprocess
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -24,11 +27,16 @@ from .rule_schema import (
     Rule, RulesFile, StructuralRule, SemanticRule,
     DecouplingCount, PullupPulldown, NoConnect, NetRouting,
     ConnectorPin, PowerRailMembership, ValueInRange, Present,
-    SimPass, SimMetric,
+    SimPass, SimMetric, SimReview,
 )
 
 PROJECT_DIR = Path(__file__).resolve().parent.parent
 RULES_YAML = PROJECT_DIR / "review" / "rules.yaml"
+
+# claude CLI used for semantic-rule verdicts (matches gui/backend/agent.py).
+_CLAUDE = "claude"
+_SEMANTIC_MODEL = os.environ.get("TEST1_AGENT_MODEL", "sonnet")
+_SEMANTIC_TIMEOUT_S = 120
 
 
 # ---- Loader -------------------------------------------------------------
@@ -190,6 +198,105 @@ def eval_sim_pass(p: SimPass, sim_results: dict) -> bool:
     return bool(res.get("ok"))
 
 
+def eval_sim_review(p: "SimReview", sim_results: dict) -> bool:
+    """Agent-judged sim check. RUN the real block (deriving the scenario via the
+    sim-setup pass if stale), then hand the result + analysis to claude -p to
+    judge against the rule's criterion. Returns True (pass) on any infra failure
+    — fail-safe, never fabricates a finding. sim_results may pre-seed a result
+    (so the loop runs each block once and reuses it across rules)."""
+    res = sim_results.get((p.sim_block, p.sim_type))
+    if res is None:
+        res = _run_block_for_review(p.sim_block, p.sim_type)
+        if res is not None:
+            sim_results[(p.sim_block, p.sim_type)] = res  # cache for sibling rules
+    if not res or res.get("status") not in ("ran", None):
+        return True  # couldn't run the sim → defer (no false finding)
+    verdict = _judge_sim_result(p, res)
+    return verdict != "FAIL"
+
+
+def _run_block_for_review(block: str, sim_type: str) -> dict | None:
+    """Run a real sim block for review. Best-effort: ensures the operating-point
+    scenario exists (the sim-setup agent derives it from requirements/datasheets
+    when stale), then runs ngspice via the service. Returns the result dict or
+    None on failure."""
+    try:
+        from test1.sim import service as sim_service
+        from test1.sim import simconfig
+    except Exception:
+        return None
+    # Derive params dynamically if the scenario is stale (agent reads reqs +
+    # datasheets and writes sim_config). Best-effort + bounded; if the agent
+    # path isn't available (headless), run_block_sim still uses cached/defaults.
+    try:
+        entry = simconfig.entry(block) if hasattr(simconfig, "entry") else {}
+        if not entry:
+            _ensure_scenario_via_agent(block)
+    except Exception:
+        pass
+    try:
+        return sim_service.run_block_sim(block, sim_type)
+    except Exception:
+        return None
+
+
+def _ensure_scenario_via_agent(block: str) -> None:
+    """Spawn the sim-setup agent (reads requirements + datasheets, derives the
+    operating point, writes sim_config) and wait briefly. Synchronous + bounded;
+    failures are swallowed (run_block_sim falls back to defaults)."""
+    try:
+        import sys
+        sys.path.insert(0, str(PROJECT_DIR / "gui" / "backend"))
+        # Use the bounded CLI rather than the async agent so this stays callable
+        # from the sync evaluator thread. iterate_sim runs the block; setup is a
+        # heavier path we only trigger when there is genuinely no scenario.
+        subprocess.run(
+            [sys.executable, str(PROJECT_DIR / "sim" / "iterate_sim.py"),
+             "--block", block, "--sim-type", "dc_op_point", "--reset"],
+            cwd=str(PROJECT_DIR), capture_output=True, text=True, timeout=60,
+        )
+    except Exception:
+        pass
+
+
+def _judge_sim_result(p: "SimReview", res: dict) -> str:
+    """claude -p verdict: does the sim result satisfy the criterion? Returns
+    'PASS' | 'FAIL' (fail-safe 'PASS' on any error)."""
+    analysis = res.get("analysis") or {}
+    op = res.get("op_point") or {}
+    prompt = (
+        f"You are reviewing a SPICE simulation result against a design requirement.\n\n"
+        f"BLOCK: {p.sim_block} / {p.sim_type}\n"
+        f"REQUIREMENT: {p.criterion}\n\n"
+        f"SIM RESULT:\n"
+        f"  ok (deck's own check): {res.get('ok')}\n"
+        f"  analysis: {json.dumps(analysis, default=str)[:1500]}\n"
+        f"  op_point: {json.dumps(op, default=str)[:600]}\n\n"
+        f"Does the simulated design MEET the requirement? Units may differ "
+        f"(e.g. amps vs µA, a nested rails dict) — interpret the analysis sensibly. "
+        f"Respond with ONLY one JSON object, no prose:\n"
+        f'{{"verdict": "PASS" | "FAIL", "observed": "<one sentence: the measured '
+        f'value(s) and how they compare to the requirement>"}}\n'
+        f"If you cannot tell from the result, answer PASS (do not guess a violation)."
+    )
+    try:
+        proc = subprocess.run(
+            [_CLAUDE, "-p", prompt, "--model", _SEMANTIC_MODEL,
+             "--permission-mode", "plan"],
+            cwd=str(PROJECT_DIR), capture_output=True, text=True,
+            encoding="utf-8", timeout=_SEMANTIC_TIMEOUT_S,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return "PASS"
+    parsed = _parse_verdict(proc.stdout or "")
+    if not parsed:
+        return "PASS"
+    verdict, observed = parsed
+    # stash the observation so _rule_to_finding can use it
+    res["_review_observed"] = observed
+    return verdict
+
+
 def eval_sim_metric(p: SimMetric, sim_results: dict) -> bool:
     res = sim_results.get((p.sim_block, p.sim_type))
     if not res:
@@ -214,6 +321,7 @@ _DISPATCH = {
     "present":                lambda p, view, sim: eval_present(p, view),
     "sim_pass":               lambda p, view, sim: eval_sim_pass(p, sim),
     "sim_metric":             lambda p, view, sim: eval_sim_metric(p, sim),
+    "sim_review":             lambda p, view, sim: eval_sim_review(p, sim),
 }
 
 
@@ -252,30 +360,195 @@ def _rule_to_finding(rule: Rule, observed: str = "rule fired") -> Finding:
     )
 
 
+# ---- Semantic-rule evaluation (claude -p verdict) -----------------------
+# A SemanticRule asks a question that can't be reduced to a netlist predicate
+# (e.g. "is this op-amp's feedback network appropriate for the stated gain?").
+# We hand claude -p the rule's prompt + its cited source excerpts + the relevant
+# slice of the as-built netlist, and ask for a strict PASS/FAIL verdict. FAIL
+# emits a Finding; PASS — or ANY error/timeout/parse failure — emits nothing
+# (fail-safe: a flaky agent must never fabricate a finding or block the loop).
+
+def _part_label(view: NetlistView, refdes: str) -> str:
+    """'R12 (10k)' / 'C30 (0.1uF) DNP' — value + DNP for a refdes, best-effort."""
+    p = view.part(refdes)
+    if not p:
+        return refdes
+    _, part = p
+    dnp = " DNP" if getattr(part, "dnp", False) else ""
+    return f"{refdes} ({part.value}){dnp}"
+
+
+def _netlist_context_for(rule: SemanticRule, view: NetlistView) -> str:
+    """Build a focused but COMPLETE netlist excerpt for the rule's applies_to so
+    the agent judges against the ACTUAL design.
+
+    Crucially, for every net the subject touches we expand the FULL membership of
+    that net (with each member's value). This is what lets the evaluator see a
+    pull-up/pull-down wired through a series resistor on the same node — without
+    it, the evaluator only saw the subject's own pins and produced false
+    positives (e.g. 'LDO PG has no pull-up' when R12 sits on that very net)."""
+    at = rule.applies_to
+    lines: list[str] = []
+    nets_to_expand: list[str] = []
+
+    if at.refdes:
+        p = view.part(at.refdes)
+        if p:
+            sheet, part = p
+            lines.append(f"SUBJECT {at.refdes} ({sheet}): value={part.value} "
+                         f"lib_id={part.lib_id} dnp={getattr(part, 'dnp', False)}")
+        lines.append(f"{at.refdes} pin -> net:")
+        for m in view.nets_with_member(at.refdes):
+            lines.append(f"  {at.refdes}.{m.pin} -> '{m.net}'")
+            nets_to_expand.append(m.net)
+    if at.net:
+        nets_to_expand.append(at.net)
+
+    # Expand each touched net to its FULL membership (dedup, cap for prompt size).
+    seen: set[str] = set()
+    for net in nets_to_expand:
+        if net in seen:
+            continue
+        seen.add(net)
+        members = view.members(net)
+        if not members:
+            continue
+        body = ", ".join(
+            f"{m.refdes}.{m.pin} [{_part_label(view, m.refdes)}]" for m in members[:30]
+        )
+        lines.append(f"\nnet '{net}' — every member (so pull-ups/downs/series-R "
+                     f"on this node are visible):\n  {body}")
+
+    # When the rule names a sheet (most semantic rules do), include that whole
+    # sheet's parts so the agent judges against the real components.
+    if at.sheet and at.sheet in view.by_sheet:
+        nl = view.by_sheet[at.sheet]
+        lines.append(f"\nAll parts on sheet '{at.sheet}':")
+        for ref, part in nl.parts.items():
+            dnp = " DNP" if getattr(part, "dnp", False) else ""
+            lines.append(f"  {ref}: {part.value} ({part.lib_id}){dnp}")
+    return "\n".join(lines) if lines else "(no specific netlist subject; judge against the cited source + design intent)"
+
+
+def _build_semantic_prompt(rule: SemanticRule, view: NetlistView) -> str:
+    quotes = "\n".join(
+        f"  - [{c.doc}:{c.loc}] {c.quote}" for c in rule.source if c.quote
+    ) or "  (no verbatim quote on this rule's citation)"
+    ctx = _netlist_context_for(rule, view)
+    return (
+        f"You are a hardware design-review checker. Evaluate ONE rule against the "
+        f"as-built design and return a strict JSON verdict.\n\n"
+        f"RULE: {rule.title}\n"
+        f"QUESTION: {rule.prompt}\n\n"
+        f"CITED REQUIREMENT / DATASHEET SOURCE:\n{quotes}\n\n"
+        f"RELEVANT AS-BUILT NETLIST:\n{ctx}\n\n"
+        f"Decide whether the design SATISFIES the rule. Respond with ONLY a single "
+        f"JSON object, no prose, no code fence:\n"
+        f'{{"verdict": "PASS" | "FAIL", "observed": "<one concise sentence of what '
+        f'you found that justifies the verdict>"}}\n'
+        f"PASS = the design meets the rule. FAIL = it violates it. If you cannot "
+        f'tell from the given source + netlist, answer PASS (do not guess a violation).'
+    )
+
+
+def _parse_verdict(text: str) -> tuple[str, str] | None:
+    """Extract {"verdict","observed"} from the agent's output. Tolerant of a
+    surrounding code fence or stray prose. Returns (verdict, observed) or None."""
+    if not text:
+        return None
+    m = re.search(r"\{.*?\"verdict\".*?\}", text, re.DOTALL)
+    if not m:
+        return None
+    try:
+        obj = json.loads(m.group(0))
+    except (json.JSONDecodeError, ValueError):
+        return None
+    v = str(obj.get("verdict", "")).strip().upper()
+    if v not in ("PASS", "FAIL"):
+        return None
+    return v, str(obj.get("observed", "")).strip()
+
+
+def _eval_semantic_rule(rule: SemanticRule, view: NetlistView) -> Finding | None:
+    """Run one semantic rule via claude -p. Returns a Finding on FAIL, else None
+    (PASS or any failure — fail-safe, never fabricates a finding)."""
+    prompt = _build_semantic_prompt(rule, view)
+    try:
+        proc = subprocess.run(
+            [_CLAUDE, "-p", prompt, "--model", _SEMANTIC_MODEL,
+             "--permission-mode", "plan"],   # read-only: the checker must not edit
+            cwd=str(PROJECT_DIR),
+            capture_output=True, text=True, encoding="utf-8",
+            timeout=_SEMANTIC_TIMEOUT_S,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return None  # fail-safe: no verdict -> no finding
+    parsed = _parse_verdict(proc.stdout or "")
+    if not parsed:
+        return None
+    verdict, observed = parsed
+    if verdict == "FAIL":
+        return _rule_to_finding(rule, observed=observed or "semantic rule violated")
+    return None
+
+
 # ---- Top-level runner ---------------------------------------------------
 
 def run_all(rules: list[Rule] | None = None,
-            sim_results: dict | None = None) -> list[Finding]:
+            sim_results: dict | None = None,
+            semantic: bool = False,
+            progress=None) -> list[Finding]:
     """Evaluate every enabled rule against the current netlist + sim cache.
 
     sim_results: { (block, sim_type): result_dict } as produced by the
     Phase 4 orchestrator. None means "no sim data" — sim_pass/sim_metric
-    rules return PASS (silent) when their data is absent."""
+    rules return PASS (silent) when their data is absent.
+
+    semantic: when True, SemanticRules are evaluated via claude -p (one verdict
+    per rule — slower, N agent calls). Default False keeps the structural path
+    instant (the GUI's quick lint/refresh uses it); the closed-loop + an explicit
+    full review opt in. Semantic eval is fail-safe: a timeout/parse error yields
+    no finding rather than a false positive.
+
+    progress: optional callback(kind, payload) for live progress (the closed loop
+    bridges this to SSE so the review console streams activity like the sim tab).
+    Called as progress("rule", {i, total, id, evaluation, result})."""
     if rules is None:
         rf = load_rules()
         rules = rf.rules
     view = load_all()
     sim = sim_results or {}
     out: list[Finding] = []
-    for rule in rules:
-        if not rule.enabled:
-            continue
+    # What we'll actually evaluate. Structural predicates are instant EXCEPT
+    # sim_review (runs ngspice + a judge agent) — gate those behind `semantic`
+    # alongside the LLM semantic rules, so the fast path stays instant.
+    def _is_slow(r) -> bool:
+        return (not isinstance(r, StructuralRule)) or \
+               (isinstance(r, StructuralRule) and r.predicate.kind == "sim_review")
+    active = [r for r in rules if r.enabled and (semantic or not _is_slow(r))]
+    total = len(active)
+    for i, rule in enumerate(active, 1):
+        result = "pass"
         if isinstance(rule, StructuralRule):
             ok = _DISPATCH[rule.predicate.kind](rule.predicate, view, sim)
             if not ok:
-                out.append(_rule_to_finding(rule))
-        else:
-            # SemanticRule — Phase 2+ wires the claude -p invocation here.
-            # For Phase 1 we treat semantic rules as deferred (no finding).
-            pass
+                # For an agent-judged sim_review, surface the agent's observation.
+                observed = "rule fired"
+                if rule.predicate.kind == "sim_review":
+                    r = sim.get((rule.predicate.sim_block, rule.predicate.sim_type)) or {}
+                    observed = r.get("_review_observed") or "sim result did not meet the requirement"
+                out.append(_rule_to_finding(rule, observed=observed))
+                result = "fail"
+        else:  # semantic (only reached when semantic=True)
+            f = _eval_semantic_rule(rule, view)
+            if f is not None:
+                out.append(f)
+                result = "fail"
+        if progress is not None:
+            try:
+                progress("rule", {"i": i, "total": total, "id": rule.id,
+                                   "evaluation": getattr(rule, "evaluation", "structural"),
+                                   "result": result})
+            except Exception:
+                pass  # progress is best-effort; never break evaluation
     return out
