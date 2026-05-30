@@ -388,8 +388,45 @@ def _best_failed_candidate(audits: list[CandidateAudit]) -> CandidateAudit | Non
 
 
 async def _topology_adapt(L: Loop, rule: Rule, best: CandidateAudit) -> dict:
-    """Dispatch topology_adapt agent. Task 5.5."""
-    raise NotImplementedError("Task 5.5")
+    import sys
+    sys.path.insert(0, str(PROJECT_DIR / "gui" / "backend"))
+    import agent as agent_mod
+
+    stuck = "sim margin near pass; specifics in candidate audit"
+    if best.sim_results:
+        last = best.sim_results[-1]
+        stuck = f"last sim: {last.get('block')}.{last.get('sim_type')} = " \
+                f"{'ok' if last.get('ok') else 'fail'}"
+        if "error" in last:
+            stuck = f"{stuck}; error={last['error']}"
+
+    sheet = rule.applies_to.sheet or "?"
+    run = await agent_mod.start_topology_adapt(rule.id, best.mpn, stuck, sheet)
+    L.sub_runs.append(run.run_id)
+    while run.status == "running":
+        if L.cancelled:
+            agent_mod.cancel_run(run.run_id)
+            return {"status": "cancelled", "summary": "cancelled"}
+        await asyncio.sleep(0.5)
+    if run.status != "ok":
+        return {"status": "fail", "summary": f"topology_adapt agent failed: {run.status}"}
+
+    # Re-verify sim after the topology change
+    from test1.sim import service as sim_service, catalog
+    for b in catalog.load_catalog():
+        if best.mpn.lower() not in json.dumps(b).lower():
+            continue
+        for st in b.get("sim_types", []):
+            if st.get("status") != "implemented":
+                continue
+            try:
+                res = sim_service.run_block_sim(b["id"], st["type"])
+                if not res.get("ok"):
+                    return {"status": "fail",
+                            "summary": f"post-adapt sim {b['id']}.{st['type']} still fails"}
+            except Exception as e:
+                return {"status": "fail", "summary": f"sim error: {e}"}
+    return {"status": "ok", "summary": f"topology adapted to fit {best.mpn}"}
 
 
 def _revert_yaml_from(sub_snap_dir: Path) -> None:

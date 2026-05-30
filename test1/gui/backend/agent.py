@@ -1100,6 +1100,41 @@ async def start_lint_fix_pass(failures: dict, round_no: int, max_rounds: int) ->
     return run
 
 
+async def start_topology_adapt(rule_id: str, candidate_mpn: str,
+                                stuck_reason: str, sheet: str) -> AgentRun:
+    """Dispatch the topology_adapt agent. Used by the missing-part flow
+    when no candidate passes sim verification; tries restructuring the
+    surrounding schematic to fit the best-margin candidate."""
+    prompt = (f"You are revising the schematic to accommodate a part that "
+              f"doesn't quite fit. Rule that needed the part: {rule_id}. "
+              f"Best-margin candidate: {candidate_mpn}. Sheet: {sheet}. "
+              f"Why it failed sim: {stuck_reason}.\n\n"
+              f"Read test1/netlist/{sheet}.yaml and test1/altium/build_{sheet}.py. "
+              f"Propose ONE LOCAL topology change that lets the candidate "
+              f"satisfy its sim. Examples allowed: add a series resistor / "
+              f"buffer / level shift; swap PMOS<->NMOS with rail inversion; "
+              f"insert a second-stage filter; widen a decap bank; add a "
+              f"gate resistor + clamp.\n\nHARD CONSTRAINTS:\n"
+              f"  - Do NOT cross sheet boundaries.\n"
+              f"  - Do NOT alter the parent rule's stated intent.\n"
+              f"  - Make the change atomic - one refdes added/removed/edited "
+              f"or one net rerouted.\n\nApply the change directly via Edit "
+              f"on the YAML + build_{sheet}.py, then run python -m "
+              f"test1.altium.build_project to verify lint + run the affected "
+              f"sims. Report a one-line summary of what you changed and the "
+              f"new sim margin.")
+    proc, _cmd = await _spawn_claude(
+        prompt=prompt,
+        system_suffix="",
+        permission_mode="acceptEdits",
+        allowed_tools=_DESIGN_AGENT_TOOLS,
+        model=model_for("topology_adapt"),
+    )
+    run = _register("topology_adapt")
+    asyncio.create_task(_run_subprocess(run, proc))
+    return run
+
+
 async def start_symbol_gen(mpn: str, datasheet_rel: str) -> AgentRun:
     """Generate a native Altium symbol for one MPN from its datasheet PDF.
 

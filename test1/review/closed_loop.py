@@ -408,9 +408,17 @@ async def _dispatch_action(L: Loop, action: Action) -> None:
             L.rounds[-1].sim_results.extend(results)
 
     elif action.kind == "missing_part":
-        # Phase 5 -- for Phase 4 we mark as deferred.
-        action.status = "fail"
-        action.summary = "missing_part flow not yet implemented (Phase 5)"
+        from .missing_part import run_missing_part_action
+        audit = await run_missing_part_action(L, action)
+        # Stash the per-action audit on the round for the UI to surface
+        if L.rounds:
+            L.rounds[-1].sim_results.extend([
+                {"audit_kind": "missing_part",
+                 "rule_id": audit.rule_id,
+                 "status": audit.status,
+                 "candidates": [asdict(c) for c in audit.candidates_considered],
+                 "topology": audit.topology_adaptations}
+            ])
 
     else:
         action.status = "fail"
