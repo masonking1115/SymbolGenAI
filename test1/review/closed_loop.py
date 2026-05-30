@@ -247,3 +247,72 @@ def archive_snapshot(L: Loop) -> None:
         t.add(L.snapshot_dir, arcname=L.loop_id)
     shutil.rmtree(L.snapshot_dir)
     L.snapshot_dir = None
+
+
+# ---- Planner -- map findings to round actions ---------------------------
+
+def plan_actions(findings: list[Finding]) -> list[Action]:
+    """Bucket findings by required action kind. Returns a list of Actions
+    (one per kind per round); the orchestrator dispatches them in order.
+
+    Bucketing rules (Spec section 4 plan_actions table):
+      - decoupling_count / pullup_pulldown / no_connect -> 'apply' (trivial,
+        grouped into one call)
+      - present (role_spec / unknown mpn) -> 'missing_part' (one per finding)
+      - present (known mpn, just not placed) -> 'apply'
+      - net_routing / connector_pin / power_rail_membership / value_in_range
+                                          -> 'apply' (non-trivial structural)
+      - sim_pass / sim_metric -> 'sim'
+      - semantic (any family) -> 'apply' (semantic mode)
+      - ERROR-lint / build-fail finding -> 'lint_fix'
+    """
+    from .rule_schema import StructuralRule    # local import -- avoids cycle
+
+    apply_bucket: list[str] = []
+    sim_bucket: list[str] = []
+    missing_part_actions: list[Action] = []
+    lint_fix_targets: list[str] = []
+
+    # Load rules to look up predicate.kind per finding's rule_id.
+    from .rule_eval import load_rules
+    rules_by_id = {r.id: r for r in load_rules().rules}
+
+    for f in findings:
+        rule = rules_by_id.get(f.rule_id)
+        if rule is None:
+            apply_bucket.append(f.rule_id)
+            continue
+
+        if rule.evaluation == "semantic":
+            apply_bucket.append(f.rule_id)
+            continue
+
+        # StructuralRule
+        assert isinstance(rule, StructuralRule)
+        kind = rule.predicate.kind
+        if kind == "present":
+            mpn = rule.applies_to.mpn
+            role = rule.applies_to.role_spec
+            if not mpn or role:
+                # by-spec or unknown-mpn -> missing_part flow
+                missing_part_actions.append(Action(
+                    kind="missing_part", targets=[f.rule_id]))
+            else:
+                apply_bucket.append(f.rule_id)
+        elif kind in ("sim_pass", "sim_metric"):
+            sim_bucket.append(f.rule_id)
+        elif kind in ("decoupling_count", "pullup_pulldown", "no_connect",
+                      "net_routing", "connector_pin",
+                      "power_rail_membership", "value_in_range"):
+            apply_bucket.append(f.rule_id)
+        else:
+            apply_bucket.append(f.rule_id)
+
+    out: list[Action] = []
+    if apply_bucket:
+        out.append(Action(kind="apply", targets=apply_bucket))
+    if missing_part_actions:
+        out.extend(missing_part_actions)
+    if sim_bucket:
+        out.append(Action(kind="sim", targets=sim_bucket))
+    return out
