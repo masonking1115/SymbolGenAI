@@ -1445,7 +1445,7 @@ def changelog_add(item: ChangelogAdd) -> dict:
         raise HTTPException(400, "empty summary")
     # Only honor sim origin when source is explicitly "sim"; otherwise treat as
     # a manual/user item with no sim linkage (so it can't trigger a re-sim).
-    src = item.source if item.source in ("sim", "user", "agent") else "user"
+    src = item.source if item.source in ("sim", "user", "agent", "closed_loop") else "user"
     return agent_mod.append_changelog(
         item.summary,
         source=src,

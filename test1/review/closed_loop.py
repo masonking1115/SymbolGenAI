@@ -316,3 +316,270 @@ def plan_actions(findings: list[Finding]) -> list[Action]:
     if sim_bucket:
         out.append(Action(kind="sim", targets=sim_bucket))
     return out
+
+
+# ---- Event emission to subscribers --------------------------------------
+
+async def emit(L: Loop, event: str, **data) -> None:
+    """Fan-out an SSE event to every subscriber queue. Drops on slow consumers."""
+    payload = {"event": event, "data": data}
+    for q in list(L.subscribers):
+        try:
+            q.put_nowait(payload)
+        except asyncio.QueueFull:
+            pass
+
+
+# ---- Sub-agent dispatch wrappers (call into agent.py) -------------------
+
+async def _dispatch_action(L: Loop, action: Action) -> None:
+    """Run one Action to completion. Updates action.status + summary in place."""
+    import sys
+    sys.path.insert(0, str(PROJECT_DIR / "gui" / "backend"))
+    import agent as agent_mod
+
+    if action.kind == "apply":
+        # Look up findings for the targeted rule IDs to build a context blob.
+        # Reuse existing start_apply_pass -- it reads the changelog. We
+        # bypass the changelog by setting up a synthetic one-shot context.
+        # For Phase 4, we use the existing apply agent + emit the targets
+        # in its prompt by pushing them to changelog first.
+        for rid in action.targets:
+            agent_mod.append_changelog(
+                f"closed-loop: address rule {rid}",
+                source="closed_loop",
+            )
+        run = await agent_mod.start_apply_pass()
+        action.agent_run_id = run.run_id
+        L.sub_runs.append(run.run_id)
+        while run.status == "running":
+            if L.cancelled:
+                agent_mod.cancel_run(run.run_id)
+                action.status = "cancelled"
+                action.finished_at = time.time()
+                return
+            await asyncio.sleep(0.5)
+        action.status = "ok" if run.status == "ok" else "fail"
+        action.summary = f"apply pass: {run.status} ({len(action.targets)} targets)"
+
+    elif action.kind == "lint_fix":
+        # Read current lint failures + dispatch lint_fix agent
+        from .closed_loop_helpers import _read_lint_failures
+        failures = _read_lint_failures()
+        run = await agent_mod.start_lint_fix_pass(failures, round_no=L.round,
+                                                  max_rounds=MAX_ROUNDS)
+        action.agent_run_id = run.run_id
+        L.sub_runs.append(run.run_id)
+        while run.status == "running":
+            if L.cancelled:
+                agent_mod.cancel_run(run.run_id)
+                action.status = "cancelled"
+                action.finished_at = time.time()
+                return
+            await asyncio.sleep(0.5)
+        action.status = "ok" if run.status == "ok" else "fail"
+        action.summary = f"lint_fix: {run.status}"
+
+    elif action.kind == "sim":
+        # Run the named (block, sim_type) sims via sim_service
+        from test1.sim import service as sim_service
+        from .rule_eval import load_rules
+        rules_by_id = {r.id: r for r in load_rules().rules}
+        results = []
+        for rid in action.targets:
+            rule = rules_by_id.get(rid)
+            if not rule or not getattr(rule.applies_to, "sim_block", None):
+                continue
+            block = rule.applies_to.sim_block
+            stype = rule.applies_to.sim_type
+            if not stype:
+                continue
+            try:
+                res = sim_service.run_block_sim(block, stype)
+                results.append({"block": block, "sim_type": stype,
+                                "ok": bool(res.get("ok"))})
+            except Exception as e:
+                results.append({"block": block, "sim_type": stype,
+                                "ok": False, "error": str(e)})
+        action.status = "ok" if results and all(r.get("ok") for r in results) else "fail"
+        action.summary = f"sim: {sum(1 for r in results if r.get('ok'))}/{len(results)} ok"
+        # store results on the action for round.sim_results aggregation
+        if L.rounds:
+            L.rounds[-1].sim_results.extend(results)
+
+    elif action.kind == "missing_part":
+        # Phase 5 -- for Phase 4 we mark as deferred.
+        action.status = "fail"
+        action.summary = "missing_part flow not yet implemented (Phase 5)"
+
+    else:
+        action.status = "fail"
+        action.summary = f"unknown action kind: {action.kind}"
+
+    action.finished_at = time.time()
+
+
+_VENV_PY = Path(r"C:\Users\mking\Downloads\altium_spike\.venv\Scripts\python.exe")
+
+
+async def _rebuild_project() -> tuple[str, dict | None]:
+    """Run python -m test1.altium.build_project as a subprocess. Returns
+    (status, lint_summary)."""
+    proc = await asyncio.create_subprocess_exec(
+        str(_VENV_PY), "-m", "test1.altium.build_project",
+        cwd=str(REPO_ROOT),
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+    )
+    out, _ = await proc.communicate()
+    status = "ok" if proc.returncode == 0 else "fail"
+    lint_summary = None
+    lint_json = OUT_DIR / "lint.json"
+    if lint_json.exists():
+        try:
+            data = json.loads(lint_json.read_text(encoding="utf-8"))
+            lint_summary = {
+                "ERROR":   sum(1 for f in data if f.get("severity") == "ERROR"),
+                "WARNING": sum(1 for f in data if f.get("severity") == "WARNING"),
+                "INFO":    sum(1 for f in data if f.get("severity") == "INFO"),
+            }
+        except Exception:
+            pass
+    return status, lint_summary
+
+
+# ---- The main loop ------------------------------------------------------
+
+async def run_loop(loop_id: str) -> None:
+    """Top-level orchestrator. Runs in a background task started by
+    POST /api/loop/start."""
+    L = _LOOPS[loop_id]
+    try:
+        snapshot_pre_loop(L)
+
+        from .rule_eval import run_all as eval_rules
+        L.findings_initial = eval_rules()
+        L.findings_current = list(L.findings_initial)
+        await emit(L, "loop_start", findings=len(L.findings_initial))
+
+        for r in range(1, MAX_ROUNDS + 1):
+            if L.cancelled:
+                break
+            if not L.findings_current:
+                break  # all-clear
+
+            R = Round(n=r, findings_before=len(L.findings_current))
+            L.round = r
+            L.rounds.append(R)
+            await emit(L, "round_start", round=r,
+                       findings=R.findings_before)
+
+            for action in plan_actions(L.findings_current):
+                if L.cancelled:
+                    break
+                R.actions.append(action)
+                await emit(L, "action_start",
+                           round=r, kind=action.kind,
+                           targets=action.targets)
+                await _dispatch_action(L, action)
+                await emit(L, "action_end",
+                           round=r, kind=action.kind,
+                           agent_run_id=action.agent_run_id,
+                           status=action.status,
+                           summary=action.summary)
+
+            if not L.cancelled:
+                await emit(L, "build_start", round=r)
+                R.build_status, R.lint_summary = await _rebuild_project()
+                await emit(L, "build_end", round=r,
+                           status=R.build_status, lint=R.lint_summary)
+
+            # Re-evaluate
+            new_findings = eval_rules()
+            R.findings_after = len(new_findings)
+            old_ids = {f.rule_id for f in L.findings_current}
+            new_ids = {f.rule_id for f in new_findings}
+            cleared = sorted(old_ids - new_ids)
+            added = sorted(new_ids - old_ids)
+            R.findings_cleared = cleared
+            R.findings_new = added
+            delta = len(cleared) - len(added)
+            L.findings_current = new_findings
+            L.last_delta = delta
+            L.plateau_streak = (L.plateau_streak + 1) if delta <= 0 else 0
+            R.finished_at = time.time()
+            await emit(L, "round_done", round=r,
+                       delta=delta, cleared=cleared, new=added,
+                       remaining=R.findings_after)
+
+            if L.plateau_streak >= PLATEAU_STREAK:
+                L.status = "plateau"
+                break
+
+        if not L.cancelled and L.status == "running":
+            L.status = "all_clear" if not L.findings_current else "max_rounds"
+        if L.cancelled:
+            L.status = "cancelled"
+
+    except Exception as e:
+        L.status = "error"
+        L.error = str(e)
+        import traceback
+        await emit(L, "error", message=str(e),
+                   traceback=traceback.format_exc())
+
+    L.finished_at = time.time()
+    persist_audit(L)
+    if L.status == "plateau":
+        _post_plateau_changelog(L)
+    await emit(L, "done", status=L.status,
+               rounds=len(L.rounds),
+               remaining=len(L.findings_current))
+
+    # Send sentinel to all subscribers
+    for q in list(L.subscribers):
+        try:
+            q.put_nowait(None)
+        except asyncio.QueueFull:
+            pass
+
+
+def persist_audit(L: Loop) -> None:
+    """Write the loop's audit JSON to disk for survives-restart Diff & Accept."""
+    LOOPS_STATE_DIR.mkdir(parents=True, exist_ok=True)
+    audit_path = LOOPS_STATE_DIR / f"{L.loop_id}.json"
+    audit_path.write_text(json.dumps(loop_summary(L), indent=2,
+                                     default=str), encoding="utf-8")
+
+
+def _post_plateau_changelog(L: Loop) -> None:
+    """Post a plateau notification line into the changelog with
+    source='closed_loop'."""
+    import sys
+    sys.path.insert(0, str(PROJECT_DIR / "gui" / "backend"))
+    import agent as agent_mod
+    by_sev = {"ERROR": 0, "WARNING": 0, "INFO": 0}
+    for f in L.findings_current:
+        key = f.severity.value if hasattr(f.severity, "value") else f.severity
+        if key in by_sev:
+            by_sev[key] += 1
+    msg = (f"loop {L.loop_id[:6]} halted at round {L.round} -- plateau, "
+           f"{len(L.findings_current)} unresolved "
+           f"({by_sev['ERROR']}E / {by_sev['WARNING']}W / {by_sev['INFO']}I)")
+    agent_mod.append_changelog(msg, source="closed_loop")
+
+
+def start_loop() -> str:
+    """Allocate a new Loop, register it, kick off the run task."""
+    loop_id = uuid.uuid4().hex[:8]
+    L = Loop(loop_id=loop_id, started_at=time.time())
+    _LOOPS[loop_id] = L
+    asyncio.create_task(run_loop(loop_id))
+    return loop_id
+
+
+def cancel_loop(loop_id: str) -> bool:
+    L = _LOOPS.get(loop_id)
+    if not L:
+        return False
+    L.cancelled = True
+    return True
