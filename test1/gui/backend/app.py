@@ -2208,13 +2208,86 @@ def review_rules_list() -> dict:
 
 @app.post("/api/review/rules/generate")
 async def review_rules_generate() -> dict:
-    """Trigger rule generation. Long-running — returns a run_id; subscribe
-    to its agent stream for progress. The final rules.yaml is written
-    when the run completes; poll /api/review/rules to fetch."""
+    """Kick off rule generation in the BACKGROUND. Returns the job_id
+    immediately; the GUI subscribes to ``/api/review/rules/generate/{job_id}
+    /stream`` for phase events (bundle/dispatch/validate/merge/write/done) and,
+    once the dispatch event fires, to ``/api/agent/{agent_run_id}/stream`` for
+    the agent's live console.
+
+    The final rules.yaml is written when the job finishes; poll
+    ``/api/review/rules`` to fetch the new rule set."""
     from test1.review import rule_gen
-    # Run in the background so the endpoint returns quickly.
-    result = await rule_gen.generate_and_write()
-    return result
+    job_id = rule_gen.start_generate_job()
+    return {"job_id": job_id}
+
+
+# NOTE: static routes (``.../latest``) must be registered BEFORE the dynamic
+# ``/{job_id}`` route — FastAPI matches in declaration order.
+@app.get("/api/review/rules/generate/latest")
+def review_rules_generate_latest() -> dict:
+    """Return the latest job summary, or ``{job_id: null}`` if none exists."""
+    from test1.review import rule_gen
+    jid = rule_gen.latest_job_id()
+    if not jid:
+        return {"job_id": None}
+    J = rule_gen.get_job(jid)
+    if not J:
+        return {"job_id": None}
+    return rule_gen.job_summary(J)
+
+
+@app.get("/api/review/rules/generate/{job_id}")
+def review_rules_generate_get(job_id: str) -> dict:
+    from test1.review import rule_gen
+    J = rule_gen.get_job(job_id)
+    if not J:
+        raise HTTPException(404, "no such job")
+    return rule_gen.job_summary(J)
+
+
+@app.get("/api/review/rules/generate/{job_id}/stream")
+async def review_rules_generate_stream(job_id: str) -> StreamingResponse:
+    """SSE stream of phase events. Mirrors ``/api/loop/{loop_id}/stream``:
+    if the job already finished, emit a synthetic ``done`` (or ``error``)
+    frame immediately so late subscribers don't hang."""
+    from test1.review import rule_gen
+    J = rule_gen.get_job(job_id)
+    if not J:
+        raise HTTPException(404, "no such job")
+
+    async def gen() -> AsyncIterator[bytes]:
+        if J.status != "running":
+            # Late-subscriber synthetic frame -- the agent_run_id is preserved
+            # so the UI can still pin the console to the finished agent.
+            ev = "done" if J.status == "ok" else "error"
+            data = {
+                "phase": J.phase,
+                "status": J.status,
+                "agent_run_id": J.agent_run_id,
+                "result": J.result,
+                "error": J.error,
+            }
+            yield f"event: {ev}\ndata: {json.dumps(data)}\n\n".encode()
+            return
+        q: asyncio.Queue = asyncio.Queue(maxsize=1000)
+        J.subscribers.append(q)
+        try:
+            while True:
+                item = await q.get()
+                if item is None:
+                    return
+                evname = item.get("event", "message")
+                data = json.dumps(item.get("data", {}))
+                yield f"event: {evname}\ndata: {data}\n\n".encode()
+        finally:
+            try:
+                J.subscribers.remove(q)
+            except ValueError:
+                pass
+
+    return StreamingResponse(gen(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-store",
+                                      "X-Accel-Buffering": "no"})
 
 
 class RuleEditBody(BaseModel):

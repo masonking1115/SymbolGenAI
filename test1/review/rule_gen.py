@@ -12,15 +12,32 @@ Flow per /api/review/rules/generate:
   6. Merge with existing user-origin rules; write rules.yaml.
 
 Spec section 3 generation flow.
+
+Two entry points:
+  - ``generate_and_write()`` -- legacy SYNCHRONOUS path used by tests + any
+    scripted caller. Awaits the whole pipeline + returns the final result.
+  - ``start_generate_job()`` -- BACKGROUND path used by the GUI. Returns a
+    ``job_id`` immediately; the job emits phase events (bundle / dispatch /
+    validate / merge / write / done) to SSE subscribers, mirroring
+    ``closed_loop._LOOPS`` so the frontend can show a live pipeline strip
+    + the dispatched agent's console.
 """
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import json
 import re
+import sys
+import tempfile
 import time
+import traceback
+import uuid
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Awaitable, Callable
 
 from .providers import DocBundle, PredicateSpec, rulegen_provider
 from .rule_schema import Rule, RulesFile, SourceSeen
@@ -205,17 +222,25 @@ def merge_rules(existing: list[Rule], candidates: list[Rule]) -> tuple[list[Rule
 
 # ---- Provider dispatch wrapper -----------------------------------------
 
-async def _claude_generate(bundle: DocBundle, spec: PredicateSpec,
-                           existing_user_rules: list[Rule]) -> list[Rule]:
-    """Default RuleGenProvider impl - writes bundle/spec/user to temp JSON,
-    dispatches the rule_gen agent, reads + validates output."""
-    import asyncio
-    import json
-    import sys
-    import tempfile
+EmitCb = Callable[[str, dict], Awaitable[None]]
 
+
+async def _dispatch_rule_gen_agent(
+    bundle: DocBundle,
+    spec: PredicateSpec,
+    existing_user_rules: list[Rule],
+    emit_cb: EmitCb | None = None,
+) -> list[Rule]:
+    """Write inputs to a tempdir, dispatch the rule_gen agent, parse + validate
+    the agent's JSON output. Retries up to 3x on validation failure.
+
+    When ``emit_cb`` is provided, emits a ``dispatch`` event with the agent's
+    ``run_id`` + attempt number as soon as ``start_rule_gen`` returns -- so a
+    live UI can subscribe to the agent's stream immediately. Errors per
+    attempt are emitted as ``dispatch_attempt_failed``.
+    """
     sys.path.insert(0, str(PROJECT_DIR / "gui" / "backend"))
-    import agent as agent_mod
+    import agent as agent_mod                      # noqa: PLC0415
 
     tmp = Path(tempfile.mkdtemp(prefix="rulegen_"))
     bundle_path = tmp / "bundle.json"
@@ -235,46 +260,60 @@ async def _claude_generate(bundle: DocBundle, spec: PredicateSpec,
         "rules": [r.model_dump(exclude_none=True) for r in existing_user_rules]
     }), encoding="utf-8")
 
-    # Up to 2 retries on validation failure.
     last_error = ""
-    for _attempt in range(3):
+    for attempt in range(3):
         run = await agent_mod.start_rule_gen(bundle_path, spec_path,
-                                              user_path, out_path)
+                                             user_path, out_path)
+        if emit_cb is not None:
+            await emit_cb("dispatch", {
+                "agent_run_id": run.run_id,
+                "attempt": attempt + 1,
+                "max_attempts": 3,
+            })
         # Wait for completion - poll the run status
         while run.status == "running":
             await asyncio.sleep(0.5)
         if run.status != "ok" or not out_path.exists():
-            last_error = f"agent run status={run.status}, output present={out_path.exists()}"
+            last_error = (f"agent run status={run.status}, "
+                          f"output present={out_path.exists()}")
+            if emit_cb is not None:
+                await emit_cb("dispatch_attempt_failed",
+                              {"attempt": attempt + 1, "reason": last_error})
             continue
         try:
             data = json.loads(out_path.read_text(encoding="utf-8"))
-            from pydantic import TypeAdapter
+            from pydantic import TypeAdapter            # noqa: PLC0415
             rules_adapter = TypeAdapter(list[Rule])
             rules = rules_adapter.validate_python(data.get("rules", []))
             return rules
         except Exception as e:
             last_error = f"validation: {e}"
-            # Append the error to the prompt for the retry (manual loop)
+            if emit_cb is not None:
+                await emit_cb("dispatch_attempt_failed",
+                              {"attempt": attempt + 1, "reason": last_error})
             continue
 
     raise RuntimeError(f"rule_gen agent failed after 3 attempts: {last_error}")
 
 
-# ---- Top-level entrypoint ----------------------------------------------
+async def _claude_generate(bundle: DocBundle, spec: PredicateSpec,
+                           existing_user_rules: list[Rule]) -> list[Rule]:
+    """Default RuleGenProvider impl. Thin wrapper around
+    ``_dispatch_rule_gen_agent`` with no emit_cb -- preserves the legacy
+    interface that ClaudeRuleGenProvider depends on."""
+    return await _dispatch_rule_gen_agent(bundle, spec, existing_user_rules,
+                                          emit_cb=None)
 
-async def generate_and_write() -> dict:
-    """Called by POST /api/review/rules/generate.
-    Returns {count_total, count_by_family, conflicts, sources_seen}."""
-    bundle = build_doc_bundle()
-    spec = build_predicate_spec()
-    from .rule_eval import load_rules
-    existing = load_rules().rules
-    user_rules = [r for r in existing if r.origin == "user"]
 
-    provider = rulegen_provider()
-    candidates = await provider.generate(bundle, spec, user_rules)
+# ---- Shared post-dispatch pipeline (validate + merge + write) ----------
 
-    # Verify citations; drop unverifiable rules with a warning.
+def _verify_and_merge(
+    candidates: list[Rule],
+    existing: list[Rule],
+    bundle: DocBundle,
+) -> tuple[list[Rule], list[dict], list[dict]]:
+    """Verify citations, then merge with user-origin rules. Returns
+    (merged_rules, conflicts, rejected_unverifiable)."""
     verified: list[Rule] = []
     rejected: list[dict] = []
     for r in candidates:
@@ -283,16 +322,20 @@ async def generate_and_write() -> dict:
             verified.append(r)
         else:
             rejected.append({"id": r.id, "reason": reason})
-
     merged, conflicts = merge_rules(existing, verified)
+    return merged, conflicts, rejected
 
+
+def _write_rules_and_summarize(merged: list[Rule], conflicts: list[dict],
+                                rejected: list[dict]) -> dict:
+    """Persist rules.yaml + return the result dict shared by both paths."""
     rf = RulesFile(
         version=1,
         generated_at=datetime.now(timezone.utc).isoformat(),
         sources_seen=_sources_seen(),
         rules=merged,
     )
-    from .rule_eval import save_rules
+    from .rule_eval import save_rules                  # noqa: PLC0415
     save_rules(rf)
 
     by_family = {"schematic": 0, "simulation": 0, "design": 0}
@@ -306,3 +349,174 @@ async def generate_and_write() -> dict:
         "rejected_unverifiable": rejected,
         "sources_seen": [s.model_dump() for s in rf.sources_seen],
     }
+
+
+# ---- Top-level entrypoint (legacy synchronous path) --------------------
+
+async def generate_and_write() -> dict:
+    """Synchronous one-shot path: bundle → provider.generate → verify →
+    merge → write. Returns {count_total, count_by_family, conflicts,
+    rejected_unverifiable, sources_seen}.
+
+    Used by tests / scripted callers. The GUI now uses
+    :func:`start_generate_job` (background + SSE phase stream) instead.
+    """
+    bundle = build_doc_bundle()
+    spec = build_predicate_spec()
+    from .rule_eval import load_rules                   # noqa: PLC0415
+    existing = load_rules().rules
+    user_rules = [r for r in existing if r.origin == "user"]
+
+    provider = rulegen_provider()
+    candidates = await provider.generate(bundle, spec, user_rules)
+
+    merged, conflicts, rejected = _verify_and_merge(candidates, existing,
+                                                    bundle)
+    return _write_rules_and_summarize(merged, conflicts, rejected)
+
+
+# ---- Background-job machinery (GUI path) ===============================
+#
+# Mirrors ``closed_loop._LOOPS`` -- in-process registry + an SSE-friendly
+# subscriber queue per job. State is lost on backend restart, which is fine:
+# rule generation is short-lived and the on-disk rules.yaml is the durable
+# artifact. The latest finished job is also discoverable via the result on
+# the in-memory ``_JOBS`` dict for ~5 s while the UI is auto-refreshing.
+
+
+PHASES = ("bundle", "dispatch", "validate", "merge", "write", "done", "error")
+
+
+@dataclass
+class RuleGenJob:
+    job_id: str
+    started_at: float
+    phase: str = "bundle"          # one of PHASES
+    status: str = "running"        # "running" | "ok" | "fail"
+    agent_run_id: str | None = None
+    result: dict | None = None
+    error: str = ""
+    finished_at: float | None = None
+    subscribers: list[asyncio.Queue] = field(default_factory=list)
+
+
+_JOBS: dict[str, RuleGenJob] = {}
+
+
+def get_job(job_id: str) -> RuleGenJob | None:
+    return _JOBS.get(job_id)
+
+
+def latest_job_id() -> str | None:
+    if not _JOBS:
+        return None
+    return max(_JOBS.keys(), key=lambda jid: _JOBS[jid].started_at)
+
+
+def job_summary(J: RuleGenJob) -> dict:
+    """Wire-format snapshot for /api/review/rules/generate/{job_id}."""
+    return {
+        "job_id": J.job_id,
+        "phase": J.phase,
+        "status": J.status,
+        "agent_run_id": J.agent_run_id,
+        "result": J.result,
+        "error": J.error,
+        "started_at": J.started_at,
+        "finished_at": J.finished_at,
+    }
+
+
+async def emit_job(J: RuleGenJob, event: str, **data) -> None:
+    """Fan-out an SSE event to every subscriber queue. Drops on slow consumers
+    (matches ``closed_loop.emit``)."""
+    payload = {"event": event, "data": data}
+    for q in list(J.subscribers):
+        try:
+            q.put_nowait(payload)
+        except asyncio.QueueFull:
+            pass
+
+
+async def _run_job(J: RuleGenJob) -> None:
+    """Background runner. Emits one event per phase boundary so the UI can
+    light up the corresponding pipeline step. On success, the final ``done``
+    event carries the same result dict that :func:`generate_and_write`
+    returns; on failure, an ``error`` event carries the message + traceback."""
+    try:
+        # Phase 1: bundle docs.
+        J.phase = "bundle"
+        await emit_job(J, "bundle")
+        bundle = build_doc_bundle()
+        spec = build_predicate_spec()
+        from .rule_eval import load_rules                # noqa: PLC0415
+        existing = load_rules().rules
+        user_rules = [r for r in existing if r.origin == "user"]
+        await emit_job(J, "bundle_done",
+                       datasheets=len(bundle.datasheet_texts),
+                       urls=len(bundle.url_texts),
+                       user_rules=len(user_rules))
+
+        # Phase 2: dispatch the rule_gen agent (with retries). We use an
+        # emit_cb so the agent_run_id surfaces to subscribers AS SOON as the
+        # agent starts -- the frontend then subscribes to its console.
+        J.phase = "dispatch"
+        await emit_job(J, "dispatch")
+
+        async def _on_agent_event(ev: str, data: dict) -> None:
+            if ev == "dispatch" and "agent_run_id" in data:
+                J.agent_run_id = data["agent_run_id"]
+            await emit_job(J, ev, **data)
+
+        candidates = await _dispatch_rule_gen_agent(
+            bundle, spec, user_rules, emit_cb=_on_agent_event)
+
+        # Phase 3: verify citations.
+        J.phase = "validate"
+        await emit_job(J, "validate", candidates=len(candidates))
+        merged, conflicts, rejected = _verify_and_merge(candidates, existing,
+                                                        bundle)
+        await emit_job(J, "validate_done",
+                       verified=len(candidates) - len(rejected),
+                       rejected=len(rejected))
+
+        # Phase 4: merge with user-origin rules.
+        J.phase = "merge"
+        await emit_job(J, "merge", conflicts=len(conflicts))
+
+        # Phase 5: write rules.yaml.
+        J.phase = "write"
+        await emit_job(J, "write", rules=len(merged))
+        result = _write_rules_and_summarize(merged, conflicts, rejected)
+
+        # Done.
+        J.phase = "done"
+        J.status = "ok"
+        J.result = result
+        await emit_job(J, "done", **result)
+
+    except Exception as e:
+        J.phase = "error"
+        J.status = "fail"
+        J.error = str(e)
+        await emit_job(J, "error",
+                       message=str(e), traceback=traceback.format_exc())
+    finally:
+        J.finished_at = time.time()
+        # Sentinel — closes every active SSE stream.
+        for q in list(J.subscribers):
+            try:
+                q.put_nowait(None)
+            except asyncio.QueueFull:
+                pass
+
+
+def start_generate_job() -> str:
+    """Allocate a new RuleGenJob, register it, kick off the background runner,
+    and return the job_id immediately. Subscribe to
+    ``/api/review/rules/generate/{job_id}/stream`` for live phase events."""
+    job_id = uuid.uuid4().hex[:8]
+    J = RuleGenJob(job_id=job_id, started_at=time.time())
+    _JOBS[job_id] = J
+    asyncio.create_task(_run_job(J))
+    return job_id
