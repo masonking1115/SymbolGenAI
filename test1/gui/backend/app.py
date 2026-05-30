@@ -2377,6 +2377,12 @@ async def loop_reject(loop_id: str, body: LoopRejectBody = LoopRejectBody()) -> 
             "rebuild_log_tail": out.decode("utf-8", errors="replace")[-2000:]}
 
 
+@app.get("/api/loop/{loop_id}/diff")
+def loop_diff(loop_id: str) -> dict:
+    from test1.review.diff import compute_loop_diff
+    return {"loop_id": loop_id, "sheets": compute_loop_diff(loop_id)}
+
+
 def main() -> None:
     import uvicorn
     uvicorn.run("app:app", host="127.0.0.1", port=8765, reload=False)
