@@ -1179,6 +1179,83 @@ pin/unit count matches the datasheet, then print a one-line summary.
     return run
 
 
+# ---------------------------------------------------------------------------
+# Rule generator (closed-loop design review) — dispatches the rule_gen agent
+# with the doc bundle + predicate spec + existing user rules pre-written to
+# tempfiles. The agent reads them, emits a JSON rules file at `out`, and the
+# Python side (test1/review/rule_gen.py::_claude_generate) validates + retries.
+# ---------------------------------------------------------------------------
+async def start_rule_gen(doc_bundle_path: Path, predicate_spec_path: Path,
+                         user_rules_path: Path, output_path: Path) -> AgentRun:
+    """Dispatch the rule_gen agent. Inputs + output passed as file paths
+    (claude -p can't take huge JSON blobs as args)."""
+    prompt = _build_rule_gen_prompt(doc_bundle_path, predicate_spec_path,
+                                    user_rules_path, output_path)
+    proc, _cmd = await _spawn_claude(
+        prompt=prompt,
+        system_suffix="",
+        permission_mode="acceptEdits",   # writes output_path
+        allowed_tools=[
+            "Read", "Write", "Edit", "Glob", "Grep", "WebFetch", "WebSearch",
+            "Bash(python:*)", "Bash(python3:*)", "Bash(pdftotext:*)",
+            "Bash(cd:*)", "Bash(ls:*)", "Bash(cat:*)",
+        ],
+        add_dir=REPO_ROOT,
+        model=model_for("rule_gen"),
+    )
+    run = _register("rule_gen")
+    asyncio.create_task(_run_subprocess(run, proc))
+    return run
+
+
+def _build_rule_gen_prompt(bundle: Path, spec: Path, user: Path, out: Path) -> str:
+    return f"""You are generating a closed-loop design-review rule set for a
+schematic project at {REPO_ROOT}.
+
+Read these files:
+  - Doc bundle:       {bundle}    (JSON: requirements_md, bobcat_pdf_text,
+                                    datasheet_texts dict, url_texts dict,
+                                    netlist_yamls dict)
+  - Predicate spec:   {spec}      (JSON: closed list of allowed predicate
+                                    kinds + their args)
+  - Existing user rules: {user}   (JSON: rules with origin='user' you must
+                                    NOT regenerate or contradict)
+
+Emit a JSON file at {out} matching this exact schema (see
+test1/review/rule_schema.py for Pydantic models):
+
+  {{ "rules": [ {{... Rule object ...}}, ... ] }}
+
+Each Rule has:
+  - id:         SCREAMING_SNAKE_CASE, stable, unique within the file
+  - family:     "schematic" | "simulation" | "design"
+  - evaluation: "structural" | "semantic"
+  - severity:   "ERROR" | "WARNING" | "INFO"
+  - title:      one-line headline
+  - applies_to: {{ refdes?, pins?, net?, rail?, sheet?, sim_block?,
+                  sim_type?, mpn?, role_spec? }}
+  - source:     list of {{doc, loc, quote}} — REQUIRED, >=1 entry, with a
+                verbatim quote you can find in the cited doc
+  - fix_hint:   short fix instruction
+  - enabled:    true
+  - origin:     "generated"
+
+For structural rules: include "predicate": {{kind, ...args per spec}}.
+For semantic rules: include "prompt": text the per-rule evaluator will
+ask each pass.
+
+Hard constraints:
+  - Every rule.source[*].quote MUST be a verbatim substring of the cited
+    doc (whitespace-normalized). Hallucinated quotes are rejected.
+  - Generate AT LEAST 30 rules across the three families.
+  - Use ONLY the predicate kinds in the spec — invented kinds are rejected.
+  - DO NOT emit rules whose id collides with anything in the existing
+    user rules file.
+
+Reply with ONLY the JSON output written to {out}; no commentary.
+"""
+
+
 _SIM_PARAM_CACHE = PROJECT_DIR / "sim" / "cache" / "datasheet_params.json"
 _SIM_CONFIG = PROJECT_DIR / "sim" / "cache" / "sim_config.json"
 

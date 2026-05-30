@@ -207,9 +207,57 @@ def merge_rules(existing: list[Rule], candidates: list[Rule]) -> tuple[list[Rule
 
 async def _claude_generate(bundle: DocBundle, spec: PredicateSpec,
                            existing_user_rules: list[Rule]) -> list[Rule]:
-    """Default RuleGenProvider impl - dispatches the rule_gen agent.
-    Full implementation in Task 2.3 (the agent dispatch is non-trivial)."""
-    raise NotImplementedError("see Task 2.3")
+    """Default RuleGenProvider impl - writes bundle/spec/user to temp JSON,
+    dispatches the rule_gen agent, reads + validates output."""
+    import asyncio
+    import json
+    import sys
+    import tempfile
+
+    sys.path.insert(0, str(PROJECT_DIR / "gui" / "backend"))
+    import agent as agent_mod
+
+    tmp = Path(tempfile.mkdtemp(prefix="rulegen_"))
+    bundle_path = tmp / "bundle.json"
+    spec_path = tmp / "spec.json"
+    user_path = tmp / "user_rules.json"
+    out_path = tmp / "out.json"
+
+    bundle_path.write_text(json.dumps({
+        "requirements_md": bundle.requirements_md,
+        "bobcat_pdf_text": bundle.bobcat_pdf_text,
+        "datasheet_texts": bundle.datasheet_texts,
+        "url_texts": bundle.url_texts,
+        "netlist_yamls": bundle.netlist_yamls,
+    }), encoding="utf-8")
+    spec_path.write_text(json.dumps({"kinds": spec.kinds}), encoding="utf-8")
+    user_path.write_text(json.dumps({
+        "rules": [r.model_dump(exclude_none=True) for r in existing_user_rules]
+    }), encoding="utf-8")
+
+    # Up to 2 retries on validation failure.
+    last_error = ""
+    for _attempt in range(3):
+        run = await agent_mod.start_rule_gen(bundle_path, spec_path,
+                                              user_path, out_path)
+        # Wait for completion - poll the run status
+        while run.status == "running":
+            await asyncio.sleep(0.5)
+        if run.status != "ok" or not out_path.exists():
+            last_error = f"agent run status={run.status}, output present={out_path.exists()}"
+            continue
+        try:
+            data = json.loads(out_path.read_text(encoding="utf-8"))
+            from pydantic import TypeAdapter
+            rules_adapter = TypeAdapter(list[Rule])
+            rules = rules_adapter.validate_python(data.get("rules", []))
+            return rules
+        except Exception as e:
+            last_error = f"validation: {e}"
+            # Append the error to the prompt for the retry (manual loop)
+            continue
+
+    raise RuntimeError(f"rule_gen agent failed after 3 attempts: {last_error}")
 
 
 # ---- Top-level entrypoint ----------------------------------------------
