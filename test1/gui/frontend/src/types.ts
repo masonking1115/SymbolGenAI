@@ -308,7 +308,7 @@ export interface ChatSession extends ChatSessionMeta {
 export interface ChangelogItem {
   id: string;
   summary: string;
-  source: "agent" | "user" | "sim";
+  source: "agent" | "user" | "sim" | "closed_loop";
   sim_block?: string;
   sim_type?: string;
   ts: number;

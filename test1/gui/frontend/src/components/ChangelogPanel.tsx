@@ -63,6 +63,8 @@ export function ChangelogPanel({ variant = "rail", refreshKey, onCountChange }: 
       ? "bg-ok/10 text-ok"
       : src === "agent"
       ? "bg-ink-900/[0.06] text-ink-600"
+      : src === "closed_loop"
+      ? "bg-blue-500/15 text-blue-600"
       : "bg-warn/10 text-warn"; // user
   const body = (
     <>
@@ -89,7 +91,7 @@ export function ChangelogPanel({ variant = "rail", refreshKey, onCountChange }: 
                       sourceTone(it.source)
                     }
                   >
-                    {it.source}
+                    {it.source === "closed_loop" ? "loop" : it.source}
                   </span>
                   <span className="flex-1 text-ink-800 leading-snug">{it.summary}</span>
                   <button
