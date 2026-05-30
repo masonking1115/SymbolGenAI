@@ -2172,6 +2172,94 @@ def dismiss_fix(finding_id: str) -> dict:
     return {"ok": True, "removed": before - len(q)}
 
 
+# ===========================================================================
+# Closed-loop design review — Rules endpoints
+# ===========================================================================
+
+@app.get("/api/review/rules")
+def review_rules_list() -> dict:
+    """Return the current rules.yaml contents + staleness state."""
+    from test1.review.rule_eval import load_rules
+    rf = load_rules()
+    # Staleness: any source on disk newer than the recorded mtime?
+    stale_sources: list[dict] = []
+    for s in rf.sources_seen:
+        p = REPO_ROOT / s.path
+        if p.exists() and p.stat().st_mtime > s.mtime + 1.0:
+            stale_sources.append({"path": s.path,
+                                  "current_mtime": p.stat().st_mtime,
+                                  "recorded_mtime": s.mtime})
+    return {
+        "version": rf.version,
+        "generated_at": rf.generated_at,
+        "rules": [r.model_dump(exclude_none=True) for r in rf.rules],
+        "sources_seen": [s.model_dump() for s in rf.sources_seen],
+        "stale_sources": stale_sources,
+        "by_family": {
+            fam: sum(1 for r in rf.rules if r.family == fam)
+            for fam in ("schematic", "simulation", "design")
+        },
+        "by_origin": {
+            ori: sum(1 for r in rf.rules if r.origin == ori)
+            for ori in ("generated", "user", "imported")
+        },
+    }
+
+
+@app.post("/api/review/rules/generate")
+async def review_rules_generate() -> dict:
+    """Trigger rule generation. Long-running — returns a run_id; subscribe
+    to its agent stream for progress. The final rules.yaml is written
+    when the run completes; poll /api/review/rules to fetch."""
+    from test1.review import rule_gen
+    # Run in the background so the endpoint returns quickly.
+    result = await rule_gen.generate_and_write()
+    return result
+
+
+class RuleEditBody(BaseModel):
+    rule_id: str
+    enabled: bool | None = None
+    title: str | None = None
+    severity: str | None = None
+    fix_hint: str | None = None
+    prompt: str | None = None     # only valid for semantic rules
+
+
+@app.post("/api/review/rules/edit")
+def review_rules_edit(body: RuleEditBody) -> dict:
+    """Edit a single rule by id. Marks origin='user' so the edit survives
+    regenerate."""
+    from test1.review.rule_eval import load_rules, save_rules
+    rf = load_rules()
+    target = next((r for r in rf.rules if r.id == body.rule_id), None)
+    if not target:
+        raise HTTPException(404, f"rule not found: {body.rule_id}")
+    if body.enabled is not None:    target.enabled = body.enabled
+    if body.title is not None:      target.title = body.title
+    if body.severity is not None:   target.severity = body.severity  # type: ignore[assignment]
+    if body.fix_hint is not None:   target.fix_hint = body.fix_hint
+    if body.prompt is not None and hasattr(target, "prompt"):
+        target.prompt = body.prompt
+    target.origin = "user"
+    save_rules(rf)
+    return {"ok": True, "rule": target.model_dump(exclude_none=True)}
+
+
+@app.delete("/api/review/rules/{rule_id}")
+def review_rules_delete(rule_id: str) -> dict:
+    """Soft-delete: sets enabled=false. Hard-delete: pass ?hard=true."""
+    from test1.review.rule_eval import load_rules, save_rules
+    rf = load_rules()
+    target = next((r for r in rf.rules if r.id == rule_id), None)
+    if not target:
+        raise HTTPException(404, f"rule not found: {rule_id}")
+    target.enabled = False
+    target.origin = "user"
+    save_rules(rf)
+    return {"ok": True, "rule_id": rule_id, "enabled": False}
+
+
 def main() -> None:
     import uvicorn
     uvicorn.run("app:app", host="127.0.0.1", port=8765, reload=False)
