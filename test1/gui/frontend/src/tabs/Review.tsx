@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api, subscribeRun } from "../api";
 import { Console } from "../components/Console";
 import { I } from "../components/Icon";
@@ -34,9 +34,6 @@ export function Review({ onArtifactsChanged, setHealth, onAutofixCompleted }: Pr
   const [runState, setRunState] = useState<RunState>("idle");
   const [errorLog, setErrorLog] = useState<string>("");
   const [queue, setQueue] = useState<Map<string, FixQueueEntry>>(new Map());
-  const [uploading, setUploading] = useState(false);
-  const [uploadMsg, setUploadMsg] = useState<string>("");
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -61,47 +58,6 @@ export function Review({ onArtifactsChanged, setHealth, onAutofixCompleted }: Pr
       // ignore
     }
   }, [setHealth]);
-
-  // ---- Upload a review PDF (drag-drop or file-picker) -------------------
-  const uploadPdf = useCallback(async (file: File) => {
-    if (!file.name.toLowerCase().endsWith(".pdf")) {
-      setUploadMsg(`'${file.name}' is not a PDF`);
-      return;
-    }
-    setUploading(true);
-    setUploadMsg(`uploading ${file.name}…`);
-    try {
-      const ab = await file.arrayBuffer();
-      // base64-encode in-browser (chunked to avoid call-stack issues on
-      // large files)
-      const bytes = new Uint8Array(ab);
-      let bin = "";
-      for (let i = 0; i < bytes.length; i += 0x8000) {
-        bin += String.fromCharCode.apply(
-          null, Array.from(bytes.subarray(i, i + 0x8000)));
-      }
-      const b64 = btoa(bin);
-      const r = await api.uploadReview(file.name, b64);
-      const s = r.findings_after.summary;
-      setUploadMsg(`parsed — ${s.ERROR}E / ${s.WARNING}W / ${s.INFO}I`);
-      await refresh();
-    } catch (e: unknown) {
-      setUploadMsg(`upload failed: ${e instanceof Error ? e.message : String(e)}`);
-    } finally {
-      setUploading(false);
-    }
-  }, [refresh]);
-
-  const onDropZoneFile = (ev: React.ChangeEvent<HTMLInputElement>) => {
-    const f = ev.target.files?.[0];
-    if (f) void uploadPdf(f);
-    ev.target.value = "";
-  };
-  const onDrop = (ev: React.DragEvent) => {
-    ev.preventDefault();
-    const f = ev.dataTransfer.files?.[0];
-    if (f) void uploadPdf(f);
-  };
 
   // ---- Per-finding apply / dismiss --------------------------------------
   const onApply = useCallback(async (f: Finding, a: FindingAction, idx: number) => {
@@ -202,44 +158,6 @@ export function Review({ onArtifactsChanged, setHealth, onAutofixCompleted }: Pr
           </span>
         </div>
 
-        {/* ---- Drop a Voltai review PDF -------------------------------- */}
-        <section className="mt-5">
-          <label
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={onDrop}
-            className={
-              "block rounded-md border-2 border-dashed px-4 py-5 text-center cursor-pointer transition " +
-              (uploading
-                ? "border-ink-300 bg-rail/60 text-ink-500"
-                : "border-edge hover:border-ink-300 hover:bg-rail/40 text-ink-700")
-            }
-          >
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="application/pdf,.pdf"
-              className="hidden"
-              onChange={onDropZoneFile}
-              disabled={uploading}
-            />
-            <div className="flex items-center justify-center gap-2 text-sm">
-              <I.Upload size={14} />
-              <span>
-                {uploading
-                  ? "Parsing…"
-                  : "Drop a Voltai review PDF here, or click to pick a file"}
-              </span>
-            </div>
-            <div className="mt-1 text-[11px] text-ink-500">
-              Saved into <code>_review_incoming/</code> and parsed via{" "}
-              <code>install_review.py</code>. Findings appear below on success.
-            </div>
-            {uploadMsg && (
-              <div className="mt-2 text-[11px] text-ink-700">{uploadMsg}</div>
-            )}
-          </label>
-        </section>
-
         <section className="mt-6">
           <div className="flex items-baseline gap-3 mb-2">
             <h3 className="text-sm font-semibold text-ink-900">Findings</h3>
@@ -249,7 +167,7 @@ export function Review({ onArtifactsChanged, setHealth, onAutofixCompleted }: Pr
           </div>
           {items.length === 0 ? (
             <div className="rounded-md border border-edge bg-rail px-4 py-6 text-sm text-ink-500">
-              No findings. Run review or drop a review PDF above; the design is currently green if both come back empty.
+              No findings. Run review above; the design is currently green if it comes back empty.
             </div>
           ) : (
             <div className="space-y-2">

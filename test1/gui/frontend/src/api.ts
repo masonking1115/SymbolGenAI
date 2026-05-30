@@ -78,14 +78,7 @@ export const api = {
   runAutofix: () =>
     j<RunHandle>("/api/run/autofix", { method: "POST" }),
 
-  // ---- Voltai PDF review ingest + Apply-fix queue --------------------
-  uploadReview: (filename: string, contentB64: string) =>
-    j<{ ok: boolean; file: string; size: number; parse_log: string;
-        findings_after: FindingsReport }>("/api/review/upload", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ filename, content_b64: contentB64 }),
-    }),
+  // ---- Apply-fix queue ------------------------------------------------
   applyFinding: (findingId: string, actionIndex: number,
                  actionKind = "", actionText = "") =>
     j<{ ok: boolean; queued: number; finding_id: string }>(

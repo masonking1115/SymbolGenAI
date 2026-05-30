@@ -90,9 +90,6 @@ SEMANTIC_FINDINGS = PROJECT_DIR / "review" / "semantic_findings.json"
 # Fix queue: Apply-fix actions from the Review tab land here for the agent
 # (in chat) to pick up, sanity-check, and execute. Survives backend restarts.
 FIX_QUEUE_JSON = PROJECT_DIR / "review" / "fix_queue.json"
-# Drop folder for incoming review PDFs (parsed by install_review.py).
-REVIEW_INCOMING = PROJECT_DIR.parent / "_review_incoming"
-REVIEW_INSTALL_SCRIPT = REVIEW_INCOMING / "install_review.py"
 DESIGN_REQS = PROJECT_DIR / "design_requirements.md"
 RESOURCES_DIR = PROJECT_DIR / "resources"
 REQ_DOCS_DIR = RESOURCES_DIR / "requirements"   # uploaded requirement source docs
@@ -1854,26 +1851,33 @@ def _gates_passed(failures: dict) -> bool:
 
 def _sim_targets_from_items(items: list[dict]) -> list[tuple[str, str | None]]:
     """From a changelog snapshot, return the DISTINCT (block, sim_type) pairs of
-    SIM-ORIGINATED items only. This is the gate for the post-apply re-sim: a
-    user/manual item (source != "sim") contributes NOTHING here, so it can never
-    trigger a simulation. Backward-compatible fallback: an older item lacking the
-    structured fields but whose summary starts with the historical "[sim block/sim_type]"
-    prefix is also recognized as sim-originated (the Simulation tab tagged items
-    that way before source/sim_block were first-class)."""
+    SIM-ORIGINATED items only. This is the hard gate for the post-apply re-sim:
+    ONLY items with source=="sim" (set by the Simulation tab when the user adds a
+    suggestion to the changelog) contribute here. A user/manual/agent-originated
+    item NEVER triggers a re-sim, regardless of any other fields it may carry.
+
+    Backward-compatible fallback: an older item lacking source=="sim" but whose
+    summary starts with the historical "[sim block/sim_type]" prefix (the Simulation
+    tab used this format before source/sim_block were first-class fields) is also
+    recognized as sim-originated. Every other item is skipped immediately on the
+    source check — the source check is the FIRST gate, not an afterthought."""
     targets: list[tuple[str, str | None]] = []
     seen: set[tuple[str, str | None]] = set()
     for it in items:
-        block = it.get("sim_block")
-        stype = it.get("sim_type")
-        if it.get("source") != "sim":
-            # legacy fallback: parse "[sim <block>/<sim_type>] ..." prefix
-            if not block:
-                m = re.match(r"\s*\[sim\s+([^/\]\s]+)(?:/([^\]\s]+))?\]", it.get("summary", ""))
-                if m:
-                    block = m.group(1)
-                    stype = stype or m.group(2)
-            if not block:
-                continue  # genuinely not sim-originated → never re-sim
+        if it.get("source") == "sim":
+            # Primary path: the Simulation tab sets source="sim" and the structured
+            # sim_block/sim_type fields when adding a suggestion to the changelog.
+            block = it.get("sim_block")
+            stype = it.get("sim_type")
+        else:
+            # Legacy fallback ONLY: parse the old "[sim <block>/<sim_type>]" prefix.
+            # Any item without this prefix is NOT sim-originated → skip immediately.
+            m = re.match(r"\s*\[sim\s+([^/\]\s]+)(?:/([^\]\s]+))?\]",
+                         it.get("summary", ""))
+            if not m:
+                continue  # user/agent/manual item — never re-sim
+            block = m.group(1)
+            stype = m.group(2)
         if not block:
             continue
         key = (block, stype)
@@ -2071,59 +2075,17 @@ async def library_generate_symbol(mpn: str) -> dict:
     return {"run_id": run.run_id, "datasheet": pdfs[0].name}
 
 
-# ---- Voltai PDF review ingest + Apply-fix queue --------------------------
+# ---- Apply-fix queue ----------------------------------------------------
 #
-# Two parts:
-#   1. Upload a PDF -> POST /api/review/upload, body { filename, content_b64 }.
-#      Backend writes the PDF into _review_incoming/ and runs install_review.py
-#      (in the same Python env this backend runs in — the spike venv that has
-#      fitz). After the script returns, GET /api/findings sees the new rows.
-#
-#   2. Per-row Apply -> POST /api/findings/{id}/apply, body
-#      { action_index, action_kind, action_text }. Backend writes a request
-#      into test1/review/fix_queue.json. The Claude agent reads that queue
-#      in chat ("apply pending fixes"), verifies each, applies, and updates
-#      the queue status. UI polls GET /api/fix-queue.
+# Per-row Apply -> POST /api/findings/{id}/apply, body
+#   { action_index, action_kind, action_text }. Backend writes a request
+#   into test1/review/fix_queue.json. The Claude agent reads that queue
+#   in chat ("apply pending fixes"), verifies each, applies, and updates
+#   the queue status. UI polls GET /api/fix-queue.
 #
 # Why a queue instead of synchronous LLM call: applying a review fix is
 # semantically complex (schematic topology + symbol + YAML edits + rebuild
 # verification) and needs the agent in the loop, not a one-shot prompt.
-
-class ReviewUploadBody(BaseModel):
-    filename: str
-    content_b64: str
-
-
-@app.post("/api/review/upload")
-async def review_upload(body: ReviewUploadBody) -> dict:
-    """Accept a review PDF from the GUI dropzone, write it into
-    _review_incoming/, then invoke install_review.py to parse it into
-    findings.json. Returns the new summary so the UI can refresh.
-    """
-    name = _safe_upload_name(body.filename, (".pdf",))
-    raw = _decode_upload(body.content_b64)
-    REVIEW_INCOMING.mkdir(parents=True, exist_ok=True)
-    dest = REVIEW_INCOMING / name
-    dest.write_bytes(raw)
-    # Run the parser in the SAME interpreter as this backend (so it picks up
-    # fitz from the spike venv automatically). The parser scans the folder
-    # for new PDFs and moves them to _processed/ on success.
-    proc = await asyncio.create_subprocess_exec(
-        sys.executable, str(REVIEW_INSTALL_SCRIPT),
-        cwd=str(REVIEW_INCOMING),
-        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
-    )
-    out_b, _ = await proc.communicate()
-    parse_log = out_b.decode("utf-8", errors="replace")
-    if proc.returncode != 0:
-        raise HTTPException(500, f"install_review.py failed:\n{parse_log[-1000:]}")
-    return {
-        "ok": True,
-        "file": name,
-        "size": len(raw),
-        "parse_log": parse_log,
-        "findings_after": findings(),
-    }
 
 
 def _read_queue() -> list:
