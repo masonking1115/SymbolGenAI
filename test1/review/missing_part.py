@@ -308,8 +308,78 @@ async def _place_into_schematic(L: Loop, rule: Rule, cand: Candidate) -> bool:
 
 
 async def _sim_verify(L: Loop, rule: Rule, cand: Candidate) -> tuple[bool, float | None, list[dict]]:
-    """Affected-block gate + value-tweak subloop. Task 5.4."""
-    raise NotImplementedError("Task 5.4")
+    """Affected-block gate: every block whose deck builder or refdes_map
+    references the new refdes/MPN must verdict OK. Value-tweak subloop on
+    fail (<=MAX_VALUE_TWEAK_ROUNDS inner rounds)."""
+    from test1.sim import service as sim_service, catalog
+    import sys
+    sys.path.insert(0, str(PROJECT_DIR / "gui" / "backend"))
+    import agent as agent_mod
+
+    affected_blocks: list[tuple[str, str]] = []
+    for b in catalog.load_catalog():
+        # Heuristic: a block "touches" this part if its blocks.yaml lists
+        # the MPN in datasheets or if its models_needed line names it.
+        text = json.dumps(b).lower()
+        if cand.mpn.lower() in text:
+            for st in b.get("sim_types", []):
+                if st.get("status") == "implemented":
+                    affected_blocks.append((b["id"], st["type"]))
+
+    if not affected_blocks:
+        return True, None, []  # nothing to verify against
+
+    closest_margin = None
+    results: list[dict] = []
+
+    for tweak in range(MAX_VALUE_TWEAK_ROUNDS + 1):
+        if L.cancelled:
+            return False, closest_margin, results
+        round_results = []
+        all_ok = True
+        for block, stype in affected_blocks:
+            try:
+                res = sim_service.run_block_sim(block, stype)
+                ok = bool(res.get("ok"))
+                round_results.append({"block": block, "sim_type": stype, "ok": ok,
+                                      "tweak_round": tweak})
+                if not ok:
+                    all_ok = False
+            except Exception as e:
+                round_results.append({"block": block, "sim_type": stype, "ok": False,
+                                      "error": str(e), "tweak_round": tweak})
+                all_ok = False
+        results.extend(round_results)
+        if all_ok:
+            return True, 0.0, results
+        if tweak >= MAX_VALUE_TWEAK_ROUNDS:
+            break
+
+        # Tweak via sim_interpret + apply
+        failed = [r for r in round_results if not r.get("ok")]
+        if not failed:
+            break
+        for fr in failed:
+            msg = (f"closed-loop / missing-part / value-tweak (round {tweak+1}): "
+                   f"sim {fr['block']}.{fr['sim_type']} failed after placing "
+                   f"{cand.mpn}. Inspect netlist + adjust a single passive's "
+                   f"value to bring this sim into spec. Limit edits to one "
+                   f"refdes per tweak round.")
+            agent_mod.append_changelog(msg, source="closed_loop")
+        run = await agent_mod.start_apply_pass()
+        L.sub_runs.append(run.run_id)
+        while run.status == "running":
+            if L.cancelled:
+                agent_mod.cancel_run(run.run_id)
+                return False, closest_margin, results
+            await asyncio.sleep(0.5)
+        # Rebuild before next sim attempt
+        from .closed_loop import _rebuild_project
+        bs, _ = await _rebuild_project()
+        if bs != "ok":
+            break
+
+    return False, closest_margin, results
 
 
 def _best_failed_candidate(audits: list[CandidateAudit]) -> CandidateAudit | None:
