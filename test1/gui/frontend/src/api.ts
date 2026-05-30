@@ -10,6 +10,8 @@ import type {
   Freshness,
   LibraryPart,
   LintReport,
+  LoopEvent,
+  LoopSummary,
   RequirementDoc,
   Rule,
   RulesListResponse,
@@ -361,6 +363,41 @@ export const api = {
       { method: "DELETE" },
     ),
 
+  // ---- Closed-loop design review: loop orchestration (Phase 4) -------------
+  loopStart: async (): Promise<{ loop_id: string }> => {
+    const r = await fetch("/api/loop/start", { method: "POST" });
+    if (!r.ok) throw new Error("loop start failed");
+    return r.json();
+  },
+  loopLatest: async (): Promise<LoopSummary | { loop_id: null }> => {
+    const r = await fetch("/api/loop/latest");
+    return r.json();
+  },
+  loopGet: async (loop_id: string): Promise<LoopSummary> => {
+    const r = await fetch(`/api/loop/${loop_id}`);
+    if (!r.ok) throw new Error("loop fetch failed");
+    return r.json();
+  },
+  loopCancel: async (loop_id: string): Promise<{ ok: boolean }> => {
+    const r = await fetch(`/api/loop/${loop_id}/cancel`, { method: "POST" });
+    if (!r.ok) throw new Error("cancel failed");
+    return r.json();
+  },
+  loopAccept: async (loop_id: string): Promise<{ ok: boolean }> => {
+    const r = await fetch(`/api/loop/${loop_id}/accept`, { method: "POST" });
+    if (!r.ok) throw new Error("accept failed");
+    return r.json();
+  },
+  loopReject: async (loop_id: string, revert?: string[]): Promise<{ ok: boolean }> => {
+    const r = await fetch(`/api/loop/${loop_id}/reject`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ revert }),
+    });
+    if (!r.ok) throw new Error("reject failed");
+    return r.json();
+  },
+
   librarySymbol: (mpn: string) =>
     j<SymbolInfo>(`/api/library/${encodeURIComponent(mpn)}/symbol`),
   symbolSvgUrl: (mpn: string, unit: string) =>
@@ -415,6 +452,43 @@ export function subscribeAgent(
     if (es.readyState === EventSource.CLOSED) finish({ status: "stream_error", rc: null });
   };
   return () => { settled = true; es.close(); };
+}
+
+/** Subscribe to a closed-loop iteration's SSE stream. Returns an unsubscribe fn. */
+export function subscribeLoop(
+  loop_id: string,
+  onEvent: (ev: LoopEvent) => void,
+  onDone: (status: string) => void,
+): () => void {
+  let closed = false;
+  const es = new EventSource(`/api/loop/${loop_id}/stream`);
+  const handle = (eventName: string) => (e: MessageEvent) => {
+    if (closed) return;
+    try {
+      const data = JSON.parse(e.data);
+      onEvent({ event: eventName as LoopEvent["event"], data } as LoopEvent);
+    } catch { /* ignore parse errors */ }
+  };
+  for (const name of [
+    "loop_start", "round_start", "action_start", "action_end", "build_start",
+    "build_end", "sim_results", "round_done", "plateau", "error",
+  ]) {
+    es.addEventListener(name, handle(name));
+  }
+  es.addEventListener("done", (e: MessageEvent) => {
+    if (closed) return;
+    try {
+      const data = JSON.parse(e.data);
+      onEvent({ event: "done", data });
+      onDone(data.status);
+    } catch { /* ignore parse errors */ }
+    closed = true;
+    es.close();
+  });
+  es.onerror = () => {
+    if (!closed) { closed = true; es.close(); onDone("stream_error"); }
+  };
+  return () => { closed = true; es.close(); };
 }
 
 /** Subscribe to a run's SSE stream. Returns an unsubscribe function. */

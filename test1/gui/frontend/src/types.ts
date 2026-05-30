@@ -397,3 +397,55 @@ export interface RulesListResponse {
   by_family: { schematic: number; simulation: number; design: number };
   by_origin: { generated: number; user: number; imported: number };
 }
+
+// ---- Closed-loop design review: per-iteration UI types (Phase 4) ----
+export interface LoopAction {
+  kind: string;
+  agent_run_id?: string | null;
+  targets: string[];
+  status: "running" | "ok" | "fail" | "cancelled";
+  summary: string;
+  started_at: number;
+  finished_at?: number | null;
+}
+
+export interface LoopRound {
+  n: number;
+  started_at: number;
+  finished_at?: number | null;
+  findings_before: number;
+  findings_after: number;
+  findings_cleared: string[];
+  findings_new: string[];
+  actions: LoopAction[];
+  build_status: string;
+  lint_summary?: { ERROR: number; WARNING: number; INFO: number } | null;
+  sim_results: { block: string; sim_type: string; ok: boolean }[];
+}
+
+export interface LoopSummary {
+  loop_id: string;
+  status: "running" | "all_clear" | "plateau" | "max_rounds" | "cancelled" | "error";
+  round: number;
+  started_at: number;
+  finished_at?: number | null;
+  rounds: LoopRound[];
+  findings_initial: number;
+  findings_current: number;
+  last_delta?: number | null;
+  plateau_streak: number;
+  error?: string;
+}
+
+export type LoopEvent =
+  | { event: "loop_start";  data: { findings: number } }
+  | { event: "round_start"; data: { round: number; findings: number } }
+  | { event: "action_start"; data: { round: number; kind: string; targets: string[] } }
+  | { event: "action_end";   data: { round: number; kind: string; agent_run_id?: string; status: string; summary: string } }
+  | { event: "build_start";  data: { round: number } }
+  | { event: "build_end";    data: { round: number; status: string; lint?: { ERROR: number; WARNING: number; INFO: number } | null } }
+  | { event: "sim_results";  data: { round: number; results: { block: string; sim_type: string; ok: boolean }[] } }
+  | { event: "round_done";   data: { round: number; delta: number; cleared: string[]; new: string[]; remaining: number } }
+  | { event: "plateau";      data: { streak: number; remaining: number; by_severity: { E: number; W: number; I: number } } }
+  | { event: "error";        data: { message: string; traceback: string } }
+  | { event: "done";         data: { status: string; rounds: number; remaining: number } };
