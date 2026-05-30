@@ -141,6 +141,8 @@ AGENT_KINDS: dict[str, dict] = {
     "apply":         {"label": "Apply-changelog agent",      "group": "Schematic",   "default": "claude-opus-4-8"},
     "lint_fix":      {"label": "Lint/validator fix agent",   "group": "Schematic",   "default": "claude-opus-4-8"},
     "symbol_gen":    {"label": "Symbol generator",           "group": "Schematic",   "default": "claude-opus-4-8"},
+    "rule_gen":      {"label": "Rule generator",             "group": "Schematic",   "default": "claude-opus-4-8"},
+    "topology_adapt":{"label": "Topology-adapt agent",       "group": "Schematic",   "default": "claude-opus-4-8"},
     "chat":          {"label": "Chat / thinking-partner",    "group": "Schematic",   "default": "claude-sonnet-4-6"},
 }
 # Back-compat alias (was sim-only); both names point at the same registry.
