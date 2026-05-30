@@ -65,15 +65,8 @@ def main() -> int:
     except ImportError:
         print("  (rules.py not yet implemented — skipping)")
 
-    if not args.no_semantic:
-        print()
-        print("Phase 2b: semantic per-IC review …")
-        try:
-            from review import semantic_review
-            findings.extend(semantic_review.run(idx))
-            print(f"  total findings: {len(findings)}")
-        except ImportError:
-            print("  (semantic_review.py not yet implemented — skipping)")
+    # Phase 2b retired 2026-05-29 — semantic rules now live in rules.yaml
+    # and are evaluated by rule_eval.py alongside structural rules.
 
     if args.only_manifest:
         print("\n--only-manifest: skipping render.")
