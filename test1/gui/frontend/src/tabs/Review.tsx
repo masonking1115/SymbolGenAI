@@ -293,6 +293,16 @@ function FindingRow({ f, queued, onApply, onDismiss }: FindingRowProps) {
                 · {(f.refs ?? []).join(", ")}
               </span>
             )}
+            {f.rule_id && (
+              <span className="text-[10px] font-mono text-ink-500 bg-rail/40 rounded px-1">
+                {f.rule_id}
+              </span>
+            )}
+            {f.iteration_round !== undefined && (
+              <span className="text-[10px] text-ink-500">
+                round {f.iteration_round}
+              </span>
+            )}
             {(f.fired_count ?? 1) > 1 && (
               <span
                 className="text-[10px] text-ink-500 border border-edge rounded px-1"

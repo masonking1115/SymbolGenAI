@@ -44,6 +44,11 @@ export interface Finding {
   fired_count?: number;         // how many times the source tool emitted this
   status?: "pending" | "queued" | "applied" | "failed" | "dismissed";
   source_pdf?: string;
+  // ---- Closed-loop review extensions (Phase 3+)
+  rule_id?: string;
+  iteration_round?: number;
+  resolved_by_run_id?: string;
+  loop_id?: string;
   [k: string]: unknown;
 }
 
