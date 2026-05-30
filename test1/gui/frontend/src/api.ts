@@ -11,6 +11,8 @@ import type {
   LibraryPart,
   LintReport,
   RequirementDoc,
+  Rule,
+  RulesListResponse,
   RunHandle,
   RunStatus,
   RunSummary,
@@ -337,6 +339,27 @@ export const api = {
       refdes: string[];
       primary: string | null;
     }>(`/api/sim/simulated-region?block=${encodeURIComponent(block)}`),
+
+  // ---- Closed-loop design review: rules CRUD --------------------------
+  rules: () => j<RulesListResponse>("/api/review/rules"),
+  generateRules: () =>
+    j<{
+      count_total: number;
+      count_by_family: { schematic: number; simulation: number; design: number };
+      conflicts: { id: string; user_title: string; generated_title: string }[];
+      rejected_unverifiable: { id: string; reason: string }[];
+    }>("/api/review/rules/generate", { method: "POST" }),
+  editRule: (rule_id: string, patch: Partial<Rule>) =>
+    j<{ ok: boolean; rule: Rule }>("/api/review/rules/edit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rule_id, ...patch }),
+    }),
+  deleteRule: (rule_id: string) =>
+    j<{ ok: boolean; rule_id: string; enabled: boolean }>(
+      `/api/review/rules/${encodeURIComponent(rule_id)}`,
+      { method: "DELETE" },
+    ),
 
   librarySymbol: (mpn: string) =>
     j<SymbolInfo>(`/api/library/${encodeURIComponent(mpn)}/symbol`),

@@ -343,3 +343,52 @@ export interface RunSummary {
   phases?: PhaseEvent[];
   raw_tail?: string[];
 }
+
+// ---- Closed-loop design review: Rule schema (mirrors rule_schema.py) ----
+export interface RuleSource {
+  doc: string;
+  loc: string;
+  quote?: string;
+}
+
+export interface RuleAppliesTo {
+  refdes?: string;
+  pins?: string[];
+  net?: string;
+  rail?: string;
+  sheet?: string;
+  sim_block?: string;
+  sim_type?: string;
+  mpn?: string;
+  role_spec?: Record<string, unknown>;
+}
+
+export interface RulePredicate {
+  kind: string;
+  [arg: string]: unknown;
+}
+
+export interface Rule {
+  id: string;
+  family: "schematic" | "simulation" | "design";
+  evaluation: "structural" | "semantic";
+  severity: "ERROR" | "WARNING" | "INFO";
+  title: string;
+  applies_to: RuleAppliesTo;
+  source: RuleSource[];
+  fix_hint?: string;
+  enabled: boolean;
+  origin: "generated" | "user" | "imported";
+  predicate?: RulePredicate;
+  prompt?: string;
+}
+
+export interface RulesListResponse {
+  version: number;
+  generated_at: string;
+  rules: Rule[];
+  sources_seen: { path: string; mtime: number }[];
+  stale_sources: { path: string; current_mtime: number; recorded_mtime: number }[];
+  by_family: { schematic: number; simulation: number; design: number };
+  by_origin: { generated: number; user: number; imported: number };
+}

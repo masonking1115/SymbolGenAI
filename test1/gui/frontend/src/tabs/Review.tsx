@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, subscribeRun } from "../api";
 import { Console } from "../components/Console";
 import { I } from "../components/Icon";
+import { RulesSection } from "../components/RulesSection";
 import type { Finding, FindingAction, FindingsReport, FixQueueEntry,
   Severity } from "../types";
 
@@ -157,6 +158,11 @@ export function Review({ onArtifactsChanged, setHealth, onAutofixCompleted }: Pr
             After an autofix the GUI jumps back to Schematic Generator to re-lint.
           </span>
         </div>
+
+        <RulesSection
+          onApproveAndRun={() => startRun(false)}
+          loopRunning={runState === "running"}
+        />
 
         <section className="mt-6">
           <div className="flex items-baseline gap-3 mb-2">
