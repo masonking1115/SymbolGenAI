@@ -94,6 +94,53 @@ def stamped_fingerprint(block_id: str) -> str | None:
     return (_load().get(block_id) or {}).get("fingerprint")
 
 
+def changed_sheets(block: dict) -> list[str]:
+    """Which of the block's own sheets differ from the stamped baseline. Empty if
+    fresh / unknown / no baseline. Used so the GUI can say WHAT changed (a block is
+    only ever flagged on its OWN sheets, so an unrelated sheet edit can't list)."""
+    rec = _load().get(block.get("id")) or {}
+    stamped_fp = rec.get("fingerprint")
+    if not stamped_fp:
+        return []
+    if fingerprint(block) == stamped_fp:
+        return []
+    # The whole-block fingerprint changed; report the block's sheet stems (we hash
+    # per sheet but store one combined fp, so the honest answer is "these sheets").
+    return _sheets_for(block)
+
+
+def block_staleness(block: dict, *, has_model: bool) -> dict:
+    """A block's combined staleness verdict for the GUI, keyed off the block's OWN
+    inputs only (so a change on an unrelated sheet never flags it):
+
+        stale        — bool: the block is out of date vs the current schematic
+                       (its SPICE model is stale, OR a displayed run was derived
+                       before its inputs changed).
+        model_status — none/unknown/fresh/stale (the SPICE model, content-hashed).
+        run_stale    — bool: a cached scenario exists but its inputs changed since
+                       (the shown chart/verdict no longer reflects the design).
+        changed      — list[str]: which of the block's sheets changed (for the
+                       tooltip). Empty when nothing changed / no baseline.
+        reason       — short human string for the badge tooltip.
+    """
+    from . import simconfig
+    ms = deck_status(block, has_model=has_model)
+    # A run is stale only if there IS a cached scenario and it's no longer fresh.
+    bid = block.get("id")
+    has_scenario = bool(bid and bid in simconfig.load())
+    run_stale = has_scenario and not simconfig.is_fresh(block)
+    changed = changed_sheets(block)
+    stale = (ms == "stale") or run_stale
+    if ms == "stale":
+        reason = "SPICE model is out of date with the schematic"
+    elif run_stale:
+        reason = "the last run was before the schematic changed"
+    else:
+        reason = ""
+    return {"stale": stale, "model_status": ms, "run_stale": run_stale,
+            "changed": changed, "reason": reason}
+
+
 def deck_status(block: dict, *, has_model: bool) -> str:
     """A block's model status for the GUI:
         "none"     — no deck builder; offer Generate.

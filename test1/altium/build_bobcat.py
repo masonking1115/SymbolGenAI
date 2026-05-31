@@ -78,14 +78,18 @@ def build_bobcat() -> tuple[AltiumSheet, object]:
     # =====================================================================
     # Caps hang well BELOW the chip (smaller y). Each pin column:
     #   pin -> down to +VDDD symbol -> down to cap pin1 -> cap pin2 -> GND.
-    VDDD_PSYM_Y = CHIP_BOT_Y - 600     # 2900 — local +VDDD symbol
+    VDDD_PSYM_Y = CHIP_BOT_Y - 600     # 2900 — +VDDD symbol taps off here
     VDDD_CAP_CY = CHIP_BOT_Y - 1500    # 2000 — cap centre (pin1=+100, pin2=-100)
     VDDD_GND_Y = CHIP_BOT_Y - 2400     # 1100 — GND below cap
-    for i, (ref, pn) in enumerate([("C20", "12"), ("C21", "20")]):
+    # The chip pin runs straight DOWN to the cap; the +VDDD glyph taps off to the
+    # SIDE on a short stub (terminating it) rather than straddling the vertical
+    # run — so it needs no post-build auto_fix_power relocation. Opposite sides
+    # for the two pins keeps the rail-name texts apart. (Generation no-straddle
+    # rule; see ShEET.power_at stub= / layout_lint.power_straddles_net.)
+    for ref, pn, vddd_stub in [("C20", "12", -200), ("C21", "20", +200)]:
         px, py = U[pn]
-        s.wire(px, py, px, VDDD_PSYM_Y)             # pin down vertically
-        s.power_at("+VDDD", px, VDDD_PSYM_Y)        # place symbol on wire
-        s.wire(px, VDDD_PSYM_Y, px, VDDD_CAP_CY + 100)  # down to cap pin1
+        s.wire(px, py, px, VDDD_CAP_CY + 100)       # pin straight down to cap pin1
+        s.power_at("+VDDD", px, VDDD_PSYM_Y, stub=vddd_stub)  # glyph beside the net
         place(ref, px, VDDD_CAP_CY)
         s.wire(px, VDDD_CAP_CY - 100, px, VDDD_GND_Y)   # cap pin2 down to GND
         s.power_at("GND", px, VDDD_GND_Y)
@@ -183,12 +187,15 @@ def build_bobcat() -> tuple[AltiumSheet, object]:
     px, py = U["7"]
     s.wire(px, py, px - 600, py)
     s.power_at("+VDDIO", px - 600, py)
-    # pin 13 (bottom): stub down — reach PAST the pin-12 +VDDD symbol row
-    # (both are bottom pins 200 mil apart; equal stubs would collide the rail
-    # names) so the +VDDIO symbol sits clear below the +VDDD one.
+    # pin 13 (bottom): drop down to clear the pin-12 +VDDD symbol row (both are
+    # bottom pins; an inline glyph would collide the rail names), then tap the
+    # +VDDIO glyph off to the SIDE on a short stub. Capping the vertical drop with
+    # an up-pointing rail glyph would make it point INTO the net (net above it) —
+    # the wrong-side case auto_fix_power_stub_side corrects; placing it on a
+    # horizontal stub avoids that (see layout_lint.power_stub_side).
     px, py = U["13"]
     s.wire(px, py, px, py - 1000)
-    s.power_at("+VDDIO", px, py - 1000)
+    s.power_at("+VDDIO", px, py - 1000, stub=-400)
     # pin 22 (right, x=6400,y=4200): stub right
     px, py = U["22"]
     s.wire(px, py, px + 600, py)

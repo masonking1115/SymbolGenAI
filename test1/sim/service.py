@@ -55,6 +55,10 @@ def list_blocks() -> list[dict]:
             # match schematic" (stale).
             "has_model": has_model,
             "model_status": deck_provenance.deck_status(b, has_model=has_model),
+            # Combined per-block staleness vs the CURRENT schematic (keyed off the
+            # block's OWN sheets only): {stale, model_status, run_stale, changed,
+            # reason}. Drives the "out of date" badge + per-block Update button.
+            "staleness": deck_provenance.block_staleness(b, has_model=has_model),
             "description": b.get("description") or b.get("reason") or "",
             "models_needed": b.get("models_needed", []),
             "datasheets": b.get("datasheets", []),
@@ -122,7 +126,17 @@ def _verdict(analysis) -> bool:
     return (analysis or {}).get("overall", "OK") == "OK"
 
 
-def run_block_sim(block_id: str, sim_type: str, *, vout_set: float | None = None) -> dict:
+def run_block_sim(block_id: str, sim_type: str, *, vout_set: float | None = None,
+                  overrides: dict[str, dict] | None = None) -> dict:
+    # `overrides` are the GUI's ephemeral "tune before running" boundary-param
+    # edits ({net: {key: value}}). They are applied via a ContextVar for the
+    # duration of THIS call only (never written to blocks.yaml), so the deck
+    # builders' resolve_boundaries() picks them up and they vanish afterward.
+    with catalog.run_overrides(overrides):
+        return _run_block_sim(block_id, sim_type, vout_set=vout_set)
+
+
+def _run_block_sim(block_id: str, sim_type: str, *, vout_set: float | None = None) -> dict:
     block = catalog.get_block(block_id)              # KeyError if unknown
     base = {"block": block_id, "sim_type": sim_type,
             "pass_criterion": catalog.pass_criterion(block_id, sim_type),
@@ -278,8 +292,12 @@ def build_deck_text(block_id: str, sim_type: str) -> str | None:
     return None
 
 
-def circuit_for(block_id: str, sim_type: str) -> dict | None:
+def circuit_for(block_id: str, sim_type: str,
+                overrides: dict[str, dict] | None = None) -> dict | None:
     """Parsed node-graph for one block/sim_type's deck (no ngspice run), with
-    each element tied back to its netlist refdes. None when there's no deck."""
-    return circuit.circuit_dict(build_deck_text(block_id, sim_type),
-                                _refdes_map_for(block_id))
+    each element tied back to its netlist refdes. None when there's no deck.
+    `overrides` (ephemeral boundary-param edits) are applied for the build so the
+    "SPICE model" preview reflects the same values a Run would use."""
+    with catalog.run_overrides(overrides):
+        return circuit.circuit_dict(build_deck_text(block_id, sim_type),
+                                    _refdes_map_for(block_id))

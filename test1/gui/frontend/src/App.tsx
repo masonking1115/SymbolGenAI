@@ -48,6 +48,16 @@ function initialTab(): TabKey {
   return "generator";
 }
 
+// Persist whether the schematic/file right pane is shown, so hiding it survives a
+// refresh. Default to shown when nothing's stored.
+const PNG_OPEN_LS_KEY = "test1.pngOpen";
+function initialPngOpen(): boolean {
+  try {
+    return localStorage.getItem(PNG_OPEN_LS_KEY) !== "0";
+  } catch { /* ignore */ }
+  return true;
+}
+
 export default function App() {
   // Persist the active tab so a refresh keeps you on the tab you were on.
   const [tab, setTabRaw] = useState<TabKey>(initialTab);
@@ -70,7 +80,15 @@ export default function App() {
   }, [setTab]);
 
   // Whether the shared right pane (schematic / file viewer) is open at all.
-  const [pngOpen, setPngOpen] = useState(true);
+  // Persisted so hiding it is retained across a refresh.
+  const [pngOpen, setPngOpenRaw] = useState(initialPngOpen);
+  const setPngOpen = useCallback((next: boolean | ((v: boolean) => boolean)) => {
+    setPngOpenRaw((prev) => {
+      const v = typeof next === "function" ? next(prev) : next;
+      try { localStorage.setItem(PNG_OPEN_LS_KEY, v ? "1" : "0"); } catch { /* ignore */ }
+      return v;
+    });
+  }, []);
   // A resource/datasheet file opened from Library or Design Resources. When set,
   // it takes over the shared right pane (replacing the schematic viewer), with a
   // toggle to flip back. Cleared on Close or when switching tabs.
@@ -125,6 +143,16 @@ export default function App() {
       .catch(() => {});
   }, []);
   useEffect(() => { refetchSimBlocks(); }, [refetchSimBlocks]);
+  // Re-fetch the sim catalog whenever the design artifacts change (a build /
+  // generate / loop bumps `bust`), so each block's staleness re-evaluates against
+  // the new schematic and the "out of date" badges/banner update without a manual
+  // reload. Skip the initial mount (the effect above already did the first fetch).
+  const bustForSims = useRef(bust);
+  useEffect(() => {
+    if (bustForSims.current === bust) return;   // no-op on the priming run
+    bustForSims.current = bust;
+    refetchSimBlocks();
+  }, [bust, refetchSimBlocks]);
   const selectSimBlock = useCallback((id: string) => {
     setSelectedSimBlock(id);
     setTab("simulation");
@@ -286,16 +314,17 @@ export default function App() {
     </div>
   );
 
-  // Layout matrix:
+  // Layout matrix (every tab now carries the Agent chat rail on the right):
   //   Generator/Library + pngOpen  → content | PNG | AgentRail
   //   Generator/Library + !pngOpen → content | AgentRail
-  //   Review tab        + pngOpen  → content | PNG
-  //   Review tab        + !pngOpen → content
+  //   Review tab        + pngOpen  → content | PNG/diff | AgentRail
+  //   Review tab        + !pngOpen → content | AgentRail
   const showRail =
     tab === "generator" ||
     tab === "library" ||
     tab === "simulation" ||
-    tab === "resources";
+    tab === "resources" ||
+    tab === "review";
 
   // The shared right pane (schematic viewer, or an opened file) now shows on
   // Generator, Review, Simulation, AND Library + Design Resources — on the

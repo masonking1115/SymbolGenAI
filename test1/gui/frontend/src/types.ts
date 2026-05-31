@@ -133,11 +133,13 @@ export interface DatasheetItem {
   mpn: string;
   file: string;
   size: number;
+  mtime: number;          // uploaded-or-last-edited (one timestamp)
 }
 
 export interface RequirementDoc {
   name: string;
   size: number;
+  mtime: number;          // uploaded-or-last-edited (one timestamp)
 }
 
 export interface BomItem {
@@ -149,6 +151,7 @@ export interface BomItem {
 export interface SkillItem {
   slug: string;
   title: string;
+  description?: string;     // frontmatter description — what the skill is for
   size: number;
   updated: number;
 }
@@ -189,6 +192,18 @@ export interface SimBlock {
   // model_status="stale" → schematic changed under the model, offer "Update".
   has_model: boolean;
   model_status: "none" | "unknown" | "fresh" | "stale";
+  // Combined per-block staleness vs the CURRENT schematic, keyed off the block's
+  // OWN sheets only (an unrelated sheet edit never flags it). Drives the "out of
+  // date" badge + per-block Update button.
+  staleness: SimStaleness;
+}
+
+export interface SimStaleness {
+  stale: boolean;                  // out of date vs the current schematic
+  model_status: "none" | "unknown" | "fresh" | "stale";
+  run_stale: boolean;              // a displayed run predates an input change
+  changed: string[];               // which of the block's sheets changed
+  reason: string;                  // short tooltip string ("" when fresh)
 }
 
 // Per-agent LLM selection (sim agents). The backend owns the list + defaults.
@@ -200,6 +215,16 @@ export interface AgentModelEntry {
   model: string;          // current model id
   default: string;        // per-kind default id
   overridden: boolean;
+  // Effort = the agent's extended-thinking budget (off/low/medium/high).
+  effort: string;
+  effort_default: string;
+  effort_overridden: boolean;
+  // Slugs of skills attached to this agent (via skill frontmatter `agents:`).
+  skills: string[];
+}
+export interface EffortLevel {
+  id: string;             // off | low | medium | high
+  tokens: number;         // MAX_THINKING_TOKENS for this level (0 == off)
 }
 // The exact model the picker offers (full pinned-snapshot id + display meta).
 export interface ModelChoice {
@@ -212,6 +237,7 @@ export interface ModelChoice {
 export interface AgentModelConfig {
   models: ModelChoice[];
   groups?: string[];        // display order of agent groups (backend GROUP_ORDER)
+  effort_levels?: EffortLevel[];   // the effort scale the picker offers (ordered)
   agents: AgentModelEntry[];
 }
 

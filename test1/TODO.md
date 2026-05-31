@@ -2,6 +2,181 @@
 
 Deferred work items (not blocking; pick up when convenient).
 
+## Commit + push once TODO is current (2026-05-31) — DOING NOW
+
+- [x] **Bring TODO up to date, then commit + push.** (User asked, 2026-05-31.)
+
+## Bobcat power-glyph placement refactor + persist Generator console (2026-05-31) — DONE
+
+- [x] **Place the 3 bobcat power glyphs correctly in build_bobcat.py so
+      auto_fix_power has nothing to correct** (kills the repeated `~ off-set power`
+      console lines, which were idempotent cosmetic relocations re-applied on every
+      rebuild — not real per-run edits). The two `+VDDD` glyphs (pins 12, 20) were
+      straddling their vertical pin→cap wire → placed on opposite side stubs
+      (`power_at(..., stub=∓200)`) so they terminate a branch beside the net. The
+      pin-13 `+VDDIO` glyph capped a from-above vertical drop (up-arrow pointing
+      into its net → wrong-side) → moved to a horizontal stub (`stub=-400`).
+      Verified: both auto-fixers now return [], bobcat 0/0/0, FAILURES: none,
+      connectivity unchanged (nets re-tied via the stub), 4/4 satisfiability tests.
+- [x] **Retain the most recent/active Generator console across tab switch + refresh.**
+      Console `lines` + `runState` were component state (Generator unmounts on tab
+      switch → lost; refresh → lost). Now persisted to localStorage
+      (`test1.gen.console`, bounded 2000-line tail) and rehydrated on mount. A
+      persisted "running" rehydrates as idle (the SSE can't resume after remount;
+      no phantom spinner — mirrors the sim-tab rule). A new run still clears + re-saves.
+
+## Sim tab: whole header toggles the block dropdown, not just the arrow (2026-05-31) — TODO
+
+- [ ] **Clicking anywhere on the Simulation tab header/row should open the block
+      dropdown.** Currently only the small ▸ arrow toggles it. Make the whole
+      "Simulation" label/row the click target (the arrow stays as an affordance).
+      Likely the sidebar's Simulation group header (Sidebar.tsx) — widen the
+      clickable area to the full row.
+
+## Add the schematic-gen diff option to the Generator page (2026-05-31) — TODO
+
+- [ ] **Bring the Design Review tab's schematic diff to the Generator page.** The
+      Review tab shows a before/after (and overlay) schematic diff via `DiffPanes`
+      (App.tsx `rightPaneIsDiff`, driven by `loopDiff`/`activeLoopId`, fetched from
+      `api.loopDiff`). The Generator page should offer the same diff view for a
+      generate run — so after Generate you can see what changed on the schematic,
+      not just the console. Reuse DiffPanes + the snapshot mechanism; wire a
+      Generator-side diff source (the build already writes render snapshots for the
+      loop — check whether a plain generate produces a comparable before/after, or
+      add one). Mirror the Review tab's right-pane swap + sheet tabs + accept/reject
+      if applicable.
+
+## Remove "slide deck" references from the GUI (2026-05-31) — DONE
+
+- [x] **Don't call out slide decks specifically in the GUI.** DONE — generalized all
+      user-facing wording to "design document": Reference-links header ("· from the
+      design documentation"), the per-link badge "slide N" → "p.N", and the
+      design_requirements.md text ("Bobcat PPT" → "Bobcat design document", which is
+      viewable in the GUI editor). Also tidied the related backend/api comments +
+      renamed `_BOBCAT_PPT_CANDIDATES` → `_BOBCAT_DOC_CANDIDATES`. Left "SPICE deck"
+      (unrelated — the ngspice circuit deck) and the .pptx upload-format list (a
+      generic accepted format, not a reference to the Bobcat source).
+
+## File timestamps in Design Resources (2026-05-31) — DONE
+
+- [x] **Show one timestamp per file (upload OR last-edit, whichever is newer); not
+      URLs.** DONE — used file `st_mtime` (single field, covers both upload and
+      edit). Added `mtime` to the datasheets + requirement-docs listings (BOM had it,
+      skills had `updated`). Frontend `fmtTime()` (relative for recent, short date
+      when old) renders it in each file row across all 4 sub-tabs (datasheets, req
+      docs, BOM, skills). Reference links show NO timestamp (not files).
+
+## Verify Bobcat PPT → design_requirements.md is complete + add its URLs (2026-05-31) — DONE
+
+Source = `[External] Bobcat Board Design.pdf` (the "Bobcat PPT", a slide deck exported
+to PDF; also at `Parts Library/Bobcat/`). Target = `test1/design_requirements.md`.
+
+- [x] **Double-check Bobcat PPT → design_requirements.md.** DONE — read all 13 pages
+      (text + rendered images). The .md was already thorough (more detailed than the
+      PPT — adds the FMC pinout table, resolved bias decision, provisioning notes).
+      Genuine gaps found + FILLED: (a) Ironwood CG25-QFN-2003 socket (was absent),
+      (b) a "Mechanical / PCB / fab requirements" section from slide 12 (mounting
+      holes, 69mm FMC width, 50Ω SMA traces, silkscreen, 4–6 layers ≥1.6mm) — tagged
+      PCB-layout scope / not implemented by the schematic generator, (c) a bias
+      preferred-vs-backup traceability note (PPT preferred an I²C current DAC; we
+      implement the PMOS backup). NON-issue avoided: PPT text "GPIO0-3 to 14 100 mil
+      header" is "1×4" with the ×4 mangled — the .md's "1×4 header" is correct
+      (confirmed from the page-4 image).
+- [x] **Add the Bobcat PPT URLs to the Design Requirements sub-tab.** DONE as a
+      separate UI links list (user's choice): `GET /api/requirements/links` extracts
+      the 5 URLs LIVE from the PDF's link annotations (stays in sync) + labels them
+      (_LINK_LABELS); RequirementsPanel renders a "Reference links" section
+      (clickable, with slide number). Degrades to empty (no 500) if the PDF/fitz is
+      absent. Links: Genesys-2, VITA57 FMC pinout, TPS7A84A datasheet, Ironwood
+      socket drawing, unconv.ai.
+
+## Agent Models UI polish + audit which agents really have skills (2026-05-31) — IN PROGRESS
+
+- [x] **Fix the Agent Models row UI.** DONE — root cause was the "· default"/
+      "· latest" suffix inside the option labels (a native <select> shows the
+      selected option's full text when closed, so it clipped). Now: option labels
+      are the bare value (off/low/medium/high; the bare model id), and default/
+      custom/latest show as small tags beside each select. Fixed-width reset slot so
+      rows align, tighter gaps.
+- [ ] **Audit skills vs agents — "are these all the skills the agents use?"**
+      No: there is exactly ONE skill file (.claude/skills/sim-datasheet-extraction.md),
+      attached to sim_setup + sim_interpret. Every other agent's methodology is baked
+      into inline prompt blocks (_APPLY_INSTRUCTIONS, _LINT_FIX_INSTRUCTIONS, the long
+      sim_generate/sim_update/symbol_gen/rule_gen prompt bodies), NOT expressed as
+      skills. Decide + do: which of those embedded how-tos should become real skill
+      files (e.g. altium-builder-idioms / anti-short for apply+lint_fix+topology;
+      spice-deck-authoring for sim_generate+sim_update; symbol-authoring for
+      symbol_gen; rule-authoring for rule_gen). Either author them as skills + attach
+      (and then the prompt can reference instead of duplicate — see the "shown not
+      injected" note in [[agent-effort-and-skills]]), or make the UI clearly say
+      "agents also use built-in methodology not shown here" so the dropdown isn't
+      mistaken for the complete picture.
+
+## Agent effort/thinking + attached skills in Design Resources; show skills in Skills tab (2026-05-31) — DONE
+
+- [x] **Per-agent effort / thinking option in Design Resources → Agent Models.**
+      DONE: added an effort scale (off=0 / low=2000 / medium=4000 / high=12000)
+      mapping to MAX_THINKING_TOKENS. Per-kind override persisted in
+      `gui/state/agent_effort.json` (mirrors agent_models.json); `effort_for` /
+      `thinking_for` / `set_agent_effort` in agent.py; `agent_model_config()` now
+      carries effort + effort_default + effort_overridden + the effort_levels
+      catalog; `POST /api/sim/agent-effort` setter. Threaded `thinking_tokens=
+      thinking_for(kind)` into all 11 `_spawn_claude` sites. lint_fix's default is
+      "off" (its hard-won anti-spiral setting), now user-adjustable. UI: an effort
+      <select> beside the model picker per agent row.
+- [x] **Show skill files attached to each agent (dropdown) in Agent Models.** DONE
+      via skill frontmatter `agents: [sim_setup, ...]`. Backend: app.py skills
+      listing exposes `agents`; agent.py `attached_skills(kind)` surfaced in
+      `agent_model_config()` per agent. UI: a per-row "N skills ▸" disclosure
+      showing each attached skill's title + description (read-only — managed in the
+      Skills tab). NOTE: skills are shown but NOT auto-appended to prompts — the sim
+      agents already inline the same datasheet methodology, so appending would
+      duplicate. The seam (`agent._attached_skills_prompt`) is left for later if a
+      skill becomes the single source. Attached sim-datasheet-extraction to
+      sim_setup + sim_interpret.
+
+- [x] **Show current skills in the Skills tab.** DONE — root cause: SKILLS_DIR
+      pointed at `test1/resources/skills/` (never existed) while the real skill
+      lives at `test1/.claude/skills/`. Repointed SKILLS_DIR to `.claude/skills`
+      (the canonical Claude-Code dir the agents share). Also: `_skill_title` now
+      reads frontmatter `name` (was showing the slug), and the listing surfaces the
+      `description`. Save/open/delete all use SKILLS_DIR so they stay consistent.
+
+## Per-block sim staleness vs the current schematic + a Refresh (2026-05-31) — DONE
+
+- [x] **Show a sim block as out-of-date only when ITS OWN inputs changed.** When a
+      new schematic is uploaded/generated, a sim block is stale only if something
+      *inside that block* changed — its sheet's netlist (the parts/values/nets the
+      deck reads via design_extract), or the deck builder / catalog entry. A block
+      whose inputs are untouched must NOT show stale, even if other sheets changed.
+      Per-block granularity, not a global "everything changed" flag.
+    - There's already a per-block **SPICE-model** freshness signal:
+      `deck_provenance.deck_status(block)` → none/unknown/fresh/**stale**, surfaced
+      as `block.model_status` and shown by `ModelLifecycle` ("SPICE model may be out
+      of date → Update to match schematic"). Reuse/extend this rather than inventing
+      a parallel mechanism. Check what `deck_status` hashes — it must key off the
+      block's own sheet inputs (netlist/<sheet>.yaml + the deck file), so unrelated
+      sheet edits don't flip it.
+    - Also factor in the **cached scenario / sim results**: a run shown on the card
+      (chart/verdict, persisted in localStorage + the backend sim_config cache) is
+      stale if the block's inputs changed since that run. Mark the displayed result
+      "out of date — re-run" distinctly from the model being stale.
+- [x] **A Refresh that updates the sims + SPICE models to the current schematic.**
+      DONE per user direction: Refresh = DETECT (tab-level banner "N blocks out of
+      date — Refresh" re-fetches the catalog so staleness re-evaluates; per-block
+      "out of date" chip + lifecycle banner). UPDATE is per-block: the existing
+      "Update to match schematic" button now also clears the block's cached scenario
+      + datasheet params (POST /api/sim/update-model), so it re-syncs sim + params +
+      SPICE model together. Auto re-fetch wired: App.tsx re-fetches /api/sim/blocks
+      when `bust` changes (build/generate/loop), so badges update without a reload.
+    - Backend: `deck_provenance.block_staleness(block)` → {stale, model_status,
+      run_stale, changed, reason}, keyed off the block's OWN sheet fingerprint(s)
+      (content-hash) + `simconfig.is_fresh` for the cached-run staleness. Surfaced as
+      `block.staleness` in service.list_blocks.
+    - VERIFIED end-to-end: stamped two blocks, edited only power.yaml → ldo_rail
+      flipped stale (changed=[power]), vddio_pdn (bobcat.yaml) stayed fresh; restored
+      cleanly. An unchanged-sheet block never flips.
+
 ## Build status must be consistent + live across all tabs (2026-05-31) — TODO
 
 - [ ] **Every tab's build/lint status must agree and be up to date.** Observed:

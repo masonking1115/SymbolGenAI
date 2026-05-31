@@ -218,6 +218,11 @@ export const api = {
     j<{ active_md_exists: boolean; docs: RequirementDoc[] }>(
       "/api/resources/requirements",
     ),
+  // Reference URLs found in the Bobcat design documentation, labeled.
+  requirementsLinks: () =>
+    j<{ source: string | null; links: { url: string; label: string; page: number }[] }>(
+      "/api/requirements/links",
+    ),
   uploadRequirement: (filename: string, contentB64: string) =>
     j<{ ok: boolean; file: string; size: number }>(
       "/api/resources/requirements",
@@ -298,11 +303,24 @@ export const api = {
     }),
 
   simBlocks: () => j<{ blocks: SimBlock[]; groups: SimGroup[] }>("/api/sim/blocks"),
-  simRun: (block: string, simType: string, voutSet = 1.8) =>
+  // `overrides` are ephemeral "tune before running" boundary-param edits
+  // ({net: {key: value}}) applied to THIS run only — never persisted to
+  // blocks.yaml — so they reset on page reload. Omitted when there are none.
+  simRun: (
+    block: string,
+    simType: string,
+    voutSet = 1.8,
+    overrides?: Record<string, Record<string, string>>,
+  ) =>
     j<SimResult>("/api/sim/run", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ block, sim_type: simType, vout_set: voutSet }),
+      body: JSON.stringify({
+        block,
+        sim_type: simType,
+        vout_set: voutSet,
+        ...(overrides && Object.keys(overrides).length ? { param_overrides: overrides } : {}),
+      }),
     }),
   simSetup: (block: string, simType: string) =>
     j<{ fresh: boolean; run_id?: string; skipped?: string }>("/api/sim/setup", {
@@ -354,10 +372,24 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ kind, model }),
     }),
+  // Set (or clear, level=null) an agent's effort/thinking level.
+  simSetAgentEffort: (kind: string, level: string | null) =>
+    j<AgentModelConfig>("/api/sim/agent-effort", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind, level }),
+    }),
 
   // --- per-sim requirements (editable pass criteria + boundary params) ------
   simRequirements: (block: string) =>
     j<SimRequirements>(`/api/sim/requirements?block=${encodeURIComponent(block)}`),
+  // Resolved boundary params for ONE (block, sim_type) — base + the sim type's
+  // boundary_overrides merged in. The exact defaults a Run uses, so the
+  // Parameters dropdown shows the right baseline + every tunable key.
+  simBoundaries: (block: string, simType: string) =>
+    j<{ block: string; sim_type: string; boundaries: SimRequirements["boundaries"] }>(
+      `/api/sim/boundaries?block=${encodeURIComponent(block)}&sim_type=${encodeURIComponent(simType)}`,
+    ),
   simEditField: (block: string, simType: string, field: "pass" | "rationale", value: string) =>
     j<{ ok: boolean; requirements: SimRequirements }>("/api/sim/requirements", {
       method: "POST",

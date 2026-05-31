@@ -16,7 +16,7 @@ Bobcat test chip carrier board. Plugs into the FMC connector of a Genesys 2 plat
 - **TPS7A8401A** (TI, VQFN-20, 3.5×3.5 mm) — high-accuracy (0.75%), low-noise (4.4 µVrms), 3 A LDO with 180 mV max dropout. Vin 1.1–6.5 V (with BIAS) or 1.4–6.5 V (without BIAS); ANY-OUT pin-programmable output **0.5–2.075 V** at 25 mV resolution (covers Bobcat 0.6–1.0 V rails). 3P3V from FMC drives Vin and BIAS. EN driven by FPGA with 10kΩ pull-down. ANY-OUT setpoint pins driven by FPGA. Open-drain PG output back to FPGA. Output fans out to Bobcat VDDD, VDDA1, VDDA2 each through a 1×2 jumper.
 - **Load switch** — gates VADJ (1.2–3.3V) to Bobcat VDDIO. EN driven by FPGA with 10kΩ pull-down. Output to VDDIO via 1×2 jumper.
 - **EEPROM** — 8-Kbit, I²C, 3.3V supply (for FMC IPMI / board ID).
-- **Bias circuit** — two independent programmable current sources for BIAS0, BIAS1; 3.3V supply; I²C controlled; off by default. High-side PMOS V-to-I transconductance loop (per bias-polarity-fix decision, 2026-05-24):
+- **Bias circuit** — two independent programmable current sources for BIAS0, BIAS1; 3.3V supply; I²C controlled; off by default. The Bobcat design document lists a *preferred* option (an I²C **current** DAC tied straight to BIASx) and a *backup* option (I²C voltage DAC → op-amp → PMOS). **We implement the backup** — a high-side PMOS V-to-I transconductance loop — because a single off-the-shelf current DAC didn't meet the 0–640 µA / ~1 µA-step range cleanly, and the op-amp loop gives a precise, sourced current into BIASx (per bias-polarity-fix decision, 2026-05-24):
   - **MCP4728** quad 12-bit I²C voltage DAC with **external V_REF tied to 3.3 V** (not internal 2.048 V ref) for rail-to-rail output drives the non-inverting input of a dual RRIO op-amp (OPA2388 preferred; MCP6V52 / TLV9002 alternates).
   - Op-amp output drives the gate of a small-signal PMOS (PMZ1200UPEYL).
   - PMOS source ties to 3.3 V through a 5.11 kΩ 0.1% thin-film sense resistor; the source node also feeds the op-amp inverting input.
@@ -26,6 +26,7 @@ Bobcat test chip carrier board. Plugs into the FMC connector of a Genesys 2 plat
 - **SMA connectors** — CLK_OUT0–3 (4×). OSC_EN, WEIGHT_EN, SAMPLE_TRIG (3×) each switchable between SMA and FPGA via 0Ω resistor option.
 - **1×4 100-mil header** — GPIO0–3 breakout.
 - **GND test clips.**
+- **Bobcat socket** — Ironwood Electronics **CG25-QFN-2003** (the QFN test socket Bobcat seats in). Drawing defines screw holes + keep-out areas (see Reference links / [socket drawing](https://www.ironwoodelectronics.com/wp-content/uploads/2021/09/CG25-QFN-2003Dwg.pdf)).
 
 ## FMC LPC pinout (VITA 57.1, Genesys 2 host side)
 The LPC connector populates rows **C, D, G, H** (pins 1–40 each). Source: <https://fmchub.github.io/appendix/VITA57_FMC_HPC_LPC_SIGNALS_AND_PINOUT.html> (LPC pinout table).
@@ -85,6 +86,16 @@ All other unlabeled pins on rows C/D/G/H are **GND** per the standard.
 
 ## Topology / block diagram
 FMC (bottom) supplies 3.3V and VADJ. 3.3V feeds EEPROM, LDO, and Bias block. VADJ passes through the load switch to Bobcat VDDIO. The LDO generates 0.6–1.0V for Bobcat VDDD/VDDA1/VDDA2. Bobcat SPI, RESET_N, and SAMPLE_OUT signals route to the FMC through series 0Ω resistors (specifically: SAMPLE_OUTV, SAMPLE_OUT0–7, CS_L, SCLK, MOSI, MISO, SPI_DMODE, RESET_N on LA/HA pairs). CLK_OUT0–3 route directly to SMAs. OSC_EN, WEIGHT_EN, SAMPLE_TRIG route to SMAs with 0Ω options back to the FMC. GPIO0–3 route to a 1×4 header. I²C SCL/SDA from the FMC fans out to the EEPROM and Bias DAC.
+
+## Mechanical / PCB / fab requirements
+From the Bobcat design document ("Additional Requirements"). These are **PCB-layout / fabrication scope — NOT implemented by this schematic generator**; recorded here so the requirement set is complete for the downstream board design.
+- **Mounting holes** at the corners furthest from the FMC, for standoffs.
+- **FMC single width: 69 mm** (board form factor).
+- **50 Ω target impedance** for traces routing to the SMA connectors.
+- **Silkscreen for all reference designators.**
+- **4–6 layers**, at least **1.6 mm** total thickness.
+- **GND test clips** (also listed under Parts to implement).
+- **Socket keep-outs / screw holes** per the Ironwood CG25-QFN-2003 drawing (see Reference links).
 
 ## Notes / open questions
 - Confirm decoupling cap values per rail.

@@ -51,6 +51,7 @@ HERE = Path(__file__).resolve().parent
 PROJECT_DIR = HERE.parent.parent          # test1/
 REPO_ROOT = PROJECT_DIR.parent            # SymbolGenAI/ — the agent's working dir
 STATE_DIR = HERE.parent / "state"         # test1/gui/state/
+SKILLS_DIR = PROJECT_DIR / ".claude" / "skills"   # agent skills (md) — see app.py
 CHAT_FILE = STATE_DIR / "chat.json"       # legacy single transcript (migrated)
 CHATS_FILE = STATE_DIR / "chats.json"     # multi-session chat store
 CHANGELOG_FILE = STATE_DIR / "changelog.json"
@@ -125,6 +126,27 @@ def _canon_model(m: str | None) -> str | None:
     return _ALIAS_TO_ID.get(m)
 
 AGENT_MODELS_FILE = STATE_DIR / "agent_models.json"
+AGENT_EFFORT_FILE = STATE_DIR / "agent_effort.json"
+
+# Per-agent EFFORT (extended-thinking budget). A discrete scale maps to a
+# MAX_THINKING_TOKENS value threaded into _spawn_claude. "off" disables extended
+# thinking — the hard-won setting for mechanical passes like lint_fix, which
+# stalled in a long think before acting at higher budgets (see the thinking-spiral
+# fix). Higher levels buy more reasoning for harder authoring/judgement calls.
+EFFORT_LEVELS: dict[str, int] = {
+    "off": 0,
+    "low": 2000,
+    "medium": 4000,     # == the historical default MAX_THINKING_TOKENS
+    "high": 12000,
+}
+EFFORT_ORDER: list[str] = ["off", "low", "medium", "high"]
+# Per-kind default effort. Everything defaults to "medium" except lint_fix, whose
+# known-good is "off" (a non-zero budget reintroduces the spiral).
+_DEFAULT_EFFORT: dict[str, str] = {"lint_fix": "off"}
+
+
+def _default_effort(kind: str) -> str:
+    return _DEFAULT_EFFORT.get(kind, "medium")
 
 # Agent kinds whose model is user-selectable, with a sensible default + a label +
 # a group (for GUI sectioning). Keep kind ids stable (persisted + sent over the
@@ -180,17 +202,30 @@ def model_for(kind: str) -> str:
 
 
 def agent_model_config() -> dict:
-    """The full per-kind model picture for the GUI: kind, label, current model id,
-    default id, overridden flag, and the exact model catalog to choose from."""
+    """The full per-kind picture for the GUI: kind, label, current model id +
+    default + overridden, current effort level + default + overridden, plus the
+    model catalog and the effort-level scale to choose from."""
     overrides = _load_agent_models()
+    effort_ov = _load_agent_effort()
     return {
         "models": MODEL_CATALOG,
         "groups": GROUP_ORDER,
+        # The effort scale the picker offers (ordered) + their token budgets, so
+        # the GUI can render a labeled control and show "off" disables thinking.
+        "effort_levels": [{"id": lv, "tokens": EFFORT_LEVELS[lv]} for lv in EFFORT_ORDER],
         "agents": [
             {"kind": k, "label": v["label"], "group": v.get("group", "Other"),
              "model": model_for(k),
              "default": _canon_model(v["default"]),
-             "overridden": _canon_model(overrides.get(k)) is not None}
+             "overridden": _canon_model(overrides.get(k)) is not None,
+             # Effort (extended-thinking) — current level, per-kind default, and
+             # whether the user overrode it.
+             "effort": effort_for(k),
+             "effort_default": _default_effort(k),
+             "effort_overridden": effort_ov.get(k) in EFFORT_LEVELS,
+             # Skills attached to this agent (slugs) — their content is appended to
+             # the agent's system prompt; shown in the per-agent skills dropdown.
+             "skills": attached_skills(k)}
             for k, v in AGENT_KINDS.items()
         ],
     }
@@ -212,6 +247,99 @@ def set_agent_model(kind: str, model: str | None) -> bool:
         data[kind] = canon
     _save(AGENT_MODELS_FILE, data)
     return True
+
+
+# ---- Per-agent effort (extended-thinking budget) ---------------------------
+def _load_agent_effort() -> dict:
+    try:
+        data = json.loads(AGENT_EFFORT_FILE.read_text())
+        return data if isinstance(data, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def effort_for(kind: str) -> str:
+    """The effort LEVEL for an agent kind: user override → per-kind default. Always
+    a valid level (a stale/unknown stored value falls back to the default)."""
+    ov = _load_agent_effort().get(kind)
+    if ov in EFFORT_LEVELS:
+        return ov
+    return _default_effort(kind)
+
+
+def thinking_for(kind: str) -> int:
+    """The MAX_THINKING_TOKENS budget for an agent kind (effort level → tokens)."""
+    return EFFORT_LEVELS[effort_for(kind)]
+
+
+def set_agent_effort(kind: str, level: str | None) -> bool:
+    """Set (or clear, with level=None) the effort override for an agent kind.
+    Returns False for an unknown kind or an invalid level."""
+    if kind not in SIM_AGENT_KINDS:
+        return False
+    data = _load_agent_effort()
+    if level is None:
+        data.pop(kind, None)
+    elif level in EFFORT_LEVELS:
+        data[kind] = level
+    else:
+        return False
+    _save(AGENT_EFFORT_FILE, data)
+    return True
+
+
+# ---- Skills attached to an agent (loaded into its system prompt) -----------
+def _skill_agents_and_body(text: str) -> tuple[list[str], str]:
+    """Parse a skill's leading YAML-ish frontmatter for its `agents:` list and
+    return (agents, body-without-frontmatter). Minimal hand-parse (no yaml dep):
+    `agents:` may be an inline list `[a, b]` or a comma/space string. Mirrors the
+    richer parse in app.py's _skill_frontmatter (which the GUI uses to display)."""
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return [], text
+    end = next((i for i in range(1, len(lines)) if lines[i].strip() == "---"), None)
+    if end is None:
+        return [], text
+    agents: list[str] = []
+    for ln in lines[1:end]:
+        m = re.match(r"\s*agents\s*:\s*(.+)$", ln)
+        if m:
+            val = m.group(1).strip().strip("[]")
+            agents = [a.strip().strip("'\"") for a in re.split(r"[,\s]+", val) if a.strip()]
+            break
+    return agents, "\n".join(lines[end + 1:])
+
+
+def attached_skills(kind: str) -> list[str]:
+    """Slugs of skills attached to an agent kind (via skill frontmatter `agents:`)."""
+    out: list[str] = []
+    if SKILLS_DIR.exists():
+        for f in sorted(SKILLS_DIR.glob("*.md"), key=lambda p: p.name.lower()):
+            try:
+                agents, _ = _skill_agents_and_body(f.read_text(encoding="utf-8", errors="replace"))
+            except OSError:
+                continue
+            if kind in agents:
+                out.append(f.stem)
+    return out
+
+
+def _attached_skills_prompt(kind: str) -> str:
+    """The combined text of every skill attached to `kind`, formatted for appending
+    to the agent's system prompt. Empty string if none."""
+    chunks: list[str] = []
+    if SKILLS_DIR.exists():
+        for f in sorted(SKILLS_DIR.glob("*.md"), key=lambda p: p.name.lower()):
+            try:
+                agents, body = _skill_agents_and_body(f.read_text(encoding="utf-8", errors="replace"))
+            except OSError:
+                continue
+            if kind in agents:
+                chunks.append(f"## Skill: {f.stem}\n\n{body.strip()}")
+    if not chunks:
+        return ""
+    return ("\n\n# Attached skills (methodology to follow for this task)\n\n"
+            + "\n\n".join(chunks))
 
 
 # ---------------------------------------------------------------------------
@@ -835,13 +963,21 @@ async def _spawn_claude(
     add_dir: Path | None = None,
     model: str | None = None,
     thinking_tokens: int | None = None,
+    kind: str | None = None,
 ) -> tuple[asyncio.subprocess.Process, list[str]]:
     """Spawn `claude -p` and return (proc, cmd). Output format is
     stream-json so we can parse per-event. `model` overrides the global MODEL
     (used by the per-agent model selection); falls back to MODEL when None.
     `thinking_tokens` overrides the default extended-thinking budget — set it low
     for mechanical passes (e.g. lint_fix) so the agent doesn't stall in a long
-    think before acting."""
+    think before acting. `kind` (the agent kind) identifies which SKILLS are
+    attached to this agent (for the GUI's per-agent skills dropdown).
+
+    NOTE: attached skills are surfaced for visibility but NOT auto-appended to the
+    prompt — the sim agents already inline their datasheet-extraction methodology
+    in their prompt bodies, so appending the same skill would duplicate it. The
+    seam is here (`_attached_skills_prompt(kind)`) if we later make a skill the
+    single source and strip the inline copy."""
     cmd = [
         CLAUDE,
         "-p", prompt,
@@ -1080,6 +1216,8 @@ async def start_chat_turn(session_id: str, user_msg: str) -> AgentRun:
         system_suffix=_CHAT_INSTRUCTIONS,
         permission_mode="acceptEdits",  # allows write to changelog.json
         model=model_for("chat"),
+        thinking_tokens=thinking_for("chat"),
+        kind="chat",
     )
     run = _register("chat")
 
@@ -1167,6 +1305,8 @@ async def start_apply_pass() -> AgentRun:
         permission_mode="acceptEdits",
         allowed_tools=_DESIGN_AGENT_TOOLS,
         model=model_for("apply"),
+        thinking_tokens=thinking_for("apply"),
+        kind="apply",
     )
     run = _register("apply")
     asyncio.create_task(_run_subprocess(run, proc))
@@ -1332,13 +1472,14 @@ async def start_lint_fix_pass(failures: dict, round_no: int, max_rounds: int,
         permission_mode="acceptEdits",
         allowed_tools=_DESIGN_AGENT_TOOLS,
         model=model_for("lint_fix"),
-        # Extended thinking OFF for this pass. Measured: with thinking enabled the
-        # agent reads the files then spirals in an open-ended "reason about the
-        # geometry" think (48+ thinking events, no Edit) and never finishes — the
-        # original loop "hang". A small non-zero budget (1000) did NOT cap it. With
-        # thinking_tokens=0 it reads → Edits → returns success (~85s). Lint fixes
-        # are mechanical grid nudges; they don't need deliberation.
-        thinking_tokens=0,
+        kind="lint_fix",
+        # Effort defaults to "off" for lint_fix (thinking_tokens=0). Measured: with
+        # thinking enabled the agent reads the files then spirals in an open-ended
+        # "reason about the geometry" think (48+ events, no Edit) and never finishes
+        # — the original loop "hang". A small non-zero budget (1000) did NOT cap it;
+        # 0 → reads → Edits → success (~85s). The user CAN raise it in Agent Models,
+        # but the default stays off (see _DEFAULT_EFFORT).
+        thinking_tokens=thinking_for("lint_fix"),
     )
     run = _register("lint_fix")
     asyncio.create_task(_run_subprocess(run, proc))
@@ -1374,6 +1515,8 @@ async def start_topology_adapt(rule_id: str, candidate_mpn: str,
         permission_mode="acceptEdits",
         allowed_tools=_DESIGN_AGENT_TOOLS,
         model=model_for("topology_adapt"),
+        thinking_tokens=thinking_for("topology_adapt"),
+        kind="topology_adapt",
     )
     run = _register("topology_adapt")
     asyncio.create_task(_run_subprocess(run, proc))
@@ -1453,6 +1596,8 @@ pin/unit count matches the datasheet, then print a one-line summary.
         permission_mode="acceptEdits",
         add_dir=repo_root,  # let the agent write under Parts Library + run the build
         model=model_for("symbol_gen"),
+        thinking_tokens=thinking_for("symbol_gen"),
+        kind="symbol_gen",
     )
     run = _register("symbol-gen")
     asyncio.create_task(_run_subprocess(run, proc))
@@ -1482,6 +1627,8 @@ async def start_rule_gen(doc_bundle_path: Path, predicate_spec_path: Path,
         ],
         add_dir=REPO_ROOT,
         model=model_for("rule_gen"),
+        thinking_tokens=thinking_for("rule_gen"),
+        kind="rule_gen",
     )
     run = _register("rule_gen")
     asyncio.create_task(_run_subprocess(run, proc))
@@ -1651,6 +1798,8 @@ Your job — gain context, then establish ALL parameters before the sim runs:
             "Bash(cd:*)", "Bash(ls:*)", "Bash(cat:*)",
         ],
         model=model_for("sim_setup"),
+        thinking_tokens=thinking_for("sim_setup"),
+        kind="sim_setup",
     )
     run = _register("Sim setup")
     asyncio.create_task(_run_subprocess(run, proc))
@@ -1788,6 +1937,8 @@ circuit edits, one per line; "- none" if no circuit change is warranted):
             "Bash(cd:*)", "Bash(ls:*)", "Bash(cat:*)",
         ],
         model=model_for("sim_interpret"),
+        thinking_tokens=thinking_for("sim_interpret"),
+        kind="sim_interpret",
     )
     run = _register("Sim interpret")
     asyncio.create_task(_run_subprocess(run, proc))
@@ -1906,6 +2057,8 @@ Steps:
         permission_mode="acceptEdits",
         allowed_tools=_SIM_BUILD_TOOLS,
         model=model_for("sim_generate"),
+        thinking_tokens=thinking_for("sim_generate"),
+        kind="sim_generate",
     )
     run = _register("Sim generate-model")
     asyncio.create_task(_run_subprocess(run, proc))
@@ -1962,6 +2115,8 @@ Steps:
         permission_mode="acceptEdits",
         allowed_tools=_SIM_BUILD_TOOLS,
         model=model_for("sim_update"),
+        thinking_tokens=thinking_for("sim_update"),
+        kind="sim_update",
     )
     run = _register("Sim update-model")
     asyncio.create_task(_run_subprocess(run, proc))
@@ -2016,6 +2171,8 @@ Behaviour:
         permission_mode="acceptEdits",
         allowed_tools=_SIM_BUILD_TOOLS,
         model=model_for("sim_chat_edit"),
+        thinking_tokens=thinking_for("sim_chat_edit"),
+        kind="sim_chat_edit",
     )
     run = _register("Sim chat-edit")
     asyncio.create_task(_run_subprocess(run, proc))

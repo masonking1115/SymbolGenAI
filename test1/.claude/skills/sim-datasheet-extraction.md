@@ -1,6 +1,7 @@
 ---
 name: sim-datasheet-extraction
 description: How to extract device parameters from a datasheet PDF for a SPICE simulation and how to choose the operating-point scenario, for the test1 simulation pipeline. Covers rendering PDF pages to read pinouts/EC-tables/curves, the descriptive param-key convention that sim/param_map.py consumes, worst-case value selection, and grounding the operating point in the requirements + as-built netlist. Use during a sim setup/interpret pass when reading a part's datasheet to parameterize or judge a behavioral SPICE model.
+agents: [sim_setup, sim_interpret]
 ---
 
 # Extracting datasheet params for a SPICE sim

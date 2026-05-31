@@ -44,6 +44,18 @@ function fmtSize(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
+// A single "uploaded or last edited" timestamp (epoch SECONDS — matches the
+// backend's file st_mtime): relative for recent, absolute date once it's old.
+function fmtTime(ts?: number | null): string {
+  if (!ts) return "";
+  const diff = Date.now() / 1000 - ts;
+  if (diff < 60) return "just now";
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  if (diff < 7 * 86400) return `${Math.floor(diff / 86400)}d ago`;
+  return new Date(ts * 1000).toLocaleDateString();
+}
+
 export function Resources({
   onViewPart,
   onOpenFile,
@@ -293,7 +305,9 @@ function DatasheetsPanel({ onViewPart, onOpen }: { onViewPart?: (mpn: string) =>
                     >
                       {f.file}
                     </button>
-                    <span className="ml-auto text-[11px] text-ink-500 shrink-0">
+                    <span className="ml-auto text-[11px] text-ink-500 shrink-0 flex items-center gap-1.5">
+                      {f.mtime ? <span title={new Date(f.mtime * 1000).toLocaleString()}>{fmtTime(f.mtime)}</span> : null}
+                      <span className="text-ink-300">·</span>
                       {fmtSize(f.size)}
                     </span>
                   </li>
@@ -387,9 +401,16 @@ function PartLinkOrGenerate({
 function AgentModelsPanel() {
   const [cfg, setCfg] = useState<AgentModelConfig | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
+  // Skill metadata (slug → {title, description}) so each agent's attached-skills
+  // dropdown can show what the skill is, not just its slug.
+  const [skillMeta, setSkillMeta] = useState<Record<string, SkillItem>>({});
   useEffect(() => {
     let alive = true;
     api.simAgentModels().then((c) => { if (alive) setCfg(c); }).catch(() => {});
+    api.resourcesSkills().then((r) => {
+      if (!alive) return;
+      setSkillMeta(Object.fromEntries(r.skills.map((s) => [s.slug, s])));
+    }).catch(() => {});
     return () => { alive = false; };
   }, []);
 
@@ -399,17 +420,71 @@ function AgentModelsPanel() {
     catch { /* ignore */ }
     finally { setSaving(null); }
   };
+  const setEffort = async (kind: string, level: string) => {
+    setSaving(kind);
+    try { setCfg(await api.simSetAgentEffort(kind, level)); }
+    catch { /* ignore */ }
+    finally { setSaving(null); }
+  };
 
   return (
     <div className="space-y-5">
       <SectionIntro
         title="Agent Models"
-        note="Pick the exact Anthropic model each agent runs on, grouped by category. The id is passed to claude --model and applies to that agent's next run. Authoring/repair agents default to Opus; extraction, verdict, and chat to Sonnet."
+        note="Pick the model and thinking effort each agent runs on, grouped by category. Model is passed to claude --model; effort sets the agent's extended-thinking budget (off disables it). Both apply to that agent's next run. Authoring/repair agents default to Opus; extraction, verdict, and chat to Sonnet."
       />
       {!cfg ? (
         <div className="text-[12px] text-ink-400">loading agent models…</div>
       ) : (
-        <AgentModelGroups cfg={cfg} saving={saving} onSet={setModel} />
+        <AgentModelGroups cfg={cfg} saving={saving} onSet={setModel} onSetEffort={setEffort} skillMeta={skillMeta} />
+      )}
+    </div>
+  );
+}
+
+// Per-agent attached-skills dropdown. Skills declare which agents they apply to
+// (frontmatter `agents:`), so this is read-only here — it surfaces WHAT is wired
+// to the agent. Renders a subtle "no skills" hint when none, or a clickable chip
+// that expands the attached skills with their descriptions.
+function AgentSkills({ attached, skillMeta }: {
+  attached: string[]; skillMeta: Record<string, SkillItem>;
+}) {
+  const [open, setOpen] = useState(false);
+  if (attached.length === 0) {
+    return <div className="text-[10.5px] text-ink-400 mt-0.5">no skills attached</div>;
+  }
+  return (
+    <div className="relative mt-0.5 inline-block">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex items-center gap-1 text-[10.5px] text-ink-500 hover:text-ink-800"
+        title="Skills attached to this agent"
+      >
+        <I.Wrench size={10} />
+        {attached.length} skill{attached.length > 1 ? "s" : ""}
+        <span className="text-ink-400">{open ? "▾" : "▸"}</span>
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 mt-1 z-20 w-[300px] rounded-md border border-edge bg-white shadow-lg p-2 space-y-1.5">
+            {attached.map((slug) => {
+              const m = skillMeta[slug];
+              return (
+                <div key={slug} className="text-[11px]">
+                  <div className="font-medium text-ink-800">{m?.title ?? slug}</div>
+                  <div className="text-ink-400 font-mono text-[10px]">{slug}</div>
+                  {m?.description && (
+                    <p className="text-ink-500 leading-snug mt-0.5 line-clamp-3">{m.description}</p>
+                  )}
+                </div>
+              );
+            })}
+            <div className="text-[10px] text-ink-400 border-t border-edge/60 pt-1 mt-1">
+              Attached via the skill's <span className="font-mono">agents:</span> field. Manage in the Skills tab.
+            </div>
+          </div>
+        </>
       )}
     </div>
   );
@@ -419,11 +494,16 @@ function AgentModelGroups({
   cfg,
   saving,
   onSet,
+  onSetEffort,
+  skillMeta,
 }: {
   cfg: AgentModelConfig;
   saving: string | null;
   onSet: (kind: string, model: string) => void;
+  onSetEffort: (kind: string, level: string) => void;
+  skillMeta: Record<string, SkillItem>;
 }) {
+  const effortLevels = cfg.effort_levels ?? [];
   // Exact model ids grouped by family (for the <optgroup> dropdown).
   const families: Array<ModelChoice["family"]> = ["opus", "sonnet", "haiku"];
   const byFamily = families
@@ -438,37 +518,69 @@ function AgentModelGroups({
   const ordered = (cfg.groups ?? []).filter((g) => present.includes(g));
   for (const g of present) if (!ordered.includes(g)) ordered.push(g);
 
-  const agentRow = (a: AgentModelConfig["agents"][number]) => (
-    <div key={a.kind} className="flex items-center gap-2 text-[12.5px] px-3 py-2">
-      <span className="text-ink-800 flex-1 truncate" title={a.kind}>{a.label}</span>
-      {a.overridden && (
-        <button
-          onClick={() => onSet(a.kind, a.default)}
-          className="text-[10px] text-ink-400 hover:text-ink-700"
-          title={`reset to default (${idLabel(a.default)})`}
-        >
-          reset
-        </button>
-      )}
-      <select
-        value={a.model}
-        disabled={saving === a.kind}
-        onChange={(e) => onSet(a.kind, e.target.value)}
-        title={a.model}
-        className="h-7 w-64 rounded border border-edge bg-white text-[11px] font-mono px-1.5 outline-none focus:border-ink-400 disabled:opacity-50"
+  const agentRow = (a: AgentModelConfig["agents"][number]) => {
+    const atDefaults = !a.overridden && !a.effort_overridden;
+    return (
+    <div key={a.kind} className="flex items-center gap-3 text-[12.5px] px-3 py-2">
+      <div className="flex-1 min-w-0">
+        <div className="text-ink-800 truncate" title={a.kind}>{a.label}</div>
+        {/* Skills attached to this agent (frontmatter `agents:`). Their methodology
+            steers the agent; shown here so it's clear what's wired to each one. */}
+        <AgentSkills attached={a.skills ?? []} skillMeta={skillMeta} />
+      </div>
+      {/* reset — always reserve the slot so the selects don't shift between rows */}
+      <button
+        onClick={() => { if (a.overridden) onSet(a.kind, a.default); if (a.effort_overridden) onSetEffort(a.kind, a.effort_default); }}
+        disabled={atDefaults || saving === a.kind}
+        className="text-[10px] text-ink-400 hover:text-ink-700 shrink-0 w-9 text-right disabled:opacity-0"
+        title={`reset to defaults (model ${idLabel(a.default)}, effort ${a.effort_default})`}
       >
-        {byFamily.map((g) => (
-          <optgroup key={g.fam} label={g.fam.toUpperCase()}>
-            {g.models.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.id}{m.id === a.default ? " · default" : ""}{m.latest ? " · latest" : ""}
-              </option>
-            ))}
-          </optgroup>
-        ))}
-      </select>
+        reset
+      </button>
+      {/* Effort / thinking budget. Bare level in the select (off/low/medium/high)
+          so the closed value never clips; a "default" tag sits beside it. */}
+      <label className="flex items-center gap-1.5 shrink-0" title="Extended-thinking budget for this agent (off disables thinking)">
+        <span className="text-[10px] text-ink-400 uppercase tracking-wide">effort</span>
+        <select
+          value={a.effort}
+          disabled={saving === a.kind || effortLevels.length === 0}
+          onChange={(e) => onSetEffort(a.kind, e.target.value)}
+          className="h-7 w-[88px] rounded border border-edge bg-white text-[11px] px-2 outline-none focus:border-ink-400 disabled:opacity-50"
+        >
+          {effortLevels.map((lv) => (
+            <option key={lv.id} value={lv.id}>{lv.id}</option>
+          ))}
+        </select>
+        <span className="text-[9.5px] text-ink-400 w-12 shrink-0">
+          {a.effort === a.effort_default ? "default" : "custom"}
+        </span>
+      </label>
+      {/* Model. Bare id in the select (clean closed value); family + default/latest
+          shown as a tag to the right so nothing clips. */}
+      <div className="flex items-center gap-1.5 shrink-0">
+        <select
+          value={a.model}
+          disabled={saving === a.kind}
+          onChange={(e) => onSet(a.kind, e.target.value)}
+          title={a.model}
+          className="h-7 w-[188px] rounded border border-edge bg-white text-[11px] font-mono px-2 outline-none focus:border-ink-400 disabled:opacity-50"
+        >
+          {byFamily.map((g) => (
+            <optgroup key={g.fam} label={g.fam.toUpperCase()}>
+              {g.models.map((m) => (
+                <option key={m.id} value={m.id}>{m.id}</option>
+              ))}
+            </optgroup>
+          ))}
+        </select>
+        <span className="text-[9.5px] text-ink-400 w-20 shrink-0 leading-tight">
+          {a.model === a.default ? "default" : "custom"}
+          {cfg.models.find((m) => m.id === a.model)?.latest ? " · latest" : ""}
+        </span>
+      </div>
     </div>
-  );
+    );
+  };
 
   return (
     <div className="space-y-3">
@@ -494,6 +606,8 @@ function RequirementsPanel({ onOpen }: { onOpen: (f: OpenFile) => void }) {
   const [activeMd, setActiveMd] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  // Reference URLs pulled from the Bobcat design documentation.
+  const [links, setLinks] = useState<{ url: string; label: string; page: number }[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const refresh = useCallback(async () => {
@@ -507,6 +621,7 @@ function RequirementsPanel({ onOpen }: { onOpen: (f: OpenFile) => void }) {
   }, []);
   useEffect(() => {
     refresh();
+    api.requirementsLinks().then((r) => setLinks(r.links)).catch(() => {});
   }, [refresh]);
 
   const upload = async (file: File) => {
@@ -598,7 +713,9 @@ function RequirementsPanel({ onOpen }: { onOpen: (f: OpenFile) => void }) {
                 >
                   {d.name}
                 </button>
-                <span className="ml-auto text-[11px] text-ink-500 shrink-0">
+                <span className="ml-auto text-[11px] text-ink-500 shrink-0 flex items-center gap-1.5">
+                  {d.mtime ? <span title={new Date(d.mtime * 1000).toLocaleString()}>{fmtTime(d.mtime)}</span> : null}
+                  <span className="text-ink-300">·</span>
                   {fmtSize(d.size)}
                 </span>
               </li>
@@ -606,6 +723,34 @@ function RequirementsPanel({ onOpen }: { onOpen: (f: OpenFile) => void }) {
           </ul>
         )}
       </div>
+
+      {/* Reference links — external sites cited in the Bobcat design documentation. */}
+      {links.length > 0 && (
+        <div className="space-y-2">
+          <div className="text-[11px] uppercase tracking-wide text-ink-500">
+            Reference links · from the design documentation
+          </div>
+          <ul className="rounded-lg border border-edge divide-y divide-edge">
+            {links.map((l) => (
+              <li key={l.url} className="px-3 py-2 flex items-center gap-2">
+                <span className="text-ink-500 shrink-0">
+                  <I.Datasheet size={16} />
+                </span>
+                <a
+                  href={l.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[13px] text-ink-900 hover:underline truncate"
+                  title={l.url}
+                >
+                  {l.label}
+                </a>
+                <span className="ml-auto text-[10px] text-ink-400 font-mono shrink-0">p.{l.page}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }
@@ -696,7 +841,9 @@ function BomPanel({ onOpen }: { onOpen: (f: OpenFile) => void }) {
                 >
                   {f.name}
                 </button>
-                <span className="ml-auto text-[11px] text-ink-500 shrink-0">
+                <span className="ml-auto text-[11px] text-ink-500 shrink-0 flex items-center gap-1.5">
+                  {f.mtime ? <span title={new Date(f.mtime * 1000).toLocaleString()}>{fmtTime(f.mtime)}</span> : null}
+                  <span className="text-ink-300">·</span>
                   {fmtSize(f.size)}
                 </span>
               </li>
@@ -824,20 +971,35 @@ function SkillsPanel({ onOpen }: { onOpen: (f: OpenFile) => void }) {
         ) : (
           <ul className="rounded-lg border border-edge divide-y divide-edge">
             {skills.map((s) => (
-              <li key={s.slug} className="px-3 py-2 flex items-center gap-2 group">
-                <span className="text-ink-500">
+              <li key={s.slug} className="px-3 py-2 flex items-start gap-2 group">
+                <span className="text-ink-500 mt-0.5 shrink-0">
                   <I.Wrench size={15} />
                 </span>
-                <button
-                  onClick={() => open(s.slug)}
-                  className="text-[13px] text-ink-900 hover:underline truncate text-left"
-                >
-                  {s.title}
-                </button>
-                <span className="text-[11px] text-ink-500 font-mono">{s.slug}</span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => open(s.slug)}
+                      className="text-[13px] text-ink-900 hover:underline truncate text-left"
+                    >
+                      {s.title}
+                    </button>
+                    <span className="text-[11px] text-ink-500 font-mono shrink-0">{s.slug}</span>
+                  </div>
+                  {s.description && (
+                    <p className="text-[12px] text-ink-500 leading-snug mt-0.5 line-clamp-2">
+                      {s.description}
+                    </p>
+                  )}
+                </div>
+                {s.updated ? (
+                  <span className="ml-auto text-[11px] text-ink-500 shrink-0 mt-0.5 group-hover:hidden"
+                        title={new Date(s.updated * 1000).toLocaleString()}>
+                    {fmtTime(s.updated)}
+                  </span>
+                ) : null}
                 <button
                   onClick={() => remove(s.slug)}
-                  className="ml-auto opacity-0 group-hover:opacity-100 text-ink-500 hover:text-err shrink-0"
+                  className="ml-auto opacity-0 group-hover:opacity-100 text-ink-500 hover:text-err shrink-0 mt-0.5"
                   title="Delete skill"
                 >
                   <I.Trash size={14} />

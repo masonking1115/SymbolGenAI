@@ -265,6 +265,43 @@ export function Simulation({ setHealth, blocks, selected, onBlocksChanged }: Pro
   // each sim_type card; keep a per-(block,sim) override so the card reflects an
   // edit immediately without needing the parent to re-fetch the blocks catalog.
   const [passOverride, setPassOverride] = useState<Record<string, string>>({});
+  // Ephemeral per-(block,sim) boundary-param overrides — the "Parameters ▾"
+  // dropdown's "tune before running" edits. Shaped {resultKey: {net: {key: val}}}.
+  // Held ONLY in component state (deliberately NOT persisted to localStorage), so
+  // they reset on a page reload and are never written to blocks.yaml — they only
+  // ride along in the next Run request. Read by run() and passed to api.simRun.
+  const [paramOverrides, setParamOverrides] = useState<
+    Record<string, Record<string, Record<string, string>>>
+  >({});
+  const paramOverridesRef = useRef(paramOverrides);
+  useEffect(() => { paramOverridesRef.current = paramOverrides; }, [paramOverrides]);
+  // Set/clear one net.key override for a (block,sim) card. An empty value drops
+  // the key (revert to the design/catalog default); an empty net object is pruned.
+  const setOneOverride = useCallback(
+    (key: string, net: string, pkey: string, value: string | null) => {
+      setParamOverrides((prev) => {
+        const forKey = { ...(prev[key] ?? {}) };
+        const forNet = { ...(forKey[net] ?? {}) };
+        if (value === null || value === "") delete forNet[pkey];
+        else forNet[pkey] = value;
+        if (Object.keys(forNet).length) forKey[net] = forNet;
+        else delete forKey[net];
+        const next = { ...prev };
+        if (Object.keys(forKey).length) next[key] = forKey;
+        else delete next[key];
+        return next;
+      });
+    },
+    [],
+  );
+  const clearOverrides = useCallback((key: string) => {
+    setParamOverrides((prev) => {
+      if (!prev[key]) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  }, []);
   const [interp, setInterp] = useState<Record<string, Interp>>(() => {
     const saved = loadLS<Record<string, Interp>>(LS_INTERP) ?? {};
     const out: Record<string, Interp> = {};
@@ -339,10 +376,13 @@ export function Simulation({ setHealth, blocks, selected, onBlocksChanged }: Pro
         }
         if (wasCancelled()) { markCancelled("cancelled before simulating"); setHealth({ text: "sim cancelled", tone: "neutral" }); return; }
 
-        // STAGE 2 — simulate, now using the determined operating point.
+        // STAGE 2 — simulate, now using the determined operating point. Any
+        // manual "tune before running" overrides for this card ride along
+        // (ephemeral — they never touch blocks.yaml).
         setInterp((prev) => ({ ...prev, [key]: { ...(prev[key]!), phase: "sim" } }));
         setHealth({ text: `simulating ${simType}…`, tone: "neutral" });
-        const res = await api.simRun(block.id, simType);
+        const ov = paramOverridesRef.current[key];
+        const res = await api.simRun(block.id, simType, undefined, ov);
         setResults((prev) => ({ ...prev, [key]: res }));
         setHealth({
           text: res.ok ? `${simType}: PASS` : `${simType}: FAIL`,
@@ -381,7 +421,9 @@ export function Simulation({ setHealth, blocks, selected, onBlocksChanged }: Pro
             if (hasVerdict) {
               // The agent may have re-simmed (bounded iterate) with a corrected
               // scenario — refresh the structured result to the final scenario.
-              api.simRun(block.id, simType)
+              // Keep the manual overrides applied so the displayed chart stays
+              // consistent with what the user tuned.
+              api.simRun(block.id, simType, undefined, paramOverridesRef.current[key])
                 .then((res) => setResults((prev) => ({ ...prev, [key]: res })))
                 .catch(() => {});
             }
@@ -559,6 +601,11 @@ export function Simulation({ setHealth, blocks, selected, onBlocksChanged }: Pro
         </div>
       ) : (
         <div className="px-6 py-5 max-w-[1100px]">
+          {/* Tab-level staleness: how many blocks are out of date vs the current
+              schematic, with a Refresh that re-detects (re-fetches the catalog so
+              each block's staleness re-evaluates). Per-block Update lives on the
+              block's own card. */}
+          <StalenessBanner blocks={blocks} onRefresh={onBlocksChanged} />
           <div className="flex items-center gap-2">
             <div className="text-[11px] tracking-wide uppercase text-ink-500">
               Simulation · ngspice
@@ -566,7 +613,17 @@ export function Simulation({ setHealth, blocks, selected, onBlocksChanged }: Pro
             <span className={"text-[10px] px-1.5 py-0.5 rounded border " + (STATUS_BADGE[block.status] ?? STATUS_BADGE.not_simulatable)}>
               {block.status}
             </span>
-            <span className="text-[10px] text-ink-500 font-mono">{block.sheet}</span>
+            {/* At-a-glance staleness chip (detail + Update live in the banner below). */}
+            {block.staleness?.stale && (
+              <span
+                title={block.staleness.reason || "out of date with the schematic"}
+                className="text-[10px] px-1.5 py-0.5 rounded border border-amber-400/60 bg-amber-50 text-amber-800 inline-flex items-center gap-1"
+              >
+                <I.Refresh size={10} /> out of date
+              </span>
+            )}
+            {/* Source sheet, shown as a clean name (no backend filename). */}
+            <span className="text-[10px] text-ink-500 font-mono">{block.sheet?.replace(/\.ya?ml$/i, "")}</span>
             {/* per-block controls: edit requirements + clear cache.
                 (Per-agent model selection now lives in Design Resources →
                 Agent Models, grouped by category.) */}
@@ -612,9 +669,8 @@ export function Simulation({ setHealth, blocks, selected, onBlocksChanged }: Pro
             )}
 
             <div className="mt-2 text-[11px] text-ink-500">
-              Deck values are read from the as-built design
-              {block.sheet ? <> (<span className="font-mono text-ink-700">netlist/{block.sheet}</span>)</> : null};
-              device params come from the datasheets below.
+              Component values come from the current schematic; device
+              parameters come from the datasheets below.
             </div>
 
             {block.datasheets.length > 0 && (
@@ -666,26 +722,50 @@ export function Simulation({ setHealth, blocks, selected, onBlocksChanged }: Pro
                           <div className="text-[11px] text-ink-500 mt-1">
                             <span className="uppercase tracking-wide">pass</span> · {passOverride[key] ?? st.pass}
                           </div>
+                          {(() => {
+                            const n = Object.values(paramOverrides[key] ?? {})
+                              .reduce((a, m) => a + Object.keys(m).length, 0);
+                            return n > 0 ? (
+                              <div className="text-[11px] text-amber-700 mt-1 inline-flex items-center gap-1">
+                                <I.Wrench size={11} />
+                                {n} param{n > 1 ? "s" : ""} tuned for next run · ephemeral (resets on reload)
+                              </div>
+                            ) : null;
+                          })()}
                           {planned && st.defer_reason && (
                             <div className="text-[11px] text-warn/90 mt-1.5 italic">deferred: {st.defer_reason}</div>
                           )}
                         </div>
-                        {!planned && (isRunning ? (
-                          <button
-                            onClick={cancel}
-                            className="h-8 px-3 inline-flex items-center gap-1.5 rounded-md border border-err/40 bg-err/10 text-err text-xs font-medium hover:bg-err/20 shrink-0"
-                          >
-                            <I.X size={13} /> Cancel
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => run(st.type)}
-                            disabled={running !== null || block.status !== "implemented"}
-                            className="h-8 px-3 inline-flex items-center gap-1.5 rounded-md bg-ink-900 text-white text-xs font-medium hover:bg-black disabled:opacity-40 shrink-0"
-                          >
-                            <I.Play size={13} /> Run
-                          </button>
-                        ))}
+                        {!planned && (
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {/* Tune boundary params before running. Disabled while
+                                a sim is in flight (you can't retune mid-run). */}
+                            <ParamsDropdown
+                              block={block}
+                              simType={st.type}
+                              overrides={paramOverrides[key]}
+                              onSet={(net, pkey, val) => setOneOverride(key, net, pkey, val)}
+                              onReset={() => clearOverrides(key)}
+                              disabled={running !== null}
+                            />
+                            {isRunning ? (
+                              <button
+                                onClick={cancel}
+                                className="h-8 px-3 inline-flex items-center gap-1.5 rounded-md border border-err/40 bg-err/10 text-err text-xs font-medium hover:bg-err/20"
+                              >
+                                <I.X size={13} /> Cancel
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => run(st.type)}
+                                disabled={running !== null || block.status !== "implemented"}
+                                className="h-8 px-3 inline-flex items-center gap-1.5 rounded-md bg-ink-900 text-white text-xs font-medium hover:bg-black disabled:opacity-40"
+                              >
+                                <I.Play size={13} /> Run
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
 
                       {(res || interp[key]) && (
@@ -779,6 +859,72 @@ export function Simulation({ setHealth, blocks, selected, onBlocksChanged }: Pro
 }
 
 // ---------------------------------------------------------------------------
+// Tab-level staleness banner: how many blocks are out of date vs the current
+// schematic. "Refresh" re-detects (re-fetches the catalog so each block's
+// staleness re-evaluates against the current netlist fingerprints) — it does NOT
+// auto-update; each stale block is updated from its own card. Renders nothing
+// when everything is up to date, so it's silent in the common case.
+function StalenessBanner({ blocks, onRefresh }: {
+  blocks: SimBlock[]; onRefresh?: () => void;
+}) {
+  const [refreshing, setRefreshing] = useState(false);
+  const stale = blocks.filter((b) => b.staleness?.stale);
+  const refresh = async () => {
+    setRefreshing(true);
+    try {
+      // onRefresh re-fetches /api/sim/blocks (parent-owned). The backend also
+      // refreshes the freshness endpoint so fingerprints are re-evaluated.
+      await Promise.resolve(api.refresh()).catch(() => {});
+      onRefresh?.();
+    } finally {
+      // Brief spinner; the parent re-fetch resolves the new staleness shortly.
+      setTimeout(() => setRefreshing(false), 400);
+    }
+  };
+  if (stale.length === 0) {
+    // Nothing stale — offer a quiet "Check for changes" so the user can force a
+    // re-detect after uploading a schematic, without a loud banner.
+    return (
+      <div className="mb-3 flex items-center gap-2 text-[11px] text-ink-400">
+        <I.Check size={12} className="text-ok" />
+        Simulations are up to date with the schematic.
+        <button
+          onClick={refresh}
+          disabled={refreshing}
+          className="ml-1 inline-flex items-center gap-1 text-ink-500 hover:text-ink-900 disabled:opacity-50"
+        >
+          <I.Refresh size={11} className={refreshing ? "animate-spin" : ""} /> Check for changes
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div className="mb-3 rounded-md border border-amber-400/60 bg-amber-50 px-3 py-2.5">
+      <div className="flex items-start gap-2.5">
+        <I.Refresh size={14} className="text-amber-700 mt-0.5 shrink-0" />
+        <div className="min-w-0 flex-1">
+          <div className="text-[12px] font-medium text-amber-900">
+            {stale.length} simulation {stale.length === 1 ? "block is" : "blocks are"} out of date with the schematic
+          </div>
+          <div className="text-[11px] text-amber-800/90 mt-0.5 leading-snug">
+            {stale.map((b) => b.title).join(", ")}.
+            {" "}Open each and use <span className="font-medium">Update to match schematic</span> to re-sync its sim, params, and SPICE model.
+          </div>
+        </div>
+        <button
+          onClick={refresh}
+          disabled={refreshing}
+          title="Re-check every block against the current schematic"
+          className="h-7 px-2.5 inline-flex items-center gap-1.5 rounded-md border border-amber-400 bg-white text-amber-800 text-[11px] font-medium hover:bg-amber-50 disabled:opacity-50 shrink-0"
+        >
+          <I.Refresh size={12} className={refreshing ? "animate-spin" : ""} /> Refresh
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // SPICE-model lifecycle: when a block has NO model, offer "Generate SPICE
 // model"; when its model is STALE (the schematic changed under it), offer
 // "Update to match schematic". Both spawn a guarded agent (claude -p) that
@@ -820,30 +966,42 @@ function ModelLifecycle({ block, setHealth, onChanged }: {
   };
 
   // Decide what (if anything) to surface for this block.
-  const ms = block.model_status;
   const needGenerate = !block.has_model;
-  const stale = block.has_model && ms === "stale";
-  // No banner when the model exists and is fresh/unknown and nothing is running.
+  // Out of date vs the CURRENT schematic — model stale OR the shown run predates
+  // an input change (block.staleness is keyed off this block's own sheets only).
+  const st = block.staleness;
+  const stale = block.has_model && !!st?.stale;
+  const changed = st?.changed ?? [];
+  // No banner when the model exists, is up to date, and nothing is running.
   if (!needGenerate && !stale && !running && !done) return null;
 
   const tone = needGenerate
     ? "border-warn/40 bg-warn/[0.06]"
     : stale ? "border-amber-400/50 bg-amber-50" : "border-edge bg-rail/40";
+  // What the Update will refresh, phrased to the cause.
+  const staleDetail = st?.model_status === "stale"
+    ? "The schematic changed since this block was last synced. Update re-syncs its SPICE model, clears the cached operating point + device params, and re-runs extraction against the current design."
+    : "The displayed run predates a schematic change. Update clears the cached operating point + device params and re-syncs the model to the current design.";
 
   return (
     <div className={"mt-3 rounded-md border p-3 " + tone}>
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
-          <div className="text-[12px] font-medium text-ink-900">
+          <div className="text-[12px] font-medium text-ink-900 flex items-center gap-2">
             {needGenerate ? "No SPICE model for this block"
-              : stale ? "SPICE model may be out of date"
+              : stale ? "Out of date with the schematic"
               : "SPICE model"}
+            {stale && changed.length > 0 && (
+              <span className="text-[10px] font-normal text-amber-800 font-mono">
+                changed: {changed.join(", ")}
+              </span>
+            )}
           </div>
           <div className="text-[11px] text-ink-600 mt-0.5 leading-snug">
             {needGenerate
-              ? "There's no deck builder yet. Generate one agentically from the netlist + datasheets — it authors the SPICE model, wires it in, and verifies it runs."
+              ? "There's no model for this block yet. Generate one from the schematic + datasheets — it builds the SPICE model, wires it in, and verifies it runs."
               : stale
-                ? "The schematic changed since this model was last synced. Update it agentically to match the current netlist."
+                ? staleDetail
                 : "Re-sync this model with the schematic at any time."}
           </div>
         </div>
@@ -859,6 +1017,7 @@ function ModelLifecycle({ block, setHealth, onChanged }: {
           </button>
         ) : (
           <button onClick={() => run("update")}
+            title="Re-sync this block's sim, device params, and SPICE model to the current schematic"
             className="h-8 px-3 inline-flex items-center gap-1.5 rounded-md border border-amber-400 bg-white text-amber-700 text-xs font-medium hover:bg-amber-50 shrink-0">
             <I.Refresh size={13} /> Update to match schematic
           </button>
@@ -960,6 +1119,197 @@ function MenuItem({ label, hint, onClick, danger }: { label: string; hint: strin
       <div className="font-medium">{label}</div>
       <div className="text-[10px] text-ink-500">{hint}</div>
     </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Parameters dropdown ("tune before running"): a per-sim-card popover that
+// exposes the block's boundary params (operating point / load / limits) as
+// editable fields. Unlike the Requirements editor (which writes blocks.yaml),
+// these edits are EPHEMERAL — held only in the parent's component state and
+// passed along in the next Run request, so they reset on a page reload and are
+// never persisted. Each field shows the design/catalog DEFAULT as a hint; an
+// edited field is highlighted with a revert (↺) control.
+function ParamsDropdown({ block, simType, overrides, onSet, onReset, disabled }: {
+  block: SimBlock;
+  simType: string;
+  overrides: Record<string, Record<string, string>> | undefined;
+  onSet: (net: string, key: string, value: string | null) => void;
+  onReset: () => void;
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  // RESOLVED boundary-param defaults for this (block, sim_type) — net →
+  // {stub, params} with the sim type's boundary_overrides merged in (the exact
+  // baseline a Run uses). Fetched lazily on first open; refetched if the block/
+  // sim changes.
+  type Bounds = SimRequirements["boundaries"];
+  const [bounds, setBounds] = useState<Bounds | null>(null);
+  const [loading, setLoading] = useState(false);
+  // A FETCH FAILURE (e.g. an older backend with no /api/sim/boundaries route, or
+  // the server being down) must read differently from a block that legitimately
+  // has no tunable params — otherwise a stale backend silently looks like "no
+  // params". Track the error so we can show an actionable message + Retry.
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => { setBounds(null); setErr(null); }, [block.id, simType]);  // invalidate on switch
+  useEffect(() => {
+    if (!open || bounds || loading) return;
+    setLoading(true);
+    setErr(null);
+    api.simBoundaries(block.id, simType)
+      .then((r) => setBounds(r.boundaries))
+      .catch((e) => setErr(e instanceof Error ? e.message : String(e)))
+      .finally(() => setLoading(false));
+  }, [open, bounds, loading, block.id, simType]);
+
+  const count = Object.values(overrides ?? {}).reduce((a, m) => a + Object.keys(m).length, 0);
+  const boundaries = bounds ?? {};
+  const hasParams = Object.values(boundaries).some((b) => Object.keys(b.params).length > 0);
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        disabled={disabled}
+        title="Tune simulation parameters before running (resets on reload)"
+        className={
+          "h-8 px-2.5 inline-flex items-center gap-1.5 rounded-md border text-[11px] disabled:opacity-40 " +
+          (count > 0
+            ? "border-amber-400 bg-amber-50 text-amber-800"
+            : "border-edge bg-white text-ink-600 hover:border-ink-300")
+        }
+      >
+        <I.Wrench size={12} /> Parameters
+        {count > 0 && (
+          <span className="text-[9.5px] font-semibold rounded-full bg-amber-200 text-amber-900 px-1.5 leading-tight">
+            {count}
+          </span>
+        )}
+        <span className="text-ink-400">{open ? "▾" : "▸"}</span>
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 mt-1 z-20 w-[320px] rounded-md border border-edge bg-white shadow-lg text-xs">
+            <div className="px-3 py-2 border-b border-edge/70 flex items-center gap-2">
+              <span className="text-[11px] uppercase tracking-wide text-ink-500">
+                Parameters · {simType}
+              </span>
+              {count > 0 && (
+                <button
+                  onClick={onReset}
+                  className="ml-auto text-[10.5px] text-ink-500 hover:text-ink-900 inline-flex items-center gap-1"
+                  title="Revert all to design/catalog defaults"
+                >
+                  <I.Refresh size={10} /> Reset all
+                </button>
+              )}
+            </div>
+            <div className="max-h-[320px] overflow-auto thin-scroll px-3 py-2 space-y-2.5">
+              {loading && <div className="text-[11px] text-ink-400">loading parameters…</div>}
+              {!loading && err && (
+                <div className="text-[11px] text-err leading-snug">
+                  <div className="flex items-center gap-1.5">
+                    <I.X size={11} /> Couldn't load parameters.
+                  </div>
+                  <div className="text-ink-500 mt-1">
+                    The backend may be out of date (missing the
+                    {" "}<span className="font-mono">/api/sim/boundaries</span> route) — restart it.
+                  </div>
+                  <button
+                    onClick={() => { setBounds(null); setErr(null); }}
+                    className="mt-1.5 h-6 px-2 rounded border border-edge text-ink-700 hover:border-ink-300 inline-flex items-center gap-1"
+                  >
+                    <I.Refresh size={10} /> Retry
+                  </button>
+                </div>
+              )}
+              {!loading && !err && !hasParams && (
+                <div className="text-[11px] text-ink-400">
+                  This block exposes no tunable boundary params.
+                </div>
+              )}
+              {!loading && !err && Object.entries(boundaries).map(([net, b]) => {
+                const keys = Object.keys(b.params);
+                if (!keys.length) return null;
+                return (
+                  <div key={net}>
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <span className="font-mono text-[11px] text-ink-800">{net}</span>
+                      {b.stub && <span className="text-[10px] text-ink-400">{b.stub}</span>}
+                    </div>
+                    <div className="space-y-1">
+                      {keys.map((k) => (
+                        <OverrideField
+                          key={k}
+                          pkey={k}
+                          def={String(b.params[k])}
+                          value={overrides?.[net]?.[k]}
+                          onChange={(v) => onSet(net, k, v)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="px-3 py-1.5 border-t border-edge/70 text-[10px] text-ink-400 leading-snug">
+              Ephemeral — applied to the next Run only, never saved. Reload to discard.
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// One boundary-param row in the Parameters dropdown. Shows the catalog default
+// as placeholder; once the user types a different value it's an active override
+// (amber) with a ↺ revert. Blank input ⇒ no override (use the default).
+function OverrideField({ pkey, def, value, onChange }: {
+  pkey: string; def: string; value: string | undefined; onChange: (v: string | null) => void;
+}) {
+  // Local text mirrors the override; empty string when there's no override.
+  const [text, setText] = useState(value ?? "");
+  useEffect(() => { setText(value ?? ""); }, [value]);
+  const overridden = value !== undefined && value !== "";
+  const commit = (v: string) => {
+    const t = v.trim();
+    onChange(t === "" || t === def ? null : t);   // blank or == default ⇒ clear
+  };
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="font-mono text-[10.5px] text-ink-600 w-28 shrink-0 truncate" title={pkey}>
+        {pkey}
+      </span>
+      <input
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={() => commit(text)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") { commit(text); (e.target as HTMLInputElement).blur(); }
+          if (e.key === "Escape") { setText(value ?? ""); (e.target as HTMLInputElement).blur(); }
+        }}
+        placeholder={def}
+        className={
+          "flex-1 min-w-0 text-[10.5px] font-mono rounded border px-1.5 py-0.5 outline-none " +
+          (overridden
+            ? "border-amber-400 bg-amber-50 text-amber-900 focus:border-amber-500"
+            : "border-edge text-ink-800 focus:border-ink-400")
+        }
+      />
+      {overridden ? (
+        <button
+          onClick={() => onChange(null)}
+          title={`revert to default (${def})`}
+          className="text-ink-400 hover:text-ink-800 shrink-0"
+        >
+          <I.Refresh size={11} />
+        </button>
+      ) : (
+        <span className="w-[11px] shrink-0" />
+      )}
+    </div>
   );
 }
 

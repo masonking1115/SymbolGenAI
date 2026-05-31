@@ -44,6 +44,7 @@ import subprocess
 import sys
 import time
 import uuid
+import yaml
 from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -94,7 +95,11 @@ DESIGN_REQS = PROJECT_DIR / "design_requirements.md"
 RESOURCES_DIR = PROJECT_DIR / "resources"
 REQ_DOCS_DIR = RESOURCES_DIR / "requirements"   # uploaded requirement source docs
 BOM_DIR = RESOURCES_DIR / "bom"                 # uploaded BOM files (.xlsx/.csv)
-SKILLS_DIR = RESOURCES_DIR / "skills"           # agent skills (md), used by chat later
+# Agent skills (md). These are the SAME files the `claude -p` agents can load, so
+# the Skills tab manages the canonical Claude-Code skills dir (`.claude/skills`),
+# not a separate GUI-only copy. (Was RESOURCES_DIR/"skills", which never existed —
+# so the tab showed nothing while a real skill lived under .claude/skills.)
+SKILLS_DIR = PROJECT_DIR / ".claude" / "skills"
 
 # Make the sim package importable as `test1.sim` (repo root on path).
 sys.path.insert(0, str(PROJECT_DIR.parent))
@@ -1135,6 +1140,51 @@ def requirements_save(body: FileContentSave) -> dict:
     return {"ok": True, "name": DESIGN_REQS.name, "bytes": len(body.content.encode("utf-8"))}
 
 
+# The Bobcat design documentation (PDF) — the source the reference links are
+# pulled from. Checked in a couple of likely spots.
+_BOBCAT_DOC_CANDIDATES = [
+    REPO_ROOT / "[External] Bobcat Board Design.pdf",
+    PROJECT_DIR / "Parts Library" / "Bobcat" / "[External] Bobcat Board Design.pdf",
+]
+# Human labels for the URLs that appear in the deck (so the UI shows what each is,
+# not a bare link). Matched by substring; anything unmatched still lists with a
+# generated label.
+_LINK_LABELS = [
+    ("digilent.com", "Digilent Genesys 2 reference (host FPGA platform)"),
+    ("VITA57_FMC", "VITA 57.1 FMC HPC/LPC signals & pinout"),
+    ("tps7a84", "TI TPS7A8401A LDO datasheet"),
+    ("ironwoodelectronics", "Ironwood CG25-QFN-2003 socket drawing"),
+    ("unconv.ai", "Unconventional AI"),
+]
+
+
+@app.get("/api/requirements/links")
+def requirements_links() -> dict:
+    """Reference URLs found in the Bobcat design documentation, for the Design
+    Requirements sub-tab. Extracted live from the PDF's link annotations so they
+    stay in sync with the source; labeled via _LINK_LABELS. Empty list (not an
+    error) if the document or PDF reader isn't available."""
+    pdf = next((p for p in _BOBCAT_DOC_CANDIDATES if p.exists()), None)
+    out: list[dict] = []
+    if pdf is not None:
+        try:
+            import fitz  # PyMuPDF
+            doc = fitz.open(str(pdf))
+            seen: set[str] = set()
+            for i, page in enumerate(doc):
+                for ln in page.get_links():
+                    uri = ln.get("uri")
+                    if not uri or uri in seen:
+                        continue
+                    seen.add(uri)
+                    label = next((lbl for key, lbl in _LINK_LABELS if key.lower() in uri.lower()), None)
+                    out.append({"url": uri, "label": label or uri, "page": i + 1})
+            doc.close()
+        except Exception:
+            out = []   # reader missing / parse error — degrade to empty, no 500
+    return {"source": pdf.name if pdf else None, "links": out}
+
+
 # ---- Design Resources: datasheets · requirement docs · skills --------------
 MAX_UPLOAD_BYTES = 30 * 1024 * 1024  # 30 MB cap for base64 JSON uploads
 
@@ -1196,7 +1246,10 @@ def resources_datasheets() -> dict:
             if not d.is_dir():
                 continue
             for pdf in sorted(d.glob("*.pdf")):
-                out.append({"mpn": d.name, "file": pdf.name, "size": pdf.stat().st_size})
+                stt = pdf.stat()
+                # mtime = uploaded-or-last-edited (one timestamp, whichever is newer).
+                out.append({"mpn": d.name, "file": pdf.name, "size": stt.st_size,
+                            "mtime": stt.st_mtime})
     return {"datasheets": out}
 
 
@@ -1221,7 +1274,9 @@ def resources_requirements() -> dict:
     if REQ_DOCS_DIR.exists():
         for f in sorted(REQ_DOCS_DIR.iterdir(), key=lambda p: p.name.lower()):
             if f.is_file():
-                docs.append({"name": f.name, "size": f.stat().st_size})
+                stt = f.stat()
+                # mtime = uploaded-or-last-edited (one timestamp, whichever is newer).
+                docs.append({"name": f.name, "size": stt.st_size, "mtime": stt.st_mtime})
     return {"active_md_exists": DESIGN_REQS.exists(), "docs": docs}
 
 
@@ -1348,8 +1403,40 @@ def _skill_slug(name: str) -> str:
     return slug[:64]
 
 
+def _skill_frontmatter(text: str) -> dict:
+    """Parse a leading YAML frontmatter block (--- … ---) into a dict. Empty dict
+    if there's none. Used to read a Claude-Code skill's name/description (and, for
+    the attach-to-agents feature, its `agents:` list)."""
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return {}
+    end = next((i for i in range(1, len(lines)) if lines[i].strip() == "---"), None)
+    if end is None:
+        return {}
+    try:
+        data = yaml.safe_load("\n".join(lines[1:end]))
+        return data if isinstance(data, dict) else {}
+    except yaml.YAMLError:
+        return {}
+
+
+def _skill_body_lines(text: str) -> list[str]:
+    """The skill text with any leading YAML frontmatter block stripped."""
+    lines = text.splitlines()
+    if lines and lines[0].strip() == "---":
+        end = next((i for i in range(1, len(lines)) if lines[i].strip() == "---"), None)
+        if end is not None:
+            return lines[end + 1:]
+    return lines
+
+
 def _skill_title(text: str, fallback: str) -> str:
-    for line in text.splitlines():
+    # A Claude-Code skill leads with YAML frontmatter (name/description); prefer
+    # its `name`. Otherwise fall back to the first markdown heading, then the stem.
+    name = str(_skill_frontmatter(text).get("name") or "").strip()
+    if name:
+        return name
+    for line in _skill_body_lines(text):
         if line.lstrip().startswith("#"):
             t = line.lstrip("#").strip()
             if t:
@@ -1366,9 +1453,23 @@ def resources_skills() -> dict:
         for f in sorted(SKILLS_DIR.glob("*.md"), key=lambda p: p.name.lower()):
             text = f.read_text(errors="replace")
             st = f.stat()
+            fm = _skill_frontmatter(text)
+            # Optional `agents:` frontmatter list — which agent kinds this skill is
+            # attached to (its content is appended to those agents' system prompt).
+            raw_agents = fm.get("agents")
+            if isinstance(raw_agents, str):
+                agents = [a.strip() for a in re.split(r"[,\s]+", raw_agents) if a.strip()]
+            elif isinstance(raw_agents, list):
+                agents = [str(a).strip() for a in raw_agents if str(a).strip()]
+            else:
+                agents = []
             skills.append({
                 "slug": f.stem,
                 "title": _skill_title(text, f.stem),
+                # The frontmatter description — what the skill is for (shown in the
+                # Skills tab; also feeds the per-agent "attached skills" dropdown).
+                "description": str(fm.get("description") or "").strip(),
+                "agents": agents,
                 "size": st.st_size,
                 "updated": st.st_mtime,
             })
@@ -1710,6 +1811,11 @@ class SimRunReq(BaseModel):
     # None → the service uses the agent-determined operating point (sim_config),
     # falling back to 1.8V only if no scenario has been determined yet.
     vout_set: float | None = None
+    # Ephemeral "tune before running" boundary-param edits from the GUI, shaped
+    # {net: {param_key: value}}. Applied for THIS run only — never written to
+    # blocks.yaml — so they reset whenever the page is reloaded. Values may be
+    # strings ("3.3", "20e-3"); the catalog coerces numeric-looking ones.
+    param_overrides: dict[str, dict[str, str | float]] | None = None
 
 
 class SimChatEditReq(BaseModel):
@@ -1720,6 +1826,11 @@ class SimChatEditReq(BaseModel):
 class AgentModelReq(BaseModel):
     kind: str                        # agent kind (sim_setup, sim_generate, …)
     model: str | None = None         # one of MODEL_CHOICES, or None to clear override
+
+
+class AgentEffortReq(BaseModel):
+    kind: str                        # agent kind
+    level: str | None = None         # off/low/medium/high, or None to clear override
 
 
 # Functional grouping for the Simulation tab + sidebar. The `group` id on each
@@ -1771,6 +1882,22 @@ def sim_requirements(block: str) -> dict:
         return catalog_edit.requirements(block)
     except KeyError as e:
         raise HTTPException(404, str(e))
+
+
+@app.get("/api/sim/boundaries")
+def sim_boundaries(block: str, sim_type: str) -> dict:
+    """The RESOLVED boundary params for one (block, sim_type) — base params with
+    the sim type's boundary_overrides merged in. This is exactly the baseline a
+    Run uses (before any ephemeral 'tune before running' override), so the GUI's
+    Parameters dropdown shows the right defaults AND every tunable key (including
+    ones a sim_type adds via boundary_overrides, e.g. I_step / t_step)."""
+    from test1.sim import catalog
+    try:
+        resolved = catalog.resolve_boundaries(block, sim_type)
+    except KeyError as e:
+        raise HTTPException(404, str(e))
+    # Shape mirrors requirements().boundaries: {net: {stub, params}}.
+    return {"block": block, "sim_type": sim_type, "boundaries": resolved}
 
 
 @app.post("/api/sim/requirements")
@@ -1825,7 +1952,8 @@ def sim_run(req: SimRunReq) -> dict:
     FastAPI runs sync endpoints in a threadpool, so the ngspice subprocess
     blocks its worker thread, not the event loop."""
     try:
-        return sim_service.run_block_sim(req.block, req.sim_type, vout_set=req.vout_set)
+        return sim_service.run_block_sim(req.block, req.sim_type, vout_set=req.vout_set,
+                                          overrides=req.param_overrides)
     except KeyError as e:
         raise HTTPException(404, str(e))
     except ValueError as e:
@@ -1984,15 +2112,24 @@ async def sim_generate_model(req: SimRunReq) -> dict:
 
 @app.post("/api/sim/update-model")
 async def sim_update_model(req: SimRunReq) -> dict:
-    """Spawn the schematic-sync agent to bring a block's EXISTING model + catalog
-    entry back in line with the current netlist. 409 if the block has no model
-    (generate first)."""
+    """Bring a block fully back in line with the current schematic: re-author its
+    SPICE model + catalog entry (the schematic-sync agent), AND clear the block's
+    cached scenario + datasheet params so the next Run re-derives the operating
+    point and re-extracts device params against the new design. So one "Update"
+    refreshes the sim, its params, and the SPICE model together. 409 if the block
+    has no model (generate first)."""
     blocks = {b["id"]: b for b in sim_service.list_blocks()}
     block = blocks.get(req.block)
     if not block:
         raise HTTPException(404, f"no block {req.block!r}")
     if not block.get("has_model"):
         raise HTTPException(409, f"block {req.block!r} has no SPICE model — generate one first")
+    # Invalidate the stale derived caches up front (next Run repopulates them).
+    from test1.sim import simconfig as sc
+    sc.clear_scenario(req.block)
+    sc.clear_iter_counters(req.block)
+    mpns = [d.get("mpn") for d in block.get("datasheets", []) if d.get("mpn")]
+    sc.clear_params(mpns)
     run = await agent_mod.start_sim_update_model(
         block_id=req.block,
         title=block.get("title", req.block),
@@ -2037,6 +2174,16 @@ def sim_set_agent_model(req: AgentModelReq) -> dict:
     ok = agent_mod.set_agent_model(req.kind, req.model)
     if not ok:
         raise HTTPException(400, f"unknown agent kind {req.kind!r} or invalid model {req.model!r}")
+    return agent_mod.agent_model_config()
+
+
+@app.post("/api/sim/agent-effort")
+def sim_set_agent_effort(req: AgentEffortReq) -> dict:
+    """Set (or clear, level=null) the effort (extended-thinking) override for one
+    agent kind. Returns the full agent config so the GUI re-renders both pickers."""
+    ok = agent_mod.set_agent_effort(req.kind, req.level)
+    if not ok:
+        raise HTTPException(400, f"unknown agent kind {req.kind!r} or invalid effort {req.level!r}")
     return agent_mod.agent_model_config()
 
 

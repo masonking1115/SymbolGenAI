@@ -34,6 +34,29 @@ interface Props {
 
 type RunState = "idle" | "running" | "ok" | "fail";
 
+// Persist the Generator console (its streamed lines + the run outcome) so the
+// most recent / active run survives leaving the tab AND a full page refresh —
+// the Generator unmounts on a tab switch, so component state alone is lost.
+const LS_CONSOLE = "test1.gen.console";
+const CONSOLE_CAP = 2000;   // keep the tail bounded so localStorage can't bloat
+
+interface ConsoleSnapshot { lines: string[]; runState: RunState; ts: number }
+
+function loadConsole(): ConsoleSnapshot | null {
+  try {
+    const v = localStorage.getItem(LS_CONSOLE);
+    if (!v) return null;
+    const s = JSON.parse(v) as ConsoleSnapshot;
+    if (!Array.isArray(s.lines)) return null;
+    // A persisted "running" can't keep streaming after a remount/reload (the SSE
+    // is gone) — show its lines but don't read as a live run (mirrors the sim
+    // tab's no-phantom-spinner rule). The run still finishes server-side.
+    return { ...s, runState: s.runState === "running" ? "idle" : s.runState };
+  } catch {
+    return null;
+  }
+}
+
 const SEV_DOT: Record<Severity, string> = {
   ERROR: "bg-err",
   WARNING: "bg-warn",
@@ -50,9 +73,12 @@ export function Generator({
   setSubPhase,
   refreshTrigger,
 }: Props) {
-  const [lines, setLines] = useState<string[]>([]);
+  // Rehydrate the console from the last persisted snapshot so the most recent /
+  // active run's output is retained across tab switches + refreshes.
+  const _snap0 = loadConsole();
+  const [lines, setLines] = useState<string[]>(() => _snap0?.lines ?? []);
   const [runId, setRunId] = useState<string | null>(null);
-  const [runState, setRunState] = useState<RunState>("idle");
+  const [runState, setRunState] = useState<RunState>(() => _snap0?.runState ?? "idle");
   const [lint, setLint] = useState<LintReport | null>(null);
   const [netlistFiles, setNetlistFiles] = useState<string[]>([]);
   const [fresh, setFresh] = useState<Freshness | null>(null);
@@ -86,6 +112,17 @@ export function Generator({
   // Track which lint issues are selected for adding to changelog
   // Format: "rule_id:issue_index" (e.g., "offpage_text:0", "label_overlap:2")
   const [selectedIssues, setSelectedIssues] = useState<Set<string>>(new Set());
+
+  // Persist the console (bounded tail + outcome) on every change, so leaving the
+  // tab or refreshing keeps the most recent / active run's output. Skip the very
+  // first idle/empty state so we don't clobber a saved snapshot before any run.
+  useEffect(() => {
+    if (runState === "idle" && lines.length === 0) return;
+    try {
+      const tail = lines.length > CONSOLE_CAP ? lines.slice(-CONSOLE_CAP) : lines;
+      localStorage.setItem(LS_CONSOLE, JSON.stringify({ lines: tail, runState, ts: Date.now() }));
+    } catch { /* quota — ignore */ }
+  }, [lines, runState]);
 
   // Refresh lint report whenever artifacts change.
   const refreshLint = useCallback(async () => {

@@ -53,9 +53,9 @@ blocks:
     group: power_generation
     status: implemented
     description: >
-      +3V3 → TPS7A8401A ANY-OUT LDO → VADJ → TPS22916 load switch → +VDDIO,
-      with full input/output decoupling. The setpoint is selected by the
-      LDO_SET_* globals; for sim it's passed as VOUT_SET.
+      The +VDDIO supply rail: +3V3 feeds a TPS7A8401A adjustable LDO, whose
+      output passes through a TPS22916 load switch to +VDDIO, with full input
+      and output decoupling. The LDO output voltage is pin-selectable.
     models_needed: [LDO_TPS7A8401A, SW_TPS22916]
     datasheets:
       - { mpn: TPS7A8401A, file: tps7a84a.pdf }
@@ -77,17 +77,15 @@ blocks:
         # Uses base boundaries unchanged (static EN, steady 10mA load).
       - type: transient_powerup
         rationale: >
-          STIMULUS CHECK (not autonomous sequencing): with the FPGA driving
-          LDO_EN before LSW_EN as modeled, verifies the rails ramp in order and
-          inrush stays bounded. The real bring-up ORDER is FPGA firmware, off-
-          schematic; this confirms the analog response to that assumed timing.
+          With the enables driven in the intended order (LDO before load switch),
+          confirm the rails ramp up in sequence and inrush current stays bounded.
         pass: "LDO_OUT crosses 90% before +VDDIO; peak inrush <= 1A."
         boundary_overrides:
           LDO_EN:   { t_on: 100e-6 }       # ASSUMED FPGA timing: LDO enable at 100us
           LSW_EN:   { t_on: 600e-6 }       # ASSUMED FPGA timing: switch enable at 600us
           "+VDDIO": { R_load: 36 }          # resistive load (tracks rising rail)
       - type: transient_load_step
-        rationale: Decoupling must hold the rail under a dynamic load from Bobcat.
+        rationale: The decoupling must hold +VDDIO steady when Bobcat's load current jumps.
         pass: "Droop on +VDDIO <= 50mV and recovery to within 25mV <= 100us for a 10->100mA step."
         boundary_overrides:
           "+VDDIO": { I_step: 0.090, t_step: 8e-3 }   # 10 -> 100mA step, after the 3ms switch turn-on settles
@@ -119,11 +117,11 @@ blocks:
     group: analog_bias
     status: implemented
     description: >
-      Per-channel precision current source: MCP4728 DAC voltage → OPA2388
-      +IN; opamp drives a PMOS gate; PMOS source returns to +3V3 through a
-      5.11k 0.1% sense R; opamp -IN samples the source node (closed loop).
-      PMOS drain → 2N7002 isolator → BIASx. The loop forces I_bias =
-      (3V3 - V_DAC)/5.11k, so the DAC inversely sets 0..646uA.
+      A per-channel precision current source. An MCP4728 DAC sets the target;
+      an OPA2388 op-amp drives a PMOS so its source, returned to +3V3 through a
+      5.11k 0.1% sense resistor, tracks the DAC voltage. The PMOS drain feeds a
+      2N7002 isolation FET out to BIASx. The closed loop sets the bias current
+      to (3V3 - V_DAC) / 5.11k, giving 0 to 646uA as the DAC sweeps down.
     models_needed: [OPA2388, PMOS_PMZ1200, NMOS_2N7002]
     datasheets:
       - { mpn: OPA2388, file: opa2388.pdf }
@@ -140,47 +138,44 @@ blocks:
     sim_types:
       - type: dc_sweep
         rationale: >
-          Sweep DAC 0..3.3V; the loop should force I_bias = (3V3-V_DAC)/5.11k.
-          This is the headline spec — V-to-I accuracy across the output range.
+          The headline accuracy spec: sweep the DAC across its range and check the
+          delivered bias current tracks the ideal (3V3 - V_DAC) / 5.11k.
         pass: "I_BIAS error vs ideal <= 1% from 10% to 100% of full-scale (646uA)."
       - type: dc_compliance
         rationale: >
-          Bobcat spec is "nominally 320uA at 0.5V" — the DUT pulls bias with its
-          BIASx pin near 0.5V. Hold BIAS0 at 0.5V (not a near-ground load) and
-          sweep the DAC: the loop must still deliver the ideal current across the
-          range and hit ~320uA at the nominal point, with the PMOS drain staying
-          above 0.5V (enough headroom through the isolation FET).
+          Bobcat draws its bias with the BIASx pin near 0.5V, nominally 320uA.
+          Holding BIAS0 at 0.5V, confirm the loop still delivers the ideal current
+          across the range (and ~320uA at the nominal point) with enough headroom.
         pass: "I_BIAS error vs ideal <= 1% (and within 1% of 320uA at nominal) with BIAS0 held at 0.5V; PMOS drain >= 0.5V."
       - type: ac_stability
         rationale: >
-          opamp + PMOS gate (capacitive load) + sense-R form a feedback loop —
-          classic stability risk. Closed-loop peaking is the phase-margin proxy.
+          The op-amp, the PMOS gate's capacitance, and the sense resistor form a
+          feedback loop that can ring. Closed-loop peaking stands in for phase margin.
         pass: "Closed-loop peaking <= 3 dB (≈ phase margin >= 45 degrees)."
       - type: transient_settling
-        rationale: When the FPGA writes a new DAC code, BIASx must settle without ringing.
+        rationale: After a new DAC code is written, the bias current must settle cleanly without ringing.
         pass: "Bias current settles within 1% <= 50us, no sustained oscillation, for a mid-scale step."
       - type: por_failsafe
         rationale: >
-          Safety gate. A virgin MCP4728 powers up at code 0xFFF (VOUT=VDD) and
-          BIAS_ISO is held low by its gate pull-down, so NO bias must reach the
-          DUT until the FPGA enables it.
-        pass: "Bias current into the DUT at POR <= 1uA."
+          Safety gate: at power-on the DAC wakes at full scale and the isolation
+          FET is held off, so almost no bias should reach Bobcat until it's enabled.
+        pass: "Bias current into Bobcat at power-on <= 1uA."
         boundary_overrides:
           BIAS_ISO0: { V_hi: 0 }     # isolator OFF (gate pull-down at POR)
       - type: monte_carlo_accuracy
         status: planned
         rationale: >
-          Worst-case full-scale accuracy is a tolerance stack-up (5.11k 0.1%
-          sense R + op-amp offset distribution). Nominal-value sims can't sign
-          this off. Doesn't need new device models — just parameter variation.
+          Worst-case accuracy comes from a tolerance stack-up (the 0.1% sense
+          resistor plus op-amp offset spread); nominal-value runs can't sign it off.
         pass: "3-sigma I_bias error <= 1% across the regulated range."
-        defer_reason: "Needs an ngspice Monte Carlo control loop (agauss on R_sense/Vos). No new models required — this is the clear next implementation step."
+        defer_reason: "Needs a Monte Carlo run that varies the sense resistor and op-amp offset. No new device models required."
       - type: output_noise
         status: planned
         rationale: >
-          BIASx output noise corrupts the DUT measurement — the precision spec.
-        pass: "Integrated BIASx RMS current noise within budget (TBD per DUT)."
-        defer_reason: "Behavioral OPA2388 is noiseless; a .noise run needs the datasheet input voltage-noise density + 1/f corner to be meaningful."
+          BIASx output noise directly corrupts Bobcat's measurement, so it's part
+          of the precision spec.
+        pass: "Integrated BIASx RMS current noise within budget (TBD per load)."
+        defer_reason: "The behavioral op-amp is noiseless; a noise run needs the OPA2388 voltage-noise density and 1/f corner to be meaningful."
       - type: temp_drift
         status: planned
         rationale: Accuracy over temperature (op-amp offset drift + sense-R tempco).
@@ -201,25 +196,24 @@ blocks:
     group: power_distribution
     status: implemented
     description: >
-      The +VDDIO decoupling bank (C24-C29 row + power-sheet bulk). Tests the
-      power-distribution network the chip sees, independent of how +VDDIO is
-      generated. Each cap is modeled as series R-L-C (ESR + ESL).
+      The +VDDIO decoupling bank (the C24-C29 capacitors plus bulk). Tests the
+      power-distribution network Bobcat sees, independent of how +VDDIO is made.
+      Each capacitor is modeled with its real ESR and ESL.
     models_needed: []
     sim_types:
       - type: transient_load_step
         rationale: >
-          The schematic-level decoupling gate. A fast load step exposes whether
-          the cap bank can supply the transient charge — verified sensitive:
-          stripping caps drives droop well past the limit (catches a dropped C29).
+          The core decoupling check: a fast load step shows whether the capacitor
+          bank can supply the sudden charge demand and hold the rail.
         pass: "Droop <= 30mV for a 50->250mA step (100ns edge)."
       - type: ac_pdn_impedance
         status: planned
         rationale: >
-          Z(f) profile + anti-resonance peak. Sensitive to decoupling, BUT the
-          peak magnitude is dominated by supply-path inductance (a LAYOUT value):
-          ~115mOhm at 2nH vs ~1.1Ohm at 20nH for the same caps.
+          The impedance-vs-frequency profile and its anti-resonance peak. The
+          peak height is set mostly by supply-path inductance, which is a layout
+          property rather than a schematic one.
         pass: "|Z(+VDDIO)| peak <= 100mOhm across 100kHz-50MHz."
-        defer_reason: "The anti-resonance peak is set by board L_src (layout), not the schematic. Needs PCB parasitic extraction to give a trustworthy absolute Z; the schematic-level decoupling gate is the load-step."
+        defer_reason: "The anti-resonance peak is set by board layout inductance, not the schematic, so a trustworthy result needs PCB parasitic extraction. The load step is the schematic-level decoupling check."
     datasheets:
       - { mpn: GRM155R71C104KA88D, file: GRM155R71C104KA88-01.pdf }
       - { mpn: GRM155R70J105KA12D, file: GRM155R70J105KA12-01.pdf }
@@ -238,18 +232,18 @@ blocks:
     group: power_distribution
     status: implemented
     description: >
-      The +VDDD decoupling (C20 0.1uF + C21 1uF, per-pin caps on the SPI-exit
-      domain). Same R-L-C PDN treatment as VDDIO, on a smaller cap bank.
+      The +VDDD decoupling for Bobcat's digital supply: a 0.1uF and a 1uF
+      capacitor (C20, C21). The same PDN treatment as +VDDIO on a smaller bank.
     models_needed: []
     sim_types:
       - type: transient_load_step
-        rationale: Confirm the 2-cap VDDD bank holds the rail under a load step.
+        rationale: Confirm the two-capacitor +VDDD bank holds the rail under a load step.
         pass: "Droop <= 50mV for a 50->250mA step (100ns edge)."
       - type: ac_pdn_impedance
         status: planned
-        rationale: Z(f) profile; peak dominated by layout supply inductance.
-        pass: "|Z(+VDDD)| peak <= 200mOhm (fewer caps than VDDIO; looser target)."
-        defer_reason: "Same as vddio_pdn — the anti-resonance peak is a layout (L_src) property; needs PCB extraction. Schematic gate is the load-step."
+        rationale: The impedance-vs-frequency profile; its peak is dominated by layout supply inductance.
+        pass: "|Z(+VDDD)| peak <= 200mOhm (fewer caps than +VDDIO, so a looser target)."
+        defer_reason: "As with +VDDIO, the anti-resonance peak is a layout property and needs PCB extraction. The load step is the schematic-level check."
     datasheets:
       - { mpn: GRM155R71C104KA88D, file: GRM155R71C104KA88-01.pdf }
       - { mpn: GRM155R70J105KA12D, file: GRM155R70J105KA12-01.pdf }
@@ -266,25 +260,22 @@ blocks:
     group: power_distribution
     status: implemented
     description: >
-      The Bobcat VDDA1 analog supply (pin 1): a single 0.1uF decap (C22) on the
-      chip side of the series 0Ω (R20). PDF requires decoupling on VDDA1/VDDA2.
-      Analog rails draw far less transient current than the digital rails, so
-      the load step + droop budget are scaled to an analog supply pin (not the
-      250mA digital step).
+      Bobcat's VDDA1 analog supply: a single 0.1uF capacitor (C22) on the chip
+      side of a series 0Ω resistor (R20). Analog rails draw much less transient
+      current than the digital ones, so the load step and droop budget are scaled
+      down to an analog supply pin.
     models_needed: []
     sim_types:
       - type: transient_load_step
         rationale: >
-          Confirm the single 0.1uF VDDA1 decap holds the analog rail under a
-          modest analog-scale load step. With one small cap the rail relies on
-          the source path past the 0Ω, so this is the honest adequacy check the
-          PDF's "decoupling on VDDA1" requirement asks for.
+          Confirm the single 0.1uF capacitor holds the analog rail under a modest
+          load step. With only one small cap, this checks the decoupling is adequate.
         pass: "Droop <= 50mV for a 5->25mA step (100ns edge)."
       - type: ac_pdn_impedance
         status: planned
-        rationale: Z(f) profile; peak dominated by layout supply inductance.
-        pass: "|Z(VDDA1)| peak <= 300mOhm (single cap; loosest target)."
-        defer_reason: "Anti-resonance peak is a layout (L_src) property; needs PCB extraction. Schematic gate is the load-step."
+        rationale: The impedance-vs-frequency profile; its peak is dominated by layout supply inductance.
+        pass: "|Z(VDDA1)| peak <= 300mOhm (single cap, so the loosest target)."
+        defer_reason: "The anti-resonance peak is a layout property and needs PCB extraction. The load step is the schematic-level check."
     datasheets:
       - { mpn: GRM155R71C104KA88D, file: GRM155R71C104KA88-01.pdf }
       - { mpn: Bobcat, file: Bobcat_preview.pdf }
@@ -302,19 +293,19 @@ blocks:
     group: power_distribution
     status: implemented
     description: >
-      The Bobcat VDDA2 analog supply (pins 26+27): a single 0.1uF decap (C23)
-      on the chip side of the series 0Ω (R21). Same analog-scale PDN treatment
-      as VDDA1.
+      Bobcat's VDDA2 analog supply (pins 26 and 27): a single 0.1uF capacitor
+      (C23) on the chip side of a series 0Ω resistor (R21). The same analog-scale
+      treatment as VDDA1.
     models_needed: []
     sim_types:
       - type: transient_load_step
-        rationale: Confirm the single 0.1uF VDDA2 decap holds the analog rail under a modest load step.
+        rationale: Confirm the single 0.1uF capacitor holds the analog rail under a modest load step.
         pass: "Droop <= 50mV for a 5->25mA step (100ns edge)."
       - type: ac_pdn_impedance
         status: planned
-        rationale: Z(f) profile; peak dominated by layout supply inductance.
-        pass: "|Z(VDDA2)| peak <= 300mOhm (single cap; loosest target)."
-        defer_reason: "Anti-resonance peak is a layout (L_src) property; needs PCB extraction. Schematic gate is the load-step."
+        rationale: The impedance-vs-frequency profile; its peak is dominated by layout supply inductance.
+        pass: "|Z(VDDA2)| peak <= 300mOhm (single cap, so the loosest target)."
+        defer_reason: "The anti-resonance peak is a layout property and needs PCB extraction. The load step is the schematic-level check."
     datasheets:
       - { mpn: GRM155R71C104KA88D, file: GRM155R71C104KA88-01.pdf }
       - { mpn: Bobcat, file: Bobcat_preview.pdf }
@@ -331,17 +322,17 @@ blocks:
     group: system_integration
     status: planned
     description: >
-      The pass-2 integration test: full 3V3 -> LDO -> {VDDD/VDDA1/VDDA2 +
-      VDDIO} plus bias-enable, confirming a safe bring-up order and that bias
-      stays off the DUT until all rails are up. Each block's own power-up is
-      already covered; this stitches them together.
+      The whole-board integration test: +3V3 through the LDO to every rail
+      (+VDDD, +VDDA1, +VDDA2, +VDDIO) plus the bias enable, confirming a safe
+      bring-up order and that no bias reaches Bobcat until every rail is up. Each
+      block's own power-up is already covered; this ties them together.
     models_needed: []
     sim_types:
       - type: multi_rail_sequencing
         status: planned
-        rationale: Confirm safe whole-board bring-up order + bias-after-rails interlock.
+        rationale: Confirm a safe whole-board bring-up order and that bias stays off until the rails are up.
         pass: "All rails settle in the intended order; bias current = 0 until rails are up."
-        defer_reason: "Requires composing the power + bias decks into one integration deck (the two-pass boundary-extraction scheme) — build after the per-block sims are accepted."
+        defer_reason: "Combines the individual power and bias models into one integration test — best built after the per-block sims are accepted."
 
   # --------------------------------------------------------------------------
   # Not simulatable — documented so the tab explains the gap.
@@ -352,10 +343,9 @@ blocks:
     group: not_simulatable
     status: not_simulatable
     reason: >
-      Digital I2C device on +3V3 with a decoupling cap. No analog behavior
-      worth a SPICE model; correctness is protocol/addressing, which belongs
-      to the design-review / netlist checks, not simulation. (A trivial
-      decoupling check could fold into vddio_pdn-style PDN if ever wanted.)
+      A digital I2C device on +3V3 with a decoupling capacitor. There's no analog
+      behavior worth simulating — correctness here is protocol and addressing,
+      which the design review checks rather than simulation.
 
   - id: fmc
     title: VITA 57.1 FMC connector (ASP-134606-01)
@@ -363,10 +353,9 @@ blocks:
     group: not_simulatable
     status: not_simulatable
     reason: >
-      Pure connector + 0R routing network. No active devices; "correctness"
-      is pinout/routing, checked by the strict netlist validator. Signal-
-      integrity of the LA bank is a PCB-layout (impedance) concern, not a
-      schematic-level SPICE one.
+      A connector and 0Ω routing network with no active devices. Correctness here
+      is pinout and routing, checked by the design review. Signal integrity of the
+      LA bank is a PCB-layout concern, not a schematic-level one.
 
   - id: connectors
     title: SMAs / GPIO header / GND clips
@@ -374,6 +363,6 @@ blocks:
     group: not_simulatable
     status: not_simulatable
     reason: >
-      Passive coaxial + header connectors with 0R series elements. Nothing to
-      bias or solve; any meaningful analysis (SMA impedance, return loss) is
-      EM/PCB-layout territory, not schematic SPICE.
+      Passive coaxial and header connectors with 0Ω series elements. There's
+      nothing to bias or solve — any meaningful analysis (SMA impedance, return
+      loss) is PCB-layout territory, not schematic-level.
