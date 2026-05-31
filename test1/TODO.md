@@ -2,6 +2,16 @@
 
 Deferred work items (not blocking; pick up when convenient).
 
+## Library part detail: embed the datasheet (2026-05-31) — TODO
+
+- [ ] **Show the datasheet PDF in the Library part-detail view**, filling the
+      empty space below the Symbol (and/or Properties). It should be scrollable
+      and zoomable — embed the PDF inline (the datasheet is already served at
+      `api.datasheetUrl(mpn)`), e.g. an `<iframe>`/`<embed>` with the browser's
+      native scroll+zoom, or a pan/zoom canvas if we want custom controls. This
+      is the Library tab's PartDetail (tabs/Library.tsx), not Design Resources.
+      Only show it when `properties.Datasheet` exists; otherwise leave the space.
+
 ## Multi-agent console (2026-05-30) — TODO
 
 - [ ] **Visually see + click through every spawned agent and what each is doing.**

@@ -229,6 +229,29 @@ export const api = {
     ),
   requirementFileUrl: (name: string) =>
     `/api/resources/requirements/file?name=${encodeURIComponent(name)}`,
+  // The ACTIVE design_requirements.md spec (project root) — GET/PUT content.
+  activeRequirement: () =>
+    j<{ exists: boolean; content: string }>("/api/requirements"),
+  saveActiveRequirement: (content: string) =>
+    j<{ ok: boolean; name: string; bytes: number }>("/api/requirements", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content }),
+    }),
+  // In-app editor: plain-text content of a requirements doc (text exts only).
+  requirementContent: (name: string) =>
+    j<{ name: string; content: string; size: number }>(
+      `/api/resources/requirements/content?name=${encodeURIComponent(name)}`,
+    ),
+  saveRequirementContent: (name: string, content: string) =>
+    j<{ ok: boolean; name: string; bytes: number }>(
+      `/api/resources/requirements/content?name=${encodeURIComponent(name)}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content }),
+      },
+    ),
   // BOM (bill of materials) — .xlsx/.csv, stored in resources/bom/
   resourcesBom: () =>
     j<{ bom: BomItem[]; generated_exists: boolean }>("/api/resources/bom"),
@@ -240,7 +263,25 @@ export const api = {
     }),
   bomFileUrl: (name: string) =>
     `/api/resources/bom/file?name=${encodeURIComponent(name)}`,
+  // In-app editor: plain-text content of a BOM file (CSV/TSV only; xlsx is 415).
+  bomContent: (name: string) =>
+    j<{ name: string; content: string; size: number }>(
+      `/api/resources/bom/content?name=${encodeURIComponent(name)}`,
+    ),
+  saveBomContent: (name: string, content: string) =>
+    j<{ ok: boolean; name: string; bytes: number }>(
+      `/api/resources/bom/content?name=${encodeURIComponent(name)}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content }),
+      },
+    ),
   resourcesSkills: () => j<{ skills: SkillItem[] }>("/api/resources/skills"),
+  // Raw endpoint URL for a skill (JSON {slug, content}) — used as the
+  // OpenFile.url for the editor's "open in new tab" affordance.
+  skillFileUrl: (slug: string) =>
+    `/api/resources/skills/${encodeURIComponent(slug)}`,
   resourcesSkill: (slug: string) =>
     j<{ slug: string; content: string }>(
       `/api/resources/skills/${encodeURIComponent(slug)}`,

@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { api, subscribeAgent } from "../api";
 import { I } from "../components/Icon";
 import { PageHeader } from "../components/PageHeader";
+import type { OpenFile } from "../components/ResourceEditor";
 import type {
   AgentModelConfig,
   BomItem,
@@ -43,8 +44,18 @@ function fmtSize(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
-export function Resources({ onViewPart }: { onViewPart?: (mpn: string) => void } = {}) {
+export function Resources({
+  onViewPart,
+  onOpenFile,
+}: {
+  onViewPart?: (mpn: string) => void;
+  // Open a file in the shared app right pane (replaces the schematic). Provided
+  // by App so the file viewer lives alongside the schematic with a toggle.
+  onOpenFile?: (f: OpenFile) => void;
+} = {}) {
   const [sub, setSub] = useState<ResourceSubTab>("datasheets");
+  const onOpen = useCallback((f: OpenFile) => onOpenFile?.(f), [onOpenFile]);
+
   return (
     <div className="h-full flex flex-col min-h-0">
       <div className="px-6 pt-5 shrink-0">
@@ -72,12 +83,14 @@ export function Resources({ onViewPart }: { onViewPart?: (mpn: string) => void }
           })}
         </div>
       </div>
+      {/* Left-only, centered column. Clicking a file opens it in the shared
+          right pane (schematic ↔ file toggle), owned by App. */}
       <div className="flex-1 min-h-0 overflow-auto thin-scroll px-6 py-4">
-        <div className="max-w-[900px]">
-          {sub === "datasheets" && <DatasheetsPanel onViewPart={onViewPart} />}
-          {sub === "bom" && <BomPanel />}
-          {sub === "requirements" && <RequirementsPanel />}
-          {sub === "skills" && <SkillsPanel />}
+        <div className="max-w-[900px] mx-auto">
+          {sub === "datasheets" && <DatasheetsPanel onViewPart={onViewPart} onOpen={onOpen} />}
+          {sub === "bom" && <BomPanel onOpen={onOpen} />}
+          {sub === "requirements" && <RequirementsPanel onOpen={onOpen} />}
+          {sub === "skills" && <SkillsPanel onOpen={onOpen} />}
           {sub === "agent_models" && <AgentModelsPanel />}
           <section className="mt-6 px-3 py-2 rounded border border-edge bg-rail/30 text-[11.5px]">
             <div className="text-ink-500 mb-1">Providers</div>
@@ -112,7 +125,7 @@ function ProvidersBox() {
 // Per-part symbol-generation lifecycle for the inline "generate" affordance.
 type SymGen = "idle" | "running" | "ok" | "fail";
 
-function DatasheetsPanel({ onViewPart }: { onViewPart?: (mpn: string) => void }) {
+function DatasheetsPanel({ onViewPart, onOpen }: { onViewPart?: (mpn: string) => void; onOpen: (f: OpenFile) => void }) {
   const [items, setItems] = useState<DatasheetItem[]>([]);
   const [mpn, setMpn] = useState("");
   const [file, setFile] = useState<File | null>(null);
@@ -270,15 +283,16 @@ function DatasheetsPanel({ onViewPart }: { onViewPart?: (mpn: string) => void })
                     <span className="text-ink-500">
                       <I.Datasheet size={16} />
                     </span>
-                    <a
-                      href={api.datasheetUrl(f.mpn, f.file)}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-[13px] text-ink-900 hover:underline truncate"
-                      title={`${f.file} — open PDF`}
+                    <button
+                      onClick={() => onOpen({
+                        kind: "datasheet", name: f.file,
+                        url: api.datasheetUrl(f.mpn, f.file),
+                      })}
+                      className="text-[13px] text-ink-900 hover:underline truncate text-left"
+                      title={`${f.file} — open in viewer`}
                     >
                       {f.file}
-                    </a>
+                    </button>
                     <span className="ml-auto text-[11px] text-ink-500 shrink-0">
                       {fmtSize(f.size)}
                     </span>
@@ -475,7 +489,7 @@ function AgentModelGroups({
 // ---------------------------------------------------------------------------
 // Design Requirements
 // ---------------------------------------------------------------------------
-function RequirementsPanel() {
+function RequirementsPanel({ onOpen }: { onOpen: (f: OpenFile) => void }) {
   const [docs, setDocs] = useState<RequirementDoc[]>([]);
   const [activeMd, setActiveMd] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -542,7 +556,20 @@ function RequirementsPanel() {
         <span className={activeMd ? "text-ok" : "text-ink-300"}>
           <I.Datasheet size={16} />
         </span>
-        <span className="font-mono text-ink-900">design_requirements.md</span>
+        {activeMd ? (
+          <button
+            onClick={() => onOpen({
+              kind: "active_req", name: "design_requirements.md",
+              title: "design_requirements.md", url: "/api/requirements",
+            })}
+            className="font-mono text-ink-900 hover:underline text-left"
+            title="Open the active spec in the editor"
+          >
+            design_requirements.md
+          </button>
+        ) : (
+          <span className="font-mono text-ink-900">design_requirements.md</span>
+        )}
         <span className="text-[11px] text-ink-500">
           {activeMd ? "active spec read by the pipeline" : "not present"}
         </span>
@@ -561,15 +588,16 @@ function RequirementsPanel() {
                 <span className="text-ink-500">
                   <I.Datasheet size={16} />
                 </span>
-                <a
-                  href={api.requirementFileUrl(d.name)}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-[13px] text-ink-900 hover:underline truncate"
-                  title={`${d.name} — open`}
+                <button
+                  onClick={() => onOpen({
+                    kind: "requirement", name: d.name,
+                    url: api.requirementFileUrl(d.name),
+                  })}
+                  className="text-[13px] text-ink-900 hover:underline truncate text-left"
+                  title={`${d.name} — open in editor`}
                 >
                   {d.name}
-                </a>
+                </button>
                 <span className="ml-auto text-[11px] text-ink-500 shrink-0">
                   {fmtSize(d.size)}
                 </span>
@@ -585,7 +613,7 @@ function RequirementsPanel() {
 // ---------------------------------------------------------------------------
 // BOM (bill of materials)
 // ---------------------------------------------------------------------------
-function BomPanel() {
+function BomPanel({ onOpen }: { onOpen: (f: OpenFile) => void }) {
   const [files, setFiles] = useState<BomItem[]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -659,14 +687,15 @@ function BomPanel() {
                 <span className="text-ok">
                   <I.Bom size={16} />
                 </span>
-                <a
-                  href={api.bomFileUrl(f.name)}
-                  download
-                  className="text-[13px] text-ink-900 hover:underline truncate"
-                  title={`${f.name} — download`}
+                <button
+                  onClick={() => onOpen({
+                    kind: "bom", name: f.name, url: api.bomFileUrl(f.name),
+                  })}
+                  className="text-[13px] text-ink-900 hover:underline truncate text-left"
+                  title={`${f.name} — open`}
                 >
                   {f.name}
-                </a>
+                </button>
                 <span className="ml-auto text-[11px] text-ink-500 shrink-0">
                   {fmtSize(f.size)}
                 </span>
@@ -688,8 +717,10 @@ interface Editing {
   content: string;
 }
 
-function SkillsPanel() {
+function SkillsPanel({ onOpen }: { onOpen: (f: OpenFile) => void }) {
   const [skills, setSkills] = useState<SkillItem[]>([]);
+  // The inline editor is now used ONLY for CREATING a new skill — existing
+  // skills open in the shared right-pane editor (consistent with other files).
   const [editing, setEditing] = useState<Editing | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -706,15 +737,10 @@ function SkillsPanel() {
     refresh();
   }, [refresh]);
 
-  const open = async (slug: string) => {
-    setErr("");
-    try {
-      const r = await api.resourcesSkill(slug);
-      const title = skills.find((s) => s.slug === slug)?.title ?? slug;
-      setEditing({ slug, title, content: r.content });
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-    }
+  // Open an existing skill in the shared editor pane (kind: "skill").
+  const open = (slug: string) => {
+    const title = skills.find((s) => s.slug === slug)?.title ?? slug;
+    onOpen({ kind: "skill", name: slug, title, url: api.skillFileUrl(slug) });
   };
 
   const save = async () => {

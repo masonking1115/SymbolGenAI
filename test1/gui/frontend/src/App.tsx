@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import { Sidebar } from "./components/Sidebar";
 import { TopBar } from "./components/TopBar";
@@ -6,6 +6,10 @@ import { PngViewer } from "./components/PngViewer";
 import { DiffPanes, type DiffMode } from "./components/DiffPanes";
 import { Splitter } from "./components/Splitter";
 import { AgentRail } from "./components/AgentRail";
+import type { OpenFile } from "./components/ResourceEditor";
+// Lazy so CodeMirror (~550KB) only loads when a file is actually opened.
+const ResourceEditor = lazy(() =>
+  import("./components/ResourceEditor").then((m) => ({ default: m.ResourceEditor })));
 import { Generator } from "./tabs/Generator";
 import { Library } from "./tabs/Library";
 import { Resources } from "./tabs/Resources";
@@ -49,6 +53,10 @@ export default function App() {
   const [tab, setTabRaw] = useState<TabKey>(initialTab);
   const setTab = useCallback((t: TabKey) => {
     setTabRaw(t);
+    // An open file viewer belongs to the tab it was opened from — drop it on
+    // any tab switch so the schematic is the default again.
+    setOpenFile(null);
+    setRightView("schematic");
     try { localStorage.setItem(TAB_LS_KEY, t); } catch { /* ignore */ }
   }, []);
 
@@ -60,11 +68,28 @@ export default function App() {
     setPendingPart(mpn);
     setTab("library");
   }, [setTab]);
+
+  // Whether the shared right pane (schematic / file viewer) is open at all.
+  const [pngOpen, setPngOpen] = useState(true);
+  // A resource/datasheet file opened from Library or Design Resources. When set,
+  // it takes over the shared right pane (replacing the schematic viewer), with a
+  // toggle to flip back. Cleared on Close or when switching tabs.
+  const [openFile, setOpenFile] = useState<OpenFile | null>(null);
+  // Which view the shared right pane shows: the schematic or the open file.
+  const [rightView, setRightView] = useState<"schematic" | "file">("schematic");
+  const onOpenFile = useCallback((f: OpenFile) => {
+    setOpenFile(f);
+    setRightView("file");
+    setPngOpen(true);   // ensure the pane is visible
+  }, []);
+  const closeFile = useCallback(() => {
+    setOpenFile(null);
+    setRightView("schematic");
+  }, []);
   // Live mirror of `tab` for callbacks that must read the CURRENT tab without
   // re-binding (e.g. the gated setHealth handed to the always-mounted Simulation).
   const tabRef = useRef(tab);
   tabRef.current = tab;
-  const [pngOpen, setPngOpen] = useState(true);
   const [bust, setBust] = useState(0);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [health, setHealth] = useState<
@@ -213,9 +238,13 @@ export default function App() {
   // The other tabs have no background work, so they mount on demand as usual.
   const otherContent =
     tab === "resources" ? (
-      <Resources onViewPart={goToPart} />
+      <Resources onViewPart={goToPart} onOpenFile={onOpenFile} />
     ) : tab === "library" ? (
-      <Library initialPart={pendingPart} onPartConsumed={() => setPendingPart(null)} />
+      <Library
+        initialPart={pendingPart}
+        onPartConsumed={() => setPendingPart(null)}
+        onOpenFile={onOpenFile}
+      />
     ) : tab === "review" ? (
       <Review
         onArtifactsChanged={onArtifactsChanged}
@@ -268,15 +297,14 @@ export default function App() {
     tab === "simulation" ||
     tab === "resources";
 
-  // Library + Design Resources are about component symbols / source files, not
-  // the schematic, so the full-schematic PNG inspector doesn't belong there.
-  const showPng = pngOpen && tab !== "library" && tab !== "resources";
+  // The shared right pane (schematic viewer, or an opened file) now shows on
+  // Generator, Review, Simulation, AND Library + Design Resources — on the
+  // latter two you can open a datasheet/file to replace the schematic.
+  const showPng = pngOpen;
+  // On Library/Resources we never show the Review diff; the right pane is the
+  // schematic OR an opened file.
+  const fileTabs = tab === "library" || tab === "resources";
 
-  // Generator/Review/Simulation are width-capped content columns, so the
-  // canvas should grow into the otherwise-dead gutter on wide screens. Splits
-  // are fraction-based, so the panes scale together when the window/display
-  // width changes.
-  const canvasGrows = tab === "generator" || tab === "review" || tab === "simulation";
   // On the Simulation tab the right pane can also show the SPICE model of the
   // selected block (what's actually simulated), toggled inside the viewer.
   // Right pane is normally the PngViewer (current schematic). When the Review
@@ -285,44 +313,93 @@ export default function App() {
   // duplicated schematic. Diff data lives here in App.tsx; controls + Accept/
   // Reject live in the Review tab content column.
   const rightPaneIsDiff = tab === "review" && diffActive && !!loopDiff && diffVisible;
-  const pngView = rightPaneIsDiff ? (
-    <DiffPanes
-      loopId={activeLoopId!}
-      diff={loopDiff!}
-      activeSheet={diffSheet}
-      setActiveSheet={setDiffSheet}
-      mode={diffMode}
-      setMode={setDiffMode}
-    />
-  ) : (
-    <PngViewer
-      bust={bust}
-      simMode={tab === "simulation"}
-      simBlocks={simBlocks}
-      selectedSimBlock={selectedSimBlock}
-    />
+  const showFile = fileTabs && !!openFile && rightView === "file";
+
+  // The right pane is built so the PngViewer is mounted ONCE and never unmounts
+  // on a tab switch — so its active sheet + zoom/pan are RETAINED across tabs
+  // (mirrors how the Simulation panel persists). The DiffPanes overlay and the
+  // file editor are layered ON TOP (PngViewer is CSS-hidden behind them) rather
+  // than swapped in, which would remount it and reset the view.
+  const pngView = (
+    <div className="h-full flex flex-col min-h-0 relative">
+      {/* Schematic | <file> toggle bar — only on Library/Resources with a file open */}
+      {openFile && fileTabs && (
+        <div className="shrink-0 flex items-center gap-1 px-2 h-9 border-b border-edge bg-rail/30">
+          <button
+            onClick={() => setRightView("schematic")}
+            className={"h-6 px-2 rounded text-[11.5px] font-medium " +
+              (!showFile ? "bg-ink-900 text-white" : "text-ink-600 hover:bg-rail")}
+          >
+            Schematic
+          </button>
+          <button
+            onClick={() => setRightView("file")}
+            className={"h-6 px-2 rounded text-[11.5px] font-medium max-w-[260px] truncate " +
+              (showFile ? "bg-ink-900 text-white" : "text-ink-600 hover:bg-rail")}
+            title={openFile.name}
+          >
+            {openFile.title || openFile.name}
+          </button>
+          <button
+            onClick={closeFile}
+            className="ml-auto h-6 w-6 inline-flex items-center justify-center rounded text-ink-500 hover:bg-rail hover:text-ink-900 text-[14px] leading-none"
+            title="Close file"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+      <div className="flex-1 min-h-0 relative">
+        {/* Always-mounted schematic — hidden (not unmounted) when a file/diff is on top. */}
+        <div className={(showFile || rightPaneIsDiff) ? "hidden" : "h-full min-h-0"}>
+          <PngViewer
+            bust={bust}
+            simMode={tab === "simulation"}
+            simBlocks={simBlocks}
+            selectedSimBlock={selectedSimBlock}
+          />
+        </div>
+        {/* Review diff overlay (mounted only when active — it's per-loop). */}
+        {rightPaneIsDiff && (
+          <div className="h-full min-h-0">
+            <DiffPanes
+              loopId={activeLoopId!}
+              diff={loopDiff!}
+              activeSheet={diffSheet}
+              setActiveSheet={setDiffSheet}
+              mode={diffMode}
+              setMode={setDiffMode}
+            />
+          </div>
+        )}
+        {/* File editor overlay (Library/Resources). */}
+        {showFile && openFile && (
+          <div className="h-full min-h-0">
+            <Suspense fallback={<div className="h-full grid place-items-center text-[12px] text-ink-400">opening editor…</div>}>
+              <ResourceEditor key={`${openFile.kind}:${openFile.name}`} file={openFile} onClose={closeFile} />
+            </Suspense>
+          </div>
+        )}
+      </div>
+    </div>
   );
+
+  // ONE splitter + ONE storageKey for the content|right split, used across all
+  // tabs that show the right pane — so the divider position is RETAINED when
+  // switching tabs (previously generator/review/sim and library/resources used
+  // two different splitters, so the side jumped). anchor=left so the content
+  // column is the stored size and the schematic grows into the gutter.
   const centerOrPair = !showPng ? (
     mainContent
-  ) : canvasGrows ? (
-    <Splitter
-      anchor="left"
-      initial={Math.min(760, Math.max(520, Math.round(window.innerWidth * 0.30)))}
-      min={460}
-      max={1100}
-      minOther={320}
-      storageKey="test1.gui.contentSplit"
-      left={mainContent}
-      right={pngView}
-    />
   ) : (
     <Splitter
-      anchor="right"
-      initial={Math.round(window.innerWidth * 0.42)}
-      min={340}
-      max={Math.max(560, window.innerWidth - 720)}
-      minOther={360}
-      storageKey="test1.gui.pngSplit"
+      anchor="left"
+      initial={Math.round(window.innerWidth * 0.39)}
+      initialFrac={0.39}
+      min={420}
+      max={Math.max(640, window.innerWidth - 600)}
+      minOther={340}
+      storageKey="test1.gui.contentSplit-v2"
       left={mainContent}
       right={pngView}
     />
@@ -357,7 +434,7 @@ export default function App() {
         health={healthError ? { text: "backend offline", tone: "err" } : health}
         onTogglePng={() => setPngOpen((v) => !v)}
         pngOpen={pngOpen}
-        canTogglePng={tab !== "library" && tab !== "resources"}
+        canTogglePng={true}
         onRefresh={onRefresh}
       />
       <div className="flex-1 min-h-0">{body}</div>

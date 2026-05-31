@@ -995,11 +995,22 @@ async def run_stream(run_id: str) -> StreamingResponse:
 
 
 # ---- Misc ----------------------------------------------------------------
+class FileContentSave(BaseModel):
+    content: str
+
+
 @app.get("/api/requirements")
 def requirements() -> dict:
     if not DESIGN_REQS.exists():
         return {"exists": False, "content": ""}
-    return {"exists": True, "content": DESIGN_REQS.read_text()}
+    return {"exists": True, "content": DESIGN_REQS.read_text(encoding="utf-8", errors="replace")}
+
+
+@app.put("/api/requirements")
+def requirements_save(body: FileContentSave) -> dict:
+    """Save the active design_requirements.md (the spec the pipeline reads)."""
+    DESIGN_REQS.write_text(body.content, encoding="utf-8")
+    return {"ok": True, "name": DESIGN_REQS.name, "bytes": len(body.content.encode("utf-8"))}
 
 
 # ---- Design Resources: datasheets · requirement docs · skills --------------
@@ -1115,6 +1126,40 @@ def resources_requirement_file(name: str = Query(...)):
     return FileResponse(target, media_type=media, filename=fname)
 
 
+# Extensions whose contents are plain text — editable in the in-app editor.
+# Everything else (pdf/docx/xlsx/pptx/odt) is binary: view/download only.
+_TEXT_EXTS = {".md", ".markdown", ".txt", ".csv", ".tsv", ".rtf",
+              ".json", ".yaml", ".yml"}
+
+
+def _text_target(base: Path, name: str) -> Path:
+    """Resolve `name` to a text file under `base`, guarding against traversal
+    and non-text extensions. Raises HTTPException on any problem."""
+    fname = Path(name).name                     # strip any path components
+    if Path(fname).suffix.lower() not in _TEXT_EXTS:
+        raise HTTPException(415, f"{fname!r} is not a text-editable file")
+    target = base / fname
+    if not target.exists() or not target.is_file():
+        raise HTTPException(404, "no such file")
+    return target
+
+
+@app.get("/api/resources/requirements/content")
+def resources_requirement_content(name: str = Query(...)) -> dict:
+    """Plain-text content of a requirements doc, for the in-app editor."""
+    target = _text_target(REQ_DOCS_DIR, name)
+    return {"name": target.name, "content": target.read_text(encoding="utf-8", errors="replace"),
+            "size": target.stat().st_size}
+
+
+@app.put("/api/resources/requirements/content")
+def resources_requirement_save(name: str = Query(...), body: FileContentSave = ...) -> dict:
+    """Save edited text back to a requirements doc (text extensions only)."""
+    target = _text_target(REQ_DOCS_DIR, name)
+    target.write_text(body.content, encoding="utf-8")
+    return {"ok": True, "name": target.name, "bytes": len(body.content.encode("utf-8"))}
+
+
 # ---- BOM (bill of materials) ---------------------------------------------
 # A Design-Resources sub-tab next to Datasheets. Accepts .xlsx / .csv BOM files
 # (e.g. the generated test1_bom.xlsx). Stored under resources/bom/.
@@ -1155,6 +1200,23 @@ def resources_bom_file(name: str = Query(...)):
         raise HTTPException(404, "no such file")
     media = mimetypes.guess_type(str(target))[0] or "application/octet-stream"
     return FileResponse(target, media_type=media, filename=fname)
+
+
+@app.get("/api/resources/bom/content")
+def resources_bom_content(name: str = Query(...)) -> dict:
+    """Plain-text content of a BOM file (CSV/TSV), for the in-app editor.
+    .xlsx/.xls are binary and rejected (415)."""
+    target = _text_target(BOM_DIR, name)
+    return {"name": target.name, "content": target.read_text(encoding="utf-8", errors="replace"),
+            "size": target.stat().st_size}
+
+
+@app.put("/api/resources/bom/content")
+def resources_bom_save(name: str = Query(...), body: FileContentSave = ...) -> dict:
+    """Save edited text back to a BOM file (CSV/TSV only)."""
+    target = _text_target(BOM_DIR, name)
+    target.write_text(body.content, encoding="utf-8")
+    return {"ok": True, "name": target.name, "bytes": len(body.content.encode("utf-8"))}
 
 
 def _skill_slug(name: str) -> str:

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api, subscribeAgent } from "../api";
 import { I } from "../components/Icon";
 import { Canvas, ImgLayer } from "../components/PngViewer";
+import type { OpenFile } from "../components/ResourceEditor";
 import type { LibraryPart, SymbolInfo, SymbolPin } from "../types";
 
 // Per-part symbol-generation state. Keyed by MPN so a generation in progress
@@ -18,10 +19,13 @@ interface GenEntry {
 export function Library({
   initialPart = null,
   onPartConsumed,
+  onOpenFile,
 }: {
   /** When set (e.g. a deep-link from Design Resources), auto-select this MPN. */
   initialPart?: string | null;
   onPartConsumed?: () => void;
+  /** Open a file (e.g. this part's datasheet) in the shared app right pane. */
+  onOpenFile?: (f: OpenFile) => void;
 } = {}) {
   const [parts, setParts] = useState<LibraryPart[]>([]);
   const [sel, setSel] = useState<string | null>(null);
@@ -195,6 +199,7 @@ export function Library({
         onUpload={uploadSymbol}
         upState={upState}
         upMsg={upMsg}
+        onOpenFile={onOpenFile}
       />
     </div>
   );
@@ -316,6 +321,7 @@ function PartDetail({
   onUpload,
   upState,
   upMsg,
+  onOpenFile,
 }: {
   sel: string | null;
   sym: SymbolInfo | null;
@@ -325,6 +331,7 @@ function PartDetail({
   onUpload: (file: File) => void;
   upState: "idle" | "uploading" | "ok" | "fail";
   upMsg: string;
+  onOpenFile?: (f: OpenFile) => void;
 }) {
   if (!sel) {
     return (
@@ -363,14 +370,27 @@ function PartDetail({
           </div>
           <div className="ml-auto flex items-center gap-2">
             {properties.Datasheet && (
-              <a
-                href={api.datasheetUrl(sel)}
-                target="_blank"
-                rel="noreferrer"
-                className="h-7 px-2 text-xs rounded-md border border-edge text-ink-700 hover:border-ink-300 inline-flex items-center gap-1"
-              >
-                <I.Datasheet size={13} /> Datasheet
-              </a>
+              onOpenFile ? (
+                <button
+                  onClick={() => onOpenFile({
+                    kind: "datasheet", name: String(properties.Datasheet),
+                    title: `${sel} datasheet`, url: api.datasheetUrl(sel),
+                  })}
+                  className="h-7 px-2 text-xs rounded-md border border-edge text-ink-700 hover:border-ink-300 inline-flex items-center gap-1"
+                  title="View the datasheet in the right pane"
+                >
+                  <I.Datasheet size={13} /> Datasheet
+                </button>
+              ) : (
+                <a
+                  href={api.datasheetUrl(sel)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="h-7 px-2 text-xs rounded-md border border-edge text-ink-700 hover:border-ink-300 inline-flex items-center gap-1"
+                >
+                  <I.Datasheet size={13} /> Datasheet
+                </a>
+              )
             )}
             <a
               href={api.ultraLibrarianUrl(sel)}

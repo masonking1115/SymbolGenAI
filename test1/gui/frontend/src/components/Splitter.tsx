@@ -12,6 +12,10 @@ interface Props {
    *  container on first measure, then maintained as a fraction so the layout
    *  scales evenly when the window/display width changes. */
   initial: number;
+  /** Optional seed proportion (0..1) of the anchored pane, used instead of
+   *  `initial` px when set — e.g. 0.5 for a half/half default that holds at any
+   *  width. Still clamped to [min,max]/minOther and overridden by a stored key. */
+  initialFrac?: number;
   /** Min/max for the anchored pane in pixels. */
   min: number;
   max: number;
@@ -24,7 +28,7 @@ interface Props {
 
 const HANDLE_PX = 6; // matches w-1.5
 
-export function Splitter({ left, right, anchor, initial, min, max, minOther = 220, storageKey }: Props) {
+export function Splitter({ left, right, anchor, initial, initialFrac, min, max, minOther = 220, storageKey }: Props) {
   // Stored as a fraction (0..1) of the container so the split holds its
   // proportions across resizes and across displays of different widths.
   const [frac, setFrac] = useState<number | null>(() => {
@@ -32,6 +36,7 @@ export function Splitter({ left, right, anchor, initial, min, max, minOther = 22
       const f = parseFloat(localStorage.getItem(storageKey) ?? "");
       if (!Number.isNaN(f) && f > 0 && f < 1) return f;
     }
+    if (initialFrac != null && initialFrac > 0 && initialFrac < 1) return initialFrac;
     return null;
   });
   const [containerW, setContainerW] = useState(0);
