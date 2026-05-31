@@ -2417,6 +2417,25 @@ async def run_apply_and_generate(opts: ApplyAndGenOpts = ApplyAndGenOpts()) -> d
     if BACKEND != "altium" and not GEN_SCRIPT.exists():
         raise HTTPException(500, "gen_schematic.py missing")
 
+    # ---- Generator diff: snapshot the BEFORE state at endpoint entry --------
+    # Capture the current render+netlist NOW — before the apply agent edits any
+    # source or the build rewrites renders — so the diff reflects what THIS whole
+    # Generate (apply + build) changed. Keyed by a fresh diff_id returned to the
+    # frontend, which fetches /api/loop/{diff_id}/diff once the build completes.
+    # (Reuses the closed-loop snapshot+diff machinery; works for any snap id.)
+    diff_id = "gen-" + uuid.uuid4().hex[:12]
+    try:
+        _loop_mod.snapshot_render_and_netlist(diff_id)
+        # Prune old generate-diff snapshots (keep the newest few) so render_snapshots
+        # doesn't grow unbounded. Loop snapshots (no "gen-" prefix) are untouched.
+        import shutil as _sh
+        gens = sorted(_loop_mod.SNAPSHOT_ROOT.glob("gen-*"),
+                      key=lambda p: p.stat().st_mtime, reverse=True)
+        for old in gens[5:]:
+            _sh.rmtree(old, ignore_errors=True)
+    except Exception as _snap_e:
+        print(f"[generate-diff] snapshot skipped: {_snap_e}", flush=True)
+
     # --- helpers shared by both paths ---------------------------------------
     def _generate_cmd() -> tuple[list[str], str | None]:
         if BACKEND == "altium":
@@ -2565,6 +2584,7 @@ async def run_apply_and_generate(opts: ApplyAndGenOpts = ApplyAndGenOpts()) -> d
             "loop_review": True,
             "fix_warnings": fix_warnings,
             "max_rounds": max_rounds,
+            "diff_id": diff_id,
         }
 
     # ---- PLAIN path (unchanged behavior) -----------------------------------
@@ -2576,6 +2596,7 @@ async def run_apply_and_generate(opts: ApplyAndGenOpts = ApplyAndGenOpts()) -> d
             "apply_run_id": None,
             "generate_run_id": generate_run_id,
             "queued_items": 0,
+            "diff_id": diff_id,
         }
 
     async def chain_to_generate() -> None:
@@ -2594,6 +2615,7 @@ async def run_apply_and_generate(opts: ApplyAndGenOpts = ApplyAndGenOpts()) -> d
         "apply_run_id": apply_run_id,
         "generate_run_id": None,  # Will be available via /api/run stream once apply finishes
         "queued_items": len(items),
+        "diff_id": diff_id,
     }
 
 
@@ -3268,10 +3290,14 @@ def loop_clear(loop_id: str) -> dict:
 
 @app.get("/api/png_snapshot/{loop_id}/{name}")
 def png_snapshot(loop_id: str, name: str):
-    """Serve a pre-loop snapshot render for the Diff & Accept side-by-side
-    view. name is the sheet stem (no extension)."""
+    """Serve a pre-loop / pre-generate snapshot render for the Diff & Accept
+    side-by-side view. name is the sheet stem (no extension). loop_id may be a
+    loop id or a Generator diff id ("gen-<hex>")."""
     safe = re.sub(r"[^A-Za-z0-9_]", "", name)
-    snap = _loop_mod.SNAPSHOT_ROOT / loop_id / "render" / f"{safe}.svg"
+    # Allow hyphen for the "gen-<hex>" generate-diff ids; strip anything else so
+    # the id can't escape SNAPSHOT_ROOT.
+    safe_id = re.sub(r"[^A-Za-z0-9_-]", "", loop_id)
+    snap = _loop_mod.SNAPSHOT_ROOT / safe_id / "render" / f"{safe}.svg"
     if not snap.exists():
         raise HTTPException(404, f"snapshot render not found: {snap}")
     return FileResponse(snap, media_type="image/svg+xml",

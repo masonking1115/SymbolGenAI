@@ -217,6 +217,29 @@ export default function App() {
   const hasRealDiff = !!(loopDiff && Object.values(loopDiff.sheets).some(s => s.count > 0));
   const diffVisible = diffVisibleOverride ?? hasRealDiff;
 
+  // ---- Generator-tab diff state (before/after for a Generate run) ----
+  // Mirrors the Review diff above, but the snapshot is taken at the start of a
+  // Generate (apply + build) and diffed against the rebuilt result. The Generator
+  // hands us the diff_id on completion (onGenDiff); we fetch + show it in the
+  // right pane, auto-opening only when the run actually changed something.
+  const [genDiff, setGenDiff] = useState<DiffData | null>(null);
+  const [genDiffSheet, setGenDiffSheet] = useState<string | null>(null);
+  const [genDiffMode, setGenDiffMode] = useState<DiffMode>("side");
+  const [genDiffVisibleOverride, setGenDiffVisibleOverride] = useState<boolean | null>(null);
+  const onGenDiff = useCallback((diffId: string) => {
+    setGenDiffVisibleOverride(null);   // fresh run → back to auto-show
+    api.loopDiff(diffId).then((d) => {
+      setGenDiff(d);
+      // Default the active sheet to the one with the most changes.
+      const entries = Object.entries(d.sheets);
+      setGenDiffSheet(entries.length
+        ? entries.sort((a, b) => b[1].count - a[1].count)[0][0]
+        : null);
+    }).catch(() => { /* ignore — no diff shown */ });
+  }, []);
+  const genHasRealDiff = !!(genDiff && Object.values(genDiff.sheets).some(s => s.count > 0));
+  const genDiffVisible = genDiffVisibleOverride ?? genHasRealDiff;
+
   const onArtifactsChanged = useCallback(() => setBust((b) => b + 1), []);
   const onRefresh = useCallback(() => {
     // Increment bust to force re-fetch of sheets/PNG in PngViewer
@@ -300,6 +323,7 @@ export default function App() {
         setPhases={setPhases}
         setSubPhase={setSubPhase}
         refreshTrigger={refreshTrigger}
+        onGenDiff={onGenDiff}
       />
     ) : null;   // simulation: rendered via the persistent simPanel below
 
@@ -341,7 +365,20 @@ export default function App() {
   // user sees BEFORE/AFTER (or OVERLAY) in the big canvas instead of a
   // duplicated schematic. Diff data lives here in App.tsx; controls + Accept/
   // Reject live in the Review tab content column.
-  const rightPaneIsDiff = tab === "review" && diffActive && !!loopDiff && diffVisible;
+  // The right pane shows a diff on the Review tab (loop diff) OR the Generator tab
+  // (this-Generate before/after). Pick the active diff source by tab.
+  const reviewDiffOn = tab === "review" && diffActive && !!loopDiff && diffVisible;
+  const genDiffOn = tab === "generator" && !!genDiff && genDiffVisible;
+  const rightPaneIsDiff = reviewDiffOn || genDiffOn;
+  // Which diff data + id + sheet/mode setters the DiffPanes should bind to.
+  const activeDiff = genDiffOn ? genDiff : loopDiff;
+  // DiffPanes builds /api/png_snapshot/{id}/... — use the diff's own loop_id (the
+  // "gen-<hex>" snapshot id for the Generator diff, the loop id for Review).
+  const activeDiffId = genDiffOn ? (genDiff?.loop_id ?? "") : (activeLoopId ?? "");
+  const activeDiffSheet = genDiffOn ? genDiffSheet : diffSheet;
+  const setActiveDiffSheet = genDiffOn ? setGenDiffSheet : setDiffSheet;
+  const activeDiffMode = genDiffOn ? genDiffMode : diffMode;
+  const setActiveDiffMode = genDiffOn ? setGenDiffMode : setDiffMode;
   const showFile = fileTabs && !!openFile && rightView === "file";
 
   // The right pane is built so the PngViewer is mounted ONCE and never unmounts
@@ -351,6 +388,44 @@ export default function App() {
   // than swapped in, which would remount it and reset the view.
   const pngView = (
     <div className="h-full flex flex-col min-h-0 relative">
+      {/* Schematic | Diff toggle bar — on the Generator tab once a Generate run has
+          produced a before/after diff. Auto-opens when there are real changes; this
+          lets the user flip back to the plain schematic and re-open the diff. */}
+      {tab === "generator" && genDiff && (
+        <div className="shrink-0 flex items-center gap-1 px-2 h-9 border-b border-edge bg-rail/30">
+          <button
+            onClick={() => setGenDiffVisibleOverride(false)}
+            className={"h-6 px-2 rounded text-[11.5px] font-medium " +
+              (!genDiffOn ? "bg-ink-900 text-white" : "text-ink-600 hover:bg-rail")}
+          >
+            Schematic
+          </button>
+          <button
+            onClick={() => setGenDiffVisibleOverride(true)}
+            className={"h-6 px-2 rounded text-[11.5px] font-medium inline-flex items-center gap-1.5 " +
+              (genDiffOn ? "bg-ink-900 text-white" : "text-ink-600 hover:bg-rail")}
+            title="Before / after this Generate"
+          >
+            Diff
+            {genHasRealDiff && (
+              <span className={"text-[9.5px] px-1 rounded-full " +
+                (genDiffOn ? "bg-white/25" : "bg-amber-200 text-amber-900")}>
+                {Object.values(genDiff.sheets).reduce((n, s) => n + s.count, 0)}
+              </span>
+            )}
+          </button>
+          {!genHasRealDiff && (
+            <span className="text-[10.5px] text-ink-400 ml-1">no schematic changes this run</span>
+          )}
+          <button
+            onClick={() => { setGenDiff(null); setGenDiffVisibleOverride(null); }}
+            className="ml-auto h-6 w-6 inline-flex items-center justify-center rounded text-ink-500 hover:bg-rail hover:text-ink-900 text-[14px] leading-none"
+            title="Dismiss diff"
+          >
+            ✕
+          </button>
+        </div>
+      )}
       {/* Schematic | <file> toggle bar — only on Library/Resources with a file open */}
       {openFile && fileTabs && (
         <div className="shrink-0 flex items-center gap-1 px-2 h-9 border-b border-edge bg-rail/30">
@@ -388,16 +463,16 @@ export default function App() {
             selectedSimBlock={selectedSimBlock}
           />
         </div>
-        {/* Review diff overlay (mounted only when active — it's per-loop). */}
-        {rightPaneIsDiff && (
+        {/* Diff overlay — Review loop diff OR Generator before/after diff. */}
+        {rightPaneIsDiff && activeDiff && (
           <div className="h-full min-h-0">
             <DiffPanes
-              loopId={activeLoopId!}
-              diff={loopDiff!}
-              activeSheet={diffSheet}
-              setActiveSheet={setDiffSheet}
-              mode={diffMode}
-              setMode={setDiffMode}
+              loopId={activeDiffId}
+              diff={activeDiff}
+              activeSheet={activeDiffSheet}
+              setActiveSheet={setActiveDiffSheet}
+              mode={activeDiffMode}
+              setMode={setActiveDiffMode}
             />
           </div>
         )}

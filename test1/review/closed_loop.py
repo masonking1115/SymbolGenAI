@@ -185,23 +185,32 @@ def _round_to_wire(r: Round) -> dict:
 
 # ---- Snapshot mechanics -------------------------------------------------
 
+def snapshot_render_and_netlist(snap_id: str) -> Path:
+    """Capture the CURRENT render/*.svg + netlist/*.yaml (+ lint.json) into
+    out/render_snapshots/<snap_id>/ — the "before" state for a diff. Returns the
+    snapshot dir. Shared by the closed loop (snapshot_pre_loop) and the plain
+    Generate diff (snapshot keyed by the generate run id), so compute_loop_diff
+    works the same way for both."""
+    snap = SNAPSHOT_ROOT / snap_id
+    snap.mkdir(parents=True, exist_ok=True)
+    (snap / "render").mkdir(exist_ok=True)
+    (snap / "netlist").mkdir(exist_ok=True)
+    if RENDER_DIR.exists():
+        for svg in RENDER_DIR.glob("*.svg"):
+            shutil.copy2(svg, snap / "render" / svg.name)
+    if NETLIST_DIR.exists():
+        for y in NETLIST_DIR.glob("*.yaml"):
+            shutil.copy2(y, snap / "netlist" / y.name)
+    lint_json = OUT_DIR / "lint.json"
+    if lint_json.exists():
+        shutil.copy2(lint_json, snap / "lint.json")
+    return snap
+
+
 def snapshot_pre_loop(L: Loop) -> None:
     """Copy out/render/*.svg + netlist/*.yaml + out/lint.json +
     review/findings.json to out/render_snapshots/<loop_id>/."""
-    L.snapshot_dir = SNAPSHOT_ROOT / L.loop_id
-    L.snapshot_dir.mkdir(parents=True, exist_ok=True)
-    (L.snapshot_dir / "render").mkdir(exist_ok=True)
-    (L.snapshot_dir / "netlist").mkdir(exist_ok=True)
-
-    if RENDER_DIR.exists():
-        for svg in RENDER_DIR.glob("*.svg"):
-            shutil.copy2(svg, L.snapshot_dir / "render" / svg.name)
-    if NETLIST_DIR.exists():
-        for y in NETLIST_DIR.glob("*.yaml"):
-            shutil.copy2(y, L.snapshot_dir / "netlist" / y.name)
-    lint_json = OUT_DIR / "lint.json"
-    if lint_json.exists():
-        shutil.copy2(lint_json, L.snapshot_dir / "lint.json")
+    L.snapshot_dir = snapshot_render_and_netlist(L.loop_id)
     findings_json = PROJECT_DIR / "review" / "findings.json"
     if findings_json.exists():
         shutil.copy2(findings_json, L.snapshot_dir / "findings_initial.json")

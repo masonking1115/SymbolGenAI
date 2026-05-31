@@ -171,7 +171,7 @@ export const api = {
     j<{ ok: boolean }>("/api/changelog/clear", { method: "POST" }),
 
   applyAndGenerate: (loopReview = false, fixWarnings = false, maxRounds?: number) =>
-    j<{ apply_run_id: string | null; generate_run_id: string | null; queued_items: number; loop_review?: boolean; fix_warnings?: boolean; max_rounds?: number }>(
+    j<{ apply_run_id: string | null; generate_run_id: string | null; queued_items: number; loop_review?: boolean; fix_warnings?: boolean; max_rounds?: number; diff_id?: string }>(
       "/api/run/apply-and-generate",
       {
         method: "POST",

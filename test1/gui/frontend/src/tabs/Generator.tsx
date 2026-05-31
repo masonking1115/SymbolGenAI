@@ -30,6 +30,10 @@ interface Props {
   setSubPhase: (s: string | undefined) => void;
   /** Incremented when the user clicks the Refresh button; triggers lint/freshness update. */
   refreshTrigger?: number;
+  /** Called when a Generate run completes, with the diff id for the before/after
+   *  schematic diff (snapshot taken at run start vs the rebuilt result). App
+   *  fetches /api/loop/{diffId}/diff and swaps in the diff view. */
+  onGenDiff?: (diffId: string) => void;
 }
 
 type RunState = "idle" | "running" | "ok" | "fail";
@@ -72,6 +76,7 @@ export function Generator({
   setPhases,
   setSubPhase,
   refreshTrigger,
+  onGenDiff,
 }: Props) {
   // Rehydrate the console from the last persisted snapshot so the most recent /
   // active run's output is retained across tab switches + refreshes.
@@ -204,7 +209,7 @@ export function Generator({
       // Stage 1+2: apply changelog (if any), then generate. Single backend
       // call orchestrates both runs.
       setLines((prev) => [...prev, "Contacting backend for build orchestration..."]);
-      const { apply_run_id, generate_run_id, loop_review, fix_warnings, max_rounds } =
+      const { apply_run_id, generate_run_id, loop_review, fix_warnings, max_rounds, diff_id } =
         await api.applyAndGenerate(loopReview, fixWarnings, loopReview ? loopRounds : undefined);
       setLines((prev) => [...prev, `Backend connected: apply_run_id=${apply_run_id || "none"} generate_run_id=${generate_run_id ?? "pending"}`]);
       if (loop_review) {
@@ -347,6 +352,9 @@ export function Generator({
           setRunState(status === "ok" ? "ok" : "fail");
           setLines((prev) => [...prev, `[GEN] Build completed with status: ${status}`]);
           onArtifactsChanged();
+          // Hand the diff id up so App can show the before/after schematic diff
+          // (snapshot at run start vs the rebuilt result).
+          if (diff_id) onGenDiff?.(diff_id);
           setStage("linting");
           setSubPhase("parsing lint report");
           pushActivity(`✓ generate ${status}`);

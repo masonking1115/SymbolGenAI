@@ -2,9 +2,10 @@
 
 Deferred work items (not blocking; pick up when convenient).
 
-## Commit + push once TODO is current (2026-05-31) — DOING NOW
+## Commit + push once TODO is current (2026-05-31) — DONE
 
-- [x] **Bring TODO up to date, then commit + push.** (User asked, 2026-05-31.)
+- [x] **Bring TODO up to date, then commit + push.** Done — commit 6e2fb2b pushed
+      58146c8..6e2fb2b on cosmetic-lint-rules. (gui/state excluded — runtime only.)
 
 ## Bobcat power-glyph placement refactor + persist Generator console (2026-05-31) — DONE
 
@@ -33,18 +34,22 @@ Deferred work items (not blocking; pick up when convenient).
       Likely the sidebar's Simulation group header (Sidebar.tsx) — widen the
       clickable area to the full row.
 
-## Add the schematic-gen diff option to the Generator page (2026-05-31) — TODO
+## Add the schematic-gen diff option to the Generator page (2026-05-31) — DONE
 
-- [ ] **Bring the Design Review tab's schematic diff to the Generator page.** The
-      Review tab shows a before/after (and overlay) schematic diff via `DiffPanes`
-      (App.tsx `rightPaneIsDiff`, driven by `loopDiff`/`activeLoopId`, fetched from
-      `api.loopDiff`). The Generator page should offer the same diff view for a
-      generate run — so after Generate you can see what changed on the schematic,
-      not just the console. Reuse DiffPanes + the snapshot mechanism; wire a
-      Generator-side diff source (the build already writes render snapshots for the
-      loop — check whether a plain generate produces a comparable before/after, or
-      add one). Mirror the Review tab's right-pane swap + sheet tabs + accept/reject
-      if applicable.
+- [x] **Bring the Design Review tab's schematic diff to the Generator page.** DONE.
+      Before/after = state snapshotted at the START of a Generate (apply+build) vs
+      the rebuilt result (user's choice). Backend: factored the loop's snapshot into
+      `closed_loop.snapshot_render_and_netlist(snap_id)`; the apply-and-generate
+      endpoint snapshots at entry under a fresh `gen-<hex>` id (before apply edits /
+      build rewrites renders — safe because _start_run schedules the build as a task
+      that hasn't run yet) and returns `diff_id` in all 3 paths; reuses
+      `compute_loop_diff` + the png_snapshot route (now allows the hyphenated gen id);
+      prunes to the newest 5 gen snapshots. Frontend: Generator passes `diff_id` up
+      via `onGenDiff` on build complete; App fetches `api.loopDiff(diff_id)`, reuses
+      DiffPanes in the right pane (parallel genDiff* state mirroring the Review diff),
+      auto-shows only on real changes (genHasRealDiff), with a Schematic|Diff toggle
+      bar (+ change count, "no schematic changes this run", dismiss). Verified: diff
+      detects C40 0.1uF→0.22uF end-to-end; 0 on no-change; diff route live.
 
 ## Remove "slide deck" references from the GUI (2026-05-31) — DONE
 
