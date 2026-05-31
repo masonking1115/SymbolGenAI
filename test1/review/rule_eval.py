@@ -385,10 +385,48 @@ def _ensure_scenario_via_agent(block: str) -> None:
         pass
 
 
+def _humanize_units(analysis: dict) -> dict:
+    """Annotate SI-suffixed metrics with engineering-unit readings so the judge
+    never has to convert (amps↔µA was a reproducible false-FAIL source: the value
+    arrives as 0.000669 A while the criterion is written in µA, and the model
+    compared 0.000669 to 640). For any numeric key ending in a known unit suffix,
+    add a sibling "<key>_human" string with a scaled, readable value. Pure Python —
+    deterministic, not agent guesswork. Leaves everything else untouched."""
+    def eng(v: float, unit: str) -> str:
+        a = abs(v)
+        if unit == "A":
+            if a < 1e-3: return f"{v*1e6:.3g} µA"
+            if a < 1:    return f"{v*1e3:.3g} mA"
+            return f"{v:.3g} A"
+        if unit == "V":
+            if a < 1:    return f"{v*1e3:.3g} mV"
+            return f"{v:.4g} V"
+        if unit == "s":
+            if a < 1e-6: return f"{v*1e9:.3g} ns"
+            if a < 1e-3: return f"{v*1e6:.3g} µs"
+            if a < 1:    return f"{v*1e3:.3g} ms"
+            return f"{v:.3g} s"
+        if unit == "Hz":
+            if a >= 1e6: return f"{v/1e6:.3g} MHz"
+            if a >= 1e3: return f"{v/1e3:.3g} kHz"
+            return f"{v:.3g} Hz"
+        return f"{v:g} {unit}"
+    SUFFIX = {"_A": "A", "_V": "V", "_s": "s", "_Hz": "Hz", "_ohm": "Ω", "_dB": "dB"}
+    out = dict(analysis)
+    for k, v in list(analysis.items()):
+        if not isinstance(v, (int, float)) or isinstance(v, bool):
+            continue
+        for suf, unit in SUFFIX.items():
+            if k.endswith(suf):
+                out[f"{k}_human"] = eng(float(v), unit) if unit not in ("Ω", "dB") else f"{v:g} {unit}"
+                break
+    return out
+
+
 def _judge_sim_result(p: "SimReview", res: dict) -> str:
     """claude -p verdict: does the sim result satisfy the criterion? Returns
     'PASS' | 'FAIL' (fail-safe 'PASS' on any error)."""
-    analysis = res.get("analysis") or {}
+    analysis = _humanize_units(res.get("analysis") or {})
     op = res.get("op_point") or {}
     prompt = (
         f"You are reviewing a SPICE simulation result against a design requirement.\n\n"
@@ -396,13 +434,23 @@ def _judge_sim_result(p: "SimReview", res: dict) -> str:
         f"REQUIREMENT: {p.criterion}\n\n"
         f"SIM RESULT:\n"
         f"  ok (deck's own check): {res.get('ok')}\n"
-        f"  analysis: {json.dumps(analysis, default=str)[:1500]}\n"
+        f"  analysis: {json.dumps(analysis, default=str)[:1800]}\n"
         f"  op_point: {json.dumps(op, default=str)[:600]}\n\n"
-        f"Does the simulated design MEET the requirement? Units may differ "
-        f"(e.g. amps vs µA, a nested rails dict) — interpret the analysis sensibly. "
+        f"Each numeric metric ending in a unit suffix (e.g. _A, _V, _s, _Hz) has a "
+        f"matching <key>_human field giving its value in engineering units — read the "
+        f"value from THAT to avoid unit-scale mistakes (e.g. i_max_regulated_A = "
+        f"0.000669 → i_max_regulated_A_human = '669 µA'; that is 669 µA, NOT 0.000669 µA).\n\n"
+        f"Decide carefully:\n"
+        f"  1. Identify the measured value(s) (in engineering units) and the "
+        f"required threshold from the requirement.\n"
+        f"  2. State the comparison explicitly, e.g. '669 µA >= 640 µA' and whether "
+        f"it is satisfied.\n"
+        f"  3. The verdict MUST follow that comparison: satisfied ⇒ PASS, not "
+        f"satisfied ⇒ FAIL. Do NOT contradict your own comparison.\n\n"
         f"Respond with ONLY one JSON object, no prose:\n"
-        f'{{"verdict": "PASS" | "FAIL", "observed": "<one sentence: the measured '
-        f'value(s) and how they compare to the requirement>"}}\n'
+        f'{{"comparison": "<measured> <op> <threshold> -> satisfied|not satisfied", '
+        f'"verdict": "PASS" | "FAIL", "observed": "<one sentence: the measured '
+        f'value(s) in engineering units vs the requirement>"}}\n'
         f"If you cannot tell from the result, answer PASS (do not guess a violation)."
     )
     try:
@@ -579,20 +627,43 @@ def _build_semantic_prompt(rule: SemanticRule, view: NetlistView) -> str:
 
 def _parse_verdict(text: str) -> tuple[str, str] | None:
     """Extract {"verdict","observed"} from the agent's output. Tolerant of a
-    surrounding code fence or stray prose. Returns (verdict, observed) or None."""
+    surrounding code fence or stray prose. Returns (verdict, observed) or None.
+
+    Consistency guard: sim_review emits an extra "comparison" field ending in
+    "satisfied" / "not satisfied". The sonnet judge sometimes reads the value
+    right but still emits a verdict that contradicts its own comparison ("…below
+    640 µA — wait, 669 ≥ 640" then FAIL). When a comparison is present, the
+    verdict is forced to follow it (satisfied ⇒ PASS), since the explicit
+    comparison is more reliable than the free-form verdict. Semantic rules don't
+    emit "comparison", so they're unaffected."""
     if not text:
         return None
-    m = re.search(r"\{.*?\"verdict\".*?\}", text, re.DOTALL)
-    if not m:
-        return None
-    try:
-        obj = json.loads(m.group(0))
-    except (json.JSONDecodeError, ValueError):
+    # Take the LAST verdict object, not the first: the judge sometimes emits a
+    # wrong object, then self-corrects with a second ("…-> not satisfied", FAIL —
+    # then "wait, 669 > 640" → a corrected "…-> satisfied", PASS object). Its final
+    # answer is the one that counts, so scan all and keep the last parseable one.
+    objs = re.findall(r"\{[^{}]*\"verdict\"[^{}]*\}", text, re.DOTALL)
+    obj = None
+    for cand in reversed(objs):
+        try:
+            obj = json.loads(cand)
+            break
+        except (json.JSONDecodeError, ValueError):
+            continue
+    if obj is None:
         return None
     v = str(obj.get("verdict", "")).strip().upper()
     if v not in ("PASS", "FAIL"):
         return None
-    return v, str(obj.get("observed", "")).strip()
+    observed = str(obj.get("observed", "")).strip()
+    comp = str(obj.get("comparison", "")).strip().lower()
+    if comp:
+        # "not satisfied" → FAIL; a clear "satisfied" (not preceded by "not") → PASS.
+        if "not satisfied" in comp or "unsatisfied" in comp:
+            v = "FAIL"
+        elif "satisfied" in comp:
+            v = "PASS"
+    return v, observed
 
 
 def _eval_semantic_rule(rule: SemanticRule, view: NetlistView) -> Finding | None:

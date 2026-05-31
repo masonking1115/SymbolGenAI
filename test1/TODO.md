@@ -334,29 +334,39 @@ to PDF; also at `Parts Library/Bobcat/`). Target = `test1/design_requirements.md
       in `resources/bom/`); seeded the existing `test1_bom.xlsx` into it. Verified:
       BOM listed, .csv accepted, .pdf rejected (400).
 
-## Review — sim in the loop (IN PROGRESS 2026-05-30)
+## Review — sim in the loop (DONE — validated 2026-05-31)
 
-- [ ] **Include simulation in the review evaluation, driven by an agent.** The
-      review's sim_pass/sim_metric rules currently pass-by-absence (no sim data →
-      return True). Wire the sim subsystem into the closed loop so an agent reads
-      the requirements, dynamically derives the test parameters (sim_setup writes
-      sim_config), runs the sim (run_block_sim), iterates (iterate_sim, cap 3),
-      and reports a verdict — and feed those results into run_all(sim_results=...)
-      so the rules evaluate for real. TWO defects found:
-        1. Phantom block names — rules reference bias0/bias1/ldo_out/loadsw which
-           DON'T exist; real blocks are opa_bias, ldo_rail, vddio_pdn/vddd_pdn/
-           vdda1_pdn/vdda2_pdn. Must remap the sim rules to real (block, sim_type).
-        2. closed_loop runs the sim but calls run_all with sim_results=None on
-           re-eval, and doesn't reshape results into {(block,sim_type): result}.
+- [x] **Simulation is in the review evaluation, agent-judged.** VALIDATED end-to-end:
+      the `sim_review` rule kind (11 rules in rules.yaml) runs the real block via
+      `sim_service.run_block_sim` (deriving the scenario via the sim-setup path when
+      stale), then a `claude -p` judge returns PASS/FAIL vs the criterion; cached per
+      (block,sim_type) so siblings reuse one ngspice run; gated behind `semantic=True`
+      (the fast lint path stays instant); fail-safe (infra failure → PASS, no false
+      finding). The TODO's "two defects" were already fixed before this pass: block
+      names are all REAL (opa_bias/ldo_rail/vddio_pdn/vddd_pdn/vdda1_pdn/vdda2_pdn),
+      and `closed_loop` calls `run_all(None, None, True, …)` with `eval_sim_review`
+      doing the run + reshape into {(block,sim_type): result}.
+    - **BUG FOUND + FIXED during validation:** the judge returned a *reproducible
+      false FAIL* on BLK_BIAS_FS_CEILING (669 µA ≥ 640 µA is PASS) — would have made
+      the loop churn "fixing" an in-spec circuit. Root causes: (1) units mismatch —
+      criterion in µA, analysis value in amps (0.000669), judge fumbled the convert;
+      (2) the judge emits a wrong JSON object then self-corrects with a second, but
+      `_parse_verdict` took the FIRST. Fixes in rule_eval.py: `_humanize_units()`
+      annotates _A/_V/_s/_Hz/_ohm/_dB metrics with engineering-unit readings; the
+      judge prompt forces an explicit `comparison` field the verdict must follow;
+      `_parse_verdict` now takes the LAST verdict object + a consistency guard
+      (verdict follows "satisfied/not satisfied"). Semantic rules (no comparison
+      field) unaffected — verified.
+    - **Verified:** false-FAIL rule now 5/5 PASS; all 11 sim_review rules run ngspice
+      with correct units-clean verdicts + 0 false findings; 21/21 review tests pass;
+      full `run_all(semantic=True)` yields only the pre-existing R40/R41 INFO.
 
-- [ ] **Review why a changelog item is still attached to ldo_rail /
-      transient_powerup.** It should have been consumed/cleared by now — figure
-      out why it's lingering (not drained after apply? re-added each run? stale
-      sim suggestion?) and clear the root cause.
+- [x] **Lingering ldo_rail / transient_powerup changelog item** — MOOT: the changelog
+      is empty; nothing lingering (resolved earlier).
 
-- [ ] **Clear the simulation cache when starting a design review**, so sim_review
-      rules run from scratch (no stale scenario/result reused). Wire a cache clear
-      into the loop start (and/or run_review) before the sim_review evaluation.
+- [x] **Clear the simulation cache when starting a design review** — DONE (already
+      implemented): `closed_loop._clear_sim_cache_for_review()` runs before the
+      initial eval, so sim_review rules run from scratch.
 
 ## UI / GUI
 
