@@ -53,6 +53,8 @@ _BLACK = ColorValue.from_hex("#000000")
 _NET_BLUE = ColorValue.from_hex("#000080")
 _PWR_RED = ColorValue.from_hex("#800000")
 
+GRID = 100   # mil — the placement/routing grid all builders and the linter use
+
 # Rendered text height (mil) for label/note/value glyphs at FONT_DEFAULT size 10
 # (~100 mil tall); used to give labels a real bounding box for overlap checks.
 _TEXT_H_MIL = 90
@@ -685,6 +687,73 @@ class AltiumSheet:
         self.wire(rail_x, bot_y, rail_x, gnd_y)
         self.power_at("GND", rail_x, gnd_y)
         return (rail_x, gnd_y)
+
+    # --- general 2-pin-passive primitive (pull-up / pull-down / decap) -----
+    # The single most-repeated builder pattern — a vertical R/C/L tapping a
+    # HORIZONTAL signal/rail line at one end and terminating on a power rail at
+    # the other. Hand-coding it (place + two stub wires + a junction, with manual
+    # +/-100 pin math) is where net SHORTs and body-vs-wire clearance failures
+    # kept creeping in. This bakes the correct, lint-clean layout into ONE call so
+    # every builder + the apply agent + future projects get it right by default:
+    #   * body VERTICAL, both stubs collinear with it (never an elbow on the pin),
+    #   * pin nearest the line taps it with a junction (T-intersection = connected),
+    #   * the body column is auto-nudged off any NON-connecting vertical wire so it
+    #     keeps >= a readable gap (the body_wire_clearance rule), and
+    #   * the far pin drops to a LOCAL power symbol (GND or a named rail).
+    def drop_passive(self, place_fn, refdes: str, *, tap_x: int, line_y: int,
+                     rail: str, direction: str = "down", body_gap: int = 200,
+                     rail_gap: int = 300, avoid_x: list[int] | None = None,
+                     min_clear: int = 60) -> dict[str, tuple[int, int]]:
+        """Attach a 2-pin passive between a horizontal line at y=line_y (its pin
+        column nominally tap_x) and a `rail` power symbol.
+
+        place_fn(refdes, x, y) -> {pin: (x,y)} is the builder's own placement
+        callable (usually a closure over place_from_netlist) so value/symbol stay
+        netlist-driven and `shared` needs no library refs.
+
+        direction "down": body sits BELOW the line (smaller y), pin1(top) taps the
+        line, pin2(bottom) -> rail. "up": mirror (body above; pin2 taps, pin1 ->
+        rail) — the convention pin1=+100y / pin2=-100y for an orient-0 passive.
+
+        avoid_x: x-columns of OTHER vertical wires (e.g. neighbouring pin drops)
+        the body must clear by >= min_clear. The body column is shifted left in
+        grid steps until clear — so the caller passes the ideal tap_x and the
+        primitive guarantees a clearance-clean result rather than the caller
+        hand-tuning offsets (the R30-R33 / body_wire_clearance class of bug).
+
+        Returns the placed pins (LOGICAL coords) so the caller can chain.
+        """
+        if direction not in ("down", "up"):
+            raise ValueError("direction must be 'down' or 'up'")
+        # Pick a body column that clears every avoid_x by >= min_clear. A passive
+        # body is ~90 mil wide (±45 about its column); shift left a grid at a time.
+        col = tap_x
+        if avoid_x:
+            half = 45 + min_clear
+            tries = 0
+            while any(abs(col - ax) < half for ax in avoid_x) and tries < 40:
+                col -= GRID
+                tries += 1
+        # Body centre one body_gap off the line, in the body axis.
+        cy = line_y - body_gap if direction == "down" else line_y + body_gap
+        pins = place_fn(refdes, col, cy)             # orient 0: pin1=+100y, pin2=-100y
+        p1 = pins["1"]; p2 = pins["2"]
+        near, far = (p1, p2) if direction == "down" else (p2, p1)
+        # near pin taps the line (vertical stub on the body column); if the body
+        # column was shifted off tap_x, jog along the line to reach it. No explicit
+        # junction dot — connectivity rides the T-intersection (validator + Altium
+        # treat it as connected) and a dot on a <3-segment meet only trips the
+        # redundant_junction lint. (gnd_bus adds dots only for true interior taps.)
+        if abs(col - tap_x) > 1:
+            self.wire(col, near[1], col, line_y)          # up/down to the line's row
+            self.wire(col, line_y, tap_x, line_y)         # jog along the line to the tap
+        else:
+            self.wire(near[0], near[1], near[0], line_y)  # straight stub onto the line
+        # far pin drops to a local rail symbol, collinear with the body.
+        rail_y = far[1] - rail_gap if direction == "down" else far[1] + rail_gap
+        self.wire(far[0], far[1], far[0], rail_y)
+        self.power_at(rail, far[0], rail_y)
+        return pins
 
     # --- hierarchical sheet symbol (root sheet) ---------------------------
     def sheet_symbol(self, child_name: str, title: str, x: int, y: int,

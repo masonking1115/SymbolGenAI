@@ -138,13 +138,14 @@ def build_power() -> tuple[AltiumSheet, object]:
     s.wire(R10_X, R10_CY - 100, R10_X, GND_RAIL_Y)      # pin2 → GND rail
 
     # ---- NR_SS (pin13, 4900): C12 (10nF) to GND -----------------------------
+    # Canonical decap via the shared drop_passive primitive: pin13's row is the
+    # "line", C12 hangs below it, pin2 -> local GND. (Was 4 hand-routed stubs +
+    # manual +/-100 pin math — the pattern that used to ship shorts.)
     NR_X   = 3600                        # between caps (3400) and chip (4200)
-    C12_CY = 2700                        # below the GND rail
-    place("C12", NR_X, C12_CY)
-    s.wire(U10["13"][0], U10["13"][1], NR_X, U10["13"][1])
-    s.wire(NR_X, U10["13"][1], NR_X, C12_CY + 100)
-    s.wire(NR_X, C12_CY - 100, NR_X, C12_CY - 400)
-    s.power_at("GND", NR_X, C12_CY - 400)
+    s.wire(U10["13"][0], U10["13"][1], NR_X, U10["13"][1])   # pin13 east to the cap column
+    s.drop_passive(place, "C12", tap_x=NR_X, line_y=U10["13"][1],
+                   rail="GND", direction="down",
+                   body_gap=U10["13"][1] - 2700, rail_gap=400)
 
     # =========================================================================
     # Setpoint taps (left, 100-mil pitch) → far-west ports, fanned to a clean

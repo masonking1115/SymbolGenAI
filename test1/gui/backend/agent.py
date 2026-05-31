@@ -569,16 +569,45 @@ validator + layout lint). A clean build prints per sheet `E/W/I = 0/0/0` and
 {err_lines}
   * LAYOUT-LINT WARNINGS (advisory, but aim for zero):
 {warn_lines}
-PLACEMENT / ROUTING IDIOMS (how altium/build_<sheet>.py stays lint-clean):
-  - 100-mil grid; orthogonal wires only (no diagonals).
+COORDINATE SYSTEM (critical — get this wrong and you mis-route):
+  - 100-mil grid; orthogonal wires ONLY (no diagonals).
+  - Altium Y grows UP: larger y = ABOVE / farther from the chip, smaller y =
+    BELOW / toward it. A "GND below the net" is at a SMALLER y; "rail above" is a
+    LARGER y. (Orient-0 passive: pin1 = +100y = top, pin2 = -100y = bottom.)
+
+ANTI-SHORT RULE (the #1 cause of broken edits — internalize it):
+  Connectivity rides T-intersections and shared endpoints — Altium + the
+  validator union ANY two wires that touch. So a stub or drop that merely CROSSES
+  an unrelated wire silently shorts those two nets. Before adding a wire, check it
+  doesn't pass through another net's wire/pin:
+   - a vertical drop on column x must not cross a horizontal wire of another net
+     that spans x at the drop's y-range;
+   - each horizontal "row" wire should span ONLY [its source, its tap] so a
+     neighbouring column's drop can't land on it;
+   - never route a wire through a component body, a port body, or a third part's
+     pin. (This is exactly how a "fix" ships a GND<->signal short.)
+
+USE THE SHARED PRIMITIVES instead of hand-routing coordinates (they bake in the
+anti-short + clearance rules, so you can't reintroduce the bugs above):
+  - `s.drop_passive(place, "<Rxx/Cxx>", tap_x=<col>, line_y=<row y of the signal/
+    rail wire>, rail="GND"|"+3V3"|..., direction="down"|"up", avoid_x=[<other
+    pin-drop columns>])` — THE canonical way to add a pull-up / pull-down / decap:
+    it places the passive vertically in line, taps the line, drops the far pin to
+    a local rail symbol, and auto-shifts the body column clear of every avoid_x so
+    body_wire_clearance holds. Pass the neighbouring drop columns in avoid_x.
+  - `s.gnd_bus(pins, rail_x)` — bus several pins to ONE GND symbol on a clean
+    vertical rail (interior taps junctioned).
+  - `place_from_netlist` to add a part, then route every one of its pins.
+
+OTHER IDIOMS:
   - Draw the WIRE to a connection point BEFORE placing a port there, and use
     `port(side="auto")` so the body sits clear of the net (never impaling it).
   - GND power symbols point DOWN (270deg) at the bottom of their net; rails point
     UP (90deg). Don't put a GND symbol above its net.
-  - Keep readable spacing between components; don't let a label/value/port text
-    box land on a component body or another text box (text is linted as a 2-D box).
-  - Add a new part with `place_from_netlist`, then route every one of its pins.
-  - Don't run a wire through a body, a port body, or a third part's pin."""
+  - A 2-pin passive must sit IN LINE with its net (both stubs parallel to the
+    body), never on an elbow — `drop_passive` guarantees this.
+  - Keep readable spacing; don't let a label/value/port text box land on a
+    component body or another text box (text is linted as a 2-D box)."""
 
 
 _APPLY_INSTRUCTIONS = f"""\
@@ -645,7 +674,13 @@ You will receive a list of changelog items the user accumulated. Your job:
 3. Write edits that will PASS THE GATES (below). A value-only change (e.g. a
    resistor/cap value in netlist/*.yaml) is connectivity-safe; but adding,
    removing, or rewiring a PART changes geometry + connectivity, so place and
-   route it per the idioms so the build stays clean.
+   route it per the idioms. For a pull-up/pull-down/decap use the shared
+   s.drop_passive(...) primitive (it's short-free + clearance-clean by
+   construction) rather than hand-routing stubs.
+   SELF-VERIFY any geometry you add: trace each new wire against the ANTI-SHORT
+   RULE below and confirm it touches ONLY its intended net (no crossing another
+   net's wire/pin/body). A hand-routed stub that crosses an unrelated wire ships a
+   SHORT and fails the build — check before you finish.
 4. DO NOT run the build yourself (`python -m test1.altium.build_project`) — the
    GUI backend will run it after you return.
 5. When done, clear the changelog file ({CHANGELOG_FILE}) to an empty
@@ -1167,10 +1202,67 @@ approval cannot be answered and will abort the whole pass before you fix anythin
    re-checks (you don't need git/python to see changes — Read the files). If a
    failure is genuinely not fixable by an edit here (e.g. it needs a design
    decision), say so in your summary rather than guessing.
-4. Finish with a terse summary: which issues you fixed and how.
+4. SELF-VERIFY before you finish (you can't run the build, so trace it by hand —
+   this is how you avoid shipping a SHORT that wastes a whole round):
+   For EVERY wire you added or moved, confirm against the ANTI-SHORT RULE below
+   that it touches ONLY its intended net — it must not cross another net's wire,
+   pin, or body. Re-Read the lines you edited and walk each new wire's path. If
+   you used a shared primitive (drop_passive / gnd_bus) you're safe by
+   construction; if you hand-routed, this check is mandatory. State in your
+   summary that you verified no new crossings. (The backend will REVERT your
+   round if it regresses the build, so an unchecked short = a wasted attempt.)
+5. Finish with a terse summary: which issues you fixed, how, and your self-check.
 
 {_lint_expectations()}
 """
+
+
+# Concrete remedy per lint/validator rule (B1) — the "how", keyed by rule_id, so
+# the fix agent applies a known recipe (and the shared primitive) instead of
+# reasoning the geometry from scratch. Keep each one short + imperative.
+_FIX_RECIPES = {
+    "off_grid": "snap the offending pin/wire endpoint to the nearest 100-mil "
+                "grid coordinate in the builder.",
+    "diagonal_wire": "split the diagonal into an L of one horizontal + one "
+                     "vertical wire segment.",
+    "component_overlap": "move one part so the two pin-boxes no longer overlap "
+                         "(>=200 mil clear); re-route its stubs to follow.",
+    "out_of_bounds": "shift the content inward so nothing crosses the sheet "
+                     "border (or the build auto-fits paper — keep coords positive).",
+    "stub_t_short": "a power/port glyph is sitting on the INTERIOR of an unrelated "
+                    "wire (T-short). Move the glyph (or the wire) so its hot-spot "
+                    "is a wire ENDPOINT, not mid-span — feed it from one side via a "
+                    "short stub. This is a real net short; fix it, don't ignore it.",
+    "passive_on_corner": "the passive isn't in line with its net. Re-place it via "
+                         "s.drop_passive(...) so both stubs are parallel to the "
+                         "body and the 90deg turn is off the pin.",
+    "body_wire_clearance": "the body is <half-a-grid from a non-connecting wire. "
+                           "Re-place via s.drop_passive(..., avoid_x=[<the other "
+                           "drop columns>]) so the body column auto-clears them.",
+    "cramped_cluster": "widen the spacing of the stacked parts (increase the "
+                       "row/column pitch) so each body has >=300 mil to its "
+                       "diagonal neighbour.",
+    "cramped_spacing": "move the two parts apart to >=200 mil clear.",
+    "power_borders_component": "hang the power glyph off a longer stub so its box "
+                               "is >=100 mil clear of the neighbouring body.",
+    "power_clearance_all_sides": "give the power glyph a full grid of clear space "
+                                 "on every side (move it or its neighbour).",
+    "ground_on_top": "the GND symbol is above its net — move it BELOW (smaller y) "
+                     "so it points down into the net from underneath.",
+    "power_stub_side": "place the rail glyph at the TOP of its stub (net below it) "
+                       "so it points up OFF the net; or let auto_fix_power handle it.",
+    "wire_through_body": "re-route the wire to tap a PIN END, not cross the body.",
+    "wire_through_port": "move the port body into the margin; the net must "
+                         "terminate AT the port, not pass through it.",
+    "label_overlap": "move one text/label box so the two no longer overlap.",
+    "label_over_symbol": "move the label/port text clear of the component body.",
+    "label_symbol_clearance": "nudge the port/note >=50 mil off the body.",
+    "shorted_component": "a 2-pin part has both pins on the same net — re-wire one "
+                         "pin to its intended DIFFERENT node (check the netlist).",
+    "missing_symbol": "the design references a part with no .SchLib — this needs "
+                      "the missing-part flow / author_symbol, not a geometry edit; "
+                      "say so in your summary.",
+}
 
 
 def _build_fix_prompt(failures: dict, round_no: int, max_rounds: int,
@@ -1193,6 +1285,18 @@ def _build_fix_prompt(failures: dict, round_no: int, max_rounds: int,
         f"'{i.get('sheet','?')}': {i.get('message','')}"
         for i in shown[:40]
     ) or "  (no structured lint issues — see build output below)"
+    # Per-rule FIX RECIPE (B1): for each DISTINCT rule in the failures, append the
+    # concrete remedy — what to change and which primitive to use — so the agent
+    # APPLIES a known fix instead of reverse-engineering the geometry (where it
+    # over-thinks or ships a short).
+    seen_rules: list[str] = []
+    for i in shown:
+        rid = i.get("rule", "")
+        if rid and rid not in seen_rules and rid in _FIX_RECIPES:
+            seen_rules.append(rid)
+    recipes = "\n".join(f"  - {rid}: {_FIX_RECIPES[rid]}" for rid in seen_rules)
+    recipes_block = (f"\nHOW TO FIX each rule above (apply the recipe; don't "
+                     f"re-derive):\n{recipes}\n" if recipes else "")
     tail = "\n".join(failures.get("tail", [])[-25:])
     scope = ("Fix every ERROR **and WARNING** listed below — this loop clears "
              "warnings too. (INFO stays advisory.)"
@@ -1208,7 +1312,7 @@ counts: {failures.get('counts')}
 
 Failing issues to fix:
 {lines}
-
+{recipes_block}
 Build output (tail):
 {tail}
 
