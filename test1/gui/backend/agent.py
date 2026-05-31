@@ -1123,21 +1123,38 @@ and altium/build_<sheet>.py.
 """
 
 
-def _build_fix_prompt(failures: dict, round_no: int, max_rounds: int) -> str:
-    """failures = {exit, status, counts, issues:[...], tail:[build output lines]}."""
+def _build_fix_prompt(failures: dict, round_no: int, max_rounds: int,
+                      fix_warnings: bool = False) -> str:
+    """failures = {exit, status, counts, issues:[...], tail:[build output lines]}.
+
+    fix_warnings selects the loop scope: when False the pass clears ERRORs (the
+    only gate that fails the build); when True it also clears WARNINGs, so both
+    severities are listed and the agent is told warnings count this round."""
     issues = failures.get("issues", [])
-    errs = [i for i in issues if i.get("severity") == "ERROR"]
-    shown = errs or issues          # prioritize ERRORs; fall back to all
+    if fix_warnings:
+        # ERRORs first, then WARNINGs — both are in scope this round.
+        shown = ([i for i in issues if i.get("severity") == "ERROR"]
+                 + [i for i in issues if i.get("severity") == "WARNING"]) or issues
+    else:
+        errs = [i for i in issues if i.get("severity") == "ERROR"]
+        shown = errs or issues          # prioritize ERRORs; fall back to all
     lines = "\n".join(
         f"  - [{i.get('severity','?')}] {i.get('rule','?')} on sheet "
         f"'{i.get('sheet','?')}': {i.get('message','')}"
         for i in shown[:40]
     ) or "  (no structured lint issues — see build output below)"
     tail = "\n".join(failures.get("tail", [])[-25:])
+    scope = ("Fix every ERROR **and WARNING** listed below — this loop clears "
+             "warnings too. (INFO stays advisory.)"
+             if fix_warnings else
+             "Fix every ERROR listed below. WARN/INFO are advisory — do not "
+             "spend this round on them.")
     return f"""\
 Build gate FAILED (fix round {round_no} of {max_rounds}).
 Exit code: {failures.get('exit')}   lint status: {failures.get('status')}   \
 counts: {failures.get('counts')}
+
+{scope}
 
 Failing issues to fix:
 {lines}
@@ -1148,9 +1165,13 @@ Build output (tail):
 Fix these now."""
 
 
-async def start_lint_fix_pass(failures: dict, round_no: int, max_rounds: int) -> AgentRun:
-    """Spawn a bounded fix pass given the build's actual gate failures."""
-    prompt = _build_fix_prompt(failures, round_no, max_rounds)
+async def start_lint_fix_pass(failures: dict, round_no: int, max_rounds: int,
+                              fix_warnings: bool = False) -> AgentRun:
+    """Spawn a bounded fix pass given the build's actual gate failures.
+
+    fix_warnings widens the scope from ERROR-only to ERROR+WARNING (the
+    "Errors + warnings fixed" loop tick); see _build_fix_prompt."""
+    prompt = _build_fix_prompt(failures, round_no, max_rounds, fix_warnings)
     proc, _cmd = await _spawn_claude(
         prompt=prompt,
         system_suffix=_LINT_FIX_INSTRUCTIONS,

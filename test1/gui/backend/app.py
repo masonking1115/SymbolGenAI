@@ -1926,6 +1926,11 @@ class ApplyAndGenOpts(BaseModel):
     # with the actual failures and rebuild — up to LOOP_MAX_ROUNDS — so Generate
     # lands a gate-clean change instead of shipping a broken build. Opt-in.
     loop_review: bool = False
+    # Loop-review scope. When fix_warnings is False (the "Errors fixed" tick) the
+    # gate is clean at zero lint ERRORs (WARN/INFO advisory, as build_project
+    # gates). When True (the "Errors + warnings fixed" tick) the loop also keeps
+    # fixing until WARNINGs reach zero too. Ignored unless loop_review is on.
+    fix_warnings: bool = False
 
 
 # Hard cap on apply->build->fix rounds when loop_review is on (mirrors the sim
@@ -1953,14 +1958,23 @@ def _read_lint_failures() -> dict:
     return out
 
 
-def _gates_passed(failures: dict) -> bool:
+def _gates_passed(failures: dict, fix_warnings: bool = False) -> bool:
     """The build is clean iff it exited 0 AND lint reports no ERRORs. (WARN/INFO
-    are advisory and don't fail the build — matching build_project's gate.)"""
+    are advisory and don't fail the build — matching build_project's gate.)
+
+    With fix_warnings=True (the "Errors + warnings fixed" loop scope) the bar is
+    raised: WARNINGs must also be zero for the loop to consider itself done.
+    INFO stays advisory in both modes (cosmetic, never worth a fix round)."""
     if failures.get("exit") not in (0, None):
         return False
     if failures.get("status") == "fail":
         return False
-    return int(failures.get("counts", {}).get("ERROR", 0)) == 0
+    counts = failures.get("counts", {})
+    if int(counts.get("ERROR", 0)) != 0:
+        return False
+    if fix_warnings and int(counts.get("WARNING", 0)) != 0:
+        return False
+    return True
 
 
 def _sim_targets_from_items(items: list[dict]) -> list[tuple[str, str | None]]:
@@ -2118,21 +2132,24 @@ async def run_apply_and_generate(opts: ApplyAndGenOpts = ApplyAndGenOpts()) -> d
     # plain path; the frontend streams "generate"/"apply"/"lint-fix" runs as they
     # appear. (Altium backend only — the loop reads the validator+lint gate.)
     if opts.loop_review and BACKEND == "altium":
+        fix_warnings = bool(opts.fix_warnings)
+
         async def chain_with_loop_review() -> None:
             if apply_run_id:
                 await _await_agent(apply_run_id)
             await _build_once()
             failures = _read_lint_failures()
             rnd = 0
-            while not _gates_passed(failures) and rnd < LOOP_MAX_ROUNDS:
+            while not _gates_passed(failures, fix_warnings) and rnd < LOOP_MAX_ROUNDS:
                 rnd += 1
-                fix = await agent_mod.start_lint_fix_pass(failures, rnd, LOOP_MAX_ROUNDS)
+                fix = await agent_mod.start_lint_fix_pass(
+                    failures, rnd, LOOP_MAX_ROUNDS, fix_warnings=fix_warnings)
                 await _await_agent(fix.run_id)
                 await _build_once()
                 failures = _read_lint_failures()
             # Close the loop back to the sim: ONLY for sim-originated items, and
             # ONLY once the build is gate-clean (no point re-simming a broken design).
-            if sim_targets and _gates_passed(failures):
+            if sim_targets and _gates_passed(failures, fix_warnings):
                 await _resim_blocks(sim_targets)
             # final state is whatever the last build left in lint.json / run registry
         _spawn_chain(chain_with_loop_review(), "loop-review chain")
@@ -2141,6 +2158,7 @@ async def run_apply_and_generate(opts: ApplyAndGenOpts = ApplyAndGenOpts()) -> d
             "generate_run_id": None,    # phases appear in the run registry as they start
             "queued_items": len(items),
             "loop_review": True,
+            "fix_warnings": fix_warnings,
             "max_rounds": LOOP_MAX_ROUNDS,
         }
 

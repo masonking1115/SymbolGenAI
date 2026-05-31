@@ -2,6 +2,41 @@
 
 Deferred work items (not blocking; pick up when convenient).
 
+## Linter — two new placement/routing rules (2026-05-31) — DONE
+
+- [x] **`passive_on_corner` (WARNING).** A passive (R/C/L) pin must not land on a
+      wire CORNER — the net entering on one axis and turning 90° exactly at the
+      component terminal (the C22/R20-style "passive hung off the corner of a net"
+      defect). Detected geometrically in `altium/layout_lint.py`: a 2-pin passive
+      pin where the only wires terminating are exactly one H + one V stub (a clean
+      L-bend). Skips junction taps (≥3 segments), straight pass-throughs/single
+      stubs, and DNP passives → no false positives. Fires on the real design:
+      **R20 pin 1** (net comes in horizontally, turns down at the terminal).
+- [x] **`power_borders_component` (WARNING).** A GND or power-rail glyph must not
+      sit flush against a component body (the R30–R33 ladder / +3V3-over-R61
+      crops). Measures the glyph's electrical body (`body_box`) vs each part's true
+      drawn body (`graphic_box`); flags a hard overlap or a sub-100-mil near-touch.
+      Exempts the part whose own pin the glyph terminates (normal decap/rail tap),
+      so only a glyph crowding a *different* part is caught. Fires on the real
+      design: **GND at (8300,10500) 90 mil from U20**.
+- Both are WARNING-level (advisory, never fail the build) and registered in
+  `RULES` + `ALL_CHECKS` so the GUI checklist, PDF export, and the review/apply
+  agent all see them. Full build still `FAILURES: none`; the 5 other sheets stay
+  clean (no false positives). Not auto-fixed — moving a wire bend or a power glyph
+  can create a short, so (like cramped_spacing/decap_grouping) they're surfaced
+  for the builder/agent to address, not nudged mechanically.
+
+## Test plans — answer (2026-05-31)
+
+- There is **no separate formal "test plan" document** and no `test plan` /
+  `testplan` references anywhere in the repo. The closest artifact is
+  **`test1/SYSTEM_TESTS.md`** — a living end-to-end capability-test catalog (one
+  entry so far: **T1**, the incorrect-part → autonomous-remediation flow, loop
+  `a66156e2`, PASS). Each entry is a reproducible scenario against the live stack
+  with Scenario / Setup / Expected flow / Result (+ loop id) / Wiring. The intent
+  is to add a T# per new capability. If a heavier/structured test plan is wanted
+  (per-requirement coverage matrix, regression suite, CI hooks), that's net-new.
+
 ## Library part detail: embed the datasheet (2026-05-31) — TODO
 
 - [ ] **Show the datasheet PDF in the Library part-detail view**, filling the

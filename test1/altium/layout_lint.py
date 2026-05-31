@@ -26,6 +26,9 @@ Sheet checks (highest value first):
                             through it) instead of terminating it
   ground_on_top     WARNING a GND symbol sits ABOVE its net (wire drops down to
                             it) — GND belongs at the bottom, pointing down
+  power_borders_component WARNING a GND/rail glyph abuts a component body (no
+                            readable gap) — power symbols hang off a stub, clear
+                            of neighbouring parts
   wire_through_body WARNING a net wire crosses a component body instead of
                             tapping a pin END
   off_center        WARNING sheet content is bunched against an edge rather than
@@ -40,6 +43,8 @@ Sheet checks (highest value first):
   offpage_text      WARNING a drawn label/value/note/body box spills past the
                             sheet border (text clipped at the page edge)
   wire_overlap      WARNING collinear same-axis wires overlap (silent short)
+  passive_on_corner WARNING a passive (R/C/L) pin lands on a wire corner (the net
+                            turns 90deg at the terminal instead of running through)
   bridged_drop      WARNING wire interior crosses a third part's pin (bridge)
   duplicate_wire    INFO    identical segment drawn twice
   redundant_junction INFO   junction with <3 segments / on a pin (cosmetic)
@@ -81,6 +86,11 @@ RULES: list[dict] = [
      "summary": "Supply-rail up-arrow has its net ABOVE the glyph (points up into "
                 "the net instead of capping it from the top, off the net) — the "
                 "rail mirror of ground_on_top"},
+    {"id": "power_borders_component", "severity": "WARNING", "scope": "sheet",
+     "summary": "A GND or power-rail glyph sits flush against a component body (or "
+                "another part's pin-box) with no readable gap — the power symbol "
+                "should hang off a short stub, clear of neighbouring symbols, not "
+                "abut them"},
     {"id": "wire_through_body", "severity": "WARNING", "scope": "sheet",
      "summary": "Net wire crosses a component body instead of a pin end"},
     {"id": "pin_wire_crosses_body", "severity": "WARNING", "scope": "sheet",
@@ -135,6 +145,11 @@ RULES: list[dict] = [
      "summary": "A signal/global/hier net whose every active part (U/Q/D/J) is "
                 "DNP — the path may be orphaned (intended driver/receiver "
                 "unpopulated). Semantic intent check; advisory only."},
+    {"id": "passive_on_corner", "severity": "WARNING", "scope": "sheet",
+     "summary": "A passive (R/C/L) pin lands directly on a wire CORNER — the net "
+                "turns 90deg at the component terminal instead of running straight "
+                "through (or tapping via a short stub). Route the bend clear of the "
+                "pin so the connection is unambiguous"},
     {"id": "bridged_drop", "severity": "WARNING", "scope": "sheet",
      "summary": "Wire interior crosses a third part's pin (possible bridge)"},
     {"id": "duplicate_wire", "severity": "INFO", "scope": "sheet",
@@ -278,6 +293,68 @@ def _check_bridged_drop(s):
                 if r not in ends and not isp:
                     out.append(LintIssue("WARNING", "bridged_drop",
                         f"wire {a}->{b} interior crosses {r} pin {num} at {pk} (possible bridge)", [r]))
+    return out
+
+
+def _seg_dir_at(p, a, b):
+    """'H', 'V', or None for the direction of axis-aligned segment a->b at one of
+    its endpoints p (the endpoint must coincide with p; a degenerate zero-length
+    segment returns None)."""
+    (px, py), (ax, ay), (bx, by) = p, a, b
+    on_a = abs(ax - px) < _TOL and abs(ay - py) < _TOL
+    on_b = abs(bx - px) < _TOL and abs(by - py) < _TOL
+    if not (on_a or on_b):
+        return None
+    if abs(ay - by) < _TOL and abs(ax - bx) > _TOL:
+        return "H"
+    if abs(ax - bx) < _TOL and abs(ay - by) > _TOL:
+        return "V"
+    return None
+
+
+def _check_passive_on_corner(s):
+    """A passive (R/C/L) terminal should not sit on a wire CORNER — the net coming
+    in along one axis and turning 90deg exactly at the component pin. The eye
+    can't tell whether the bend connects to the pin or merely passes its elbow,
+    and it reads as a passive "hung off the corner" of a net rather than placed in
+    line with it (the user's "passive on the corner of a net" defect).
+
+    Detected geometrically: a 2-pin passive pin where the ONLY wires terminating
+    are exactly one horizontal + one vertical stub (a clean L-bend) — i.e. the net
+    enters on one axis and leaves on the other right at the pin. The fix is to put
+    the bend one grid step off the pin and approach the terminal with a straight
+    stub, or run the net straight through and tap with a junction.
+
+    Skipped, to stay false-positive-free:
+      - junction taps (>=3 segments meet, a real multi-way node with a dot) — a
+        normal connection, not a routing elbow landing on the pin;
+      - straight pass-throughs / single stubs (all segments collinear) — fine;
+      - non-passives and DNP passives (a DNP jumper footprint isn't a routed part).
+    """
+    out = []
+    # All wire endpoints, indexed by rounded point, with the segment kept so we
+    # can classify each meeting segment's direction at that point.
+    ends_at: dict[tuple[int, int], list] = {}
+    for (a, b) in s._wires:
+        for end in (a, b):
+            ends_at.setdefault((round(end[0]), round(end[1])), []).append((a, b))
+    for (ref, unit), p in s._placed.items():
+        if p.is_power or len(p.pins) != 2:
+            continue
+        if p.refdes[:1].upper() not in PASSIVE_PREFIXES:
+            continue
+        for num, (px, py) in p.pins.items():
+            pk = (round(px), round(py))
+            segs = ends_at.get(pk, [])
+            if len(segs) != 2:
+                continue  # 0/1 = stub or straight run; >=3 = junction tap (fine)
+            dirs = {_seg_dir_at((px, py), a, b) for (a, b) in segs}
+            dirs.discard(None)
+            if dirs == {"H", "V"}:
+                out.append(LintIssue("WARNING", "passive_on_corner",
+                    f"{p.refdes} pin {num} at {pk} sits on a wire corner (the net "
+                    f"turns 90deg at the terminal); move the bend off the pin and "
+                    f"approach it with a straight stub", [p.refdes]))
     return out
 
 
@@ -499,6 +576,60 @@ def _check_power_stub_side(s):
                 f"rail {lb.name!r} at ({x},{y}) has its net ABOVE the arrow (the "
                 f"glyph points up INTO its net); place it at the TOP of the stub "
                 f"so it points up OFF the net", [lb.name]))
+    return out
+
+
+# Minimum clear gap (mil) between a power/GND glyph's drawn body and a neighbouring
+# component body. A power symbol belongs at the end of a short stub, standing clear
+# of other symbols; below this it visibly abuts the part. One grid step — a glyph
+# correctly hung off a >=100-mil stub clears it, but a glyph crammed flush against
+# a resistor/cap body (the screenshots' R30-R33 ladder, the +3V3 over R61) does not.
+POWER_BODY_CLEAR = 100
+
+
+def _check_power_borders_component(s):
+    """A GND or power-rail glyph must not sit flush against a component body (or
+    another part's pin-box). The power symbol should hang off a short stub, clear
+    of its neighbours — when it abuts a resistor/cap/IC the drawing reads as the
+    glyph "growing out of" the part (the user's "GND/PWR symbols directly
+    bordering the next component" defect).
+
+    Measured glyph-body (lb.body_box, the electrical glyph without name-text
+    overhang) vs the TRUE drawn component body (graphic_box), mirroring
+    label_symbol_clearance. Flags both a hard overlap and a sub-POWER_BODY_CLEAR
+    near-touch — the same defect at two penetration depths.
+
+    Exempt: the part whose pin the glyph actually terminates (a power glyph one
+    grid off its OWN connected pin is the normal decoupling/rail tap, not a
+    collision). The exemption is by pin coincidence, so a glyph crowding a
+    *different* nearby part is still caught."""
+    out = []
+    # True drawn bodies of real (non-power) parts + the set of each part's pins,
+    # so we can exempt the part the glyph legitimately connects to.
+    bodies = []
+    for (_r, _u), p in s._placed.items():
+        if p.is_power or not p.pins:
+            continue
+        bb = p.graphic_box if getattr(p, "graphic_box", None) else _part_bbox(p)
+        pins = {(round(px), round(py)) for (px, py) in p.pins.values()}
+        bodies.append((p.refdes, bb, pins))
+    for lb in s._labels:
+        if lb.kind != "power":
+            continue
+        gb = getattr(lb, "body_box", None) or lb.box
+        if not gb:
+            continue
+        hot = (round(lb.x), round(lb.y))
+        for (refdes, bb, pins) in bodies:
+            if hot in pins:
+                continue  # glyph terminates this part's own pin — legitimate tap
+            g = _gap_between(gb, bb)
+            if g < POWER_BODY_CLEAR:
+                how = ("overlaps" if g < 0 else f"sits {g:.0f} mil from")
+                out.append(LintIssue("WARNING", "power_borders_component",
+                    f"power {lb.name!r} at ({lb.x},{lb.y}) {how} {refdes} body "
+                    f"(< {POWER_BODY_CLEAR}-mil gap; hang the power symbol off a "
+                    f"stub, clear of the part)", [lb.name, refdes]))
     return out
 
 
@@ -1012,13 +1143,15 @@ ALL_CHECKS = (_check_off_grid, _check_diagonal, _check_out_of_bounds,
               _check_visible_param_glob, _check_wire_through_label,
               _check_power_straddles_net, _check_stub_t_short,
               _check_ground_on_top, _check_power_stub_side,
+              _check_power_borders_component,
               _check_wire_through_body,
               _check_pin_wire_crosses_body, _check_off_center,
               _check_cramped_spacing, _check_decap_grouping,
               _check_passive_declutter, _check_label_overlap,
               _check_label_over_symbol, _check_label_symbol_clearance,
               _check_wire_through_port,
-              _check_offpage_text, _check_wire_overlap, _check_bridged_drop,
+              _check_offpage_text, _check_wire_overlap,
+              _check_passive_on_corner, _check_bridged_drop,
               _check_duplicate_wire, _check_redundant_junction)
 
 

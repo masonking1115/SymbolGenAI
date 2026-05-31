@@ -64,10 +64,16 @@ export function Generator({
   const [decisions, setDecisions] = useState<AgentDecision[]>([]);
   const [reasoningOpen, setReasoningOpen] = useState(false);
   const [reasoningLog, setReasoningLog] = useState<string>("");
-  // Closed-loop review: after apply+build, read the gates (validator + lint) and
-  // if the build failed, spawn a bounded fix pass and rebuild (up to 3 rounds),
-  // so Generate lands a gate-clean change instead of shipping a broken build.
-  const [loopReview, setLoopReview] = useState(false);
+  // Closed-loop review scope. After apply+build the backend reads the gates
+  // (validator + lint) and, if not clean, spawns a bounded fix pass and rebuilds
+  // (up to 3 rounds) so Generate lands a gate-clean change. Two opt-in modes,
+  // mutually exclusive:
+  //   "off"             — plain one-shot generate (no fix loop).
+  //   "errors"          — loop until lint ERRORs = 0 (warnings advisory).
+  //   "errors_warnings" — loop until ERRORs = 0 AND WARNINGs = 0.
+  const [loopMode, setLoopMode] = useState<"off" | "errors" | "errors_warnings">("off");
+  const loopReview = loopMode !== "off";
+  const fixWarnings = loopMode === "errors_warnings";
   // Which severity's detail list is expanded under the count cards (click to open).
   const [openSev, setOpenSev] = useState<Severity | null>(null);
   // Whether the linter checklist section is expanded.
@@ -158,11 +164,13 @@ export function Generator({
       // Stage 1+2: apply changelog (if any), then generate. Single backend
       // call orchestrates both runs.
       setLines((prev) => [...prev, "Contacting backend for build orchestration..."]);
-      const { apply_run_id, generate_run_id, loop_review, max_rounds } = await api.applyAndGenerate(loopReview);
+      const { apply_run_id, generate_run_id, loop_review, fix_warnings, max_rounds } =
+        await api.applyAndGenerate(loopReview, fixWarnings);
       setLines((prev) => [...prev, `Backend connected: apply_run_id=${apply_run_id || "none"} generate_run_id=${generate_run_id ?? "pending"}`]);
       if (loop_review) {
-        setLines((prev) => [...prev, `[LOOP] Closed-loop review on — apply → build → read gates → fix (up to ${max_rounds} rounds) until clean.`]);
-        pushActivity(`▶ closed-loop review (≤${max_rounds} fix rounds)`);
+        const scope = fix_warnings ? "errors + warnings" : "errors";
+        setLines((prev) => [...prev, `[LOOP] Closed-loop review on (${scope}) — apply → build → read gates → fix (up to ${max_rounds} rounds) until clean.`]);
+        pushActivity(`▶ closed-loop review · ${scope} (≤${max_rounds} fix rounds)`);
       }
 
       if (apply_run_id) {
@@ -242,8 +250,8 @@ export function Generator({
         setSubPhase(undefined);
         setLines((prev) => [...prev,
           lastBuildStatus === "ok"
-            ? "[LOOP] Closed-loop review complete — build passes the gates (lint ERRORs = 0)."
-            : "[LOOP] Closed-loop review ended — build still failing after the fix rounds; see the linter."]);
+            ? `[LOOP] Closed-loop review complete — build passes the gates (lint ERRORs = 0${fixWarnings ? " and WARNINGs = 0" : ""}).`
+            : `[LOOP] Closed-loop review ended — gates still not clean after the fix rounds; see the linter.`]);
         setTimeout(() => { refreshLint(); refreshFresh(); refreshChangelogCount(); setChangelogTick((t) => t + 1); }, 250);
         return;
       }
@@ -408,24 +416,23 @@ export function Generator({
               ? "Generate (sources changed)"
               : "Generate schematic"}
           </button>
-          {/* Closed-loop review: apply -> build -> read gates -> bounded fix ->
-              rebuild until the validator + lint pass (lands a clean change). */}
-          <label
-            title="After applying changes, build and read the validator + layout-lint gates; if the build fails, an agent fixes the failures and rebuilds (up to 3 rounds) so Generate lands a gate-clean schematic."
-            className={"inline-flex items-center gap-1.5 text-[12px] select-none cursor-pointer " +
-              (runState === "running" ? "opacity-50 pointer-events-none " : "") +
-              (loopReview ? "text-ink-900" : "text-ink-600")}
-          >
-            <input
-              type="checkbox"
-              checked={loopReview}
-              onChange={(e) => setLoopReview(e.target.checked)}
-              disabled={runState === "running"}
-              className="accent-ink-900"
-            />
-            <I.Refresh size={12} className={loopReview ? "text-ink-900" : "text-ink-400"} />
-            Loop review &amp; close the loop
-          </label>
+          {/* Closed-loop review scope — apply -> build -> read gates -> bounded
+              fix -> rebuild until clean. Two mutually-exclusive ticks; clicking
+              the active one turns the loop off (plain one-shot generate). */}
+          <LoopTick
+            label="Fix errors"
+            title="After applying changes, build and read the validator + layout-lint gates; if any ERRORs remain, an agent fixes them and rebuilds (up to 3 rounds) so Generate lands a build with zero lint ERRORs. Warnings stay advisory."
+            checked={loopMode === "errors"}
+            disabled={runState === "running"}
+            onToggle={() => setLoopMode((m) => (m === "errors" ? "off" : "errors"))}
+          />
+          <LoopTick
+            label="Fix errors + warnings"
+            title="Same fix loop as 'Fix errors', but the agent also clears every WARNING — it keeps fixing and rebuilding (up to 3 rounds) until both ERRORs and WARNINGs reach zero. INFO stays advisory."
+            checked={loopMode === "errors_warnings"}
+            disabled={runState === "running"}
+            onToggle={() => setLoopMode((m) => (m === "errors_warnings" ? "off" : "errors_warnings"))}
+          />
           <button
             onClick={() => {
               refreshLint();
@@ -702,6 +709,42 @@ export function Generator({
         </SubSection>
       </div>
     </div>
+  );
+}
+
+// One of the two mutually-exclusive closed-loop scope ticks next to Generate.
+function LoopTick({
+  label,
+  title,
+  checked,
+  disabled,
+  onToggle,
+}: {
+  label: string;
+  title: string;
+  checked: boolean;
+  disabled?: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <label
+      title={title}
+      className={
+        "inline-flex items-center gap-1.5 text-[12px] select-none cursor-pointer " +
+        (disabled ? "opacity-50 pointer-events-none " : "") +
+        (checked ? "text-ink-900" : "text-ink-600")
+      }
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={onToggle}
+        disabled={disabled}
+        className="accent-ink-900"
+      />
+      <I.Refresh size={12} className={checked ? "text-ink-900" : "text-ink-400"} />
+      {label}
+    </label>
   );
 }
 
