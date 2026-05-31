@@ -43,8 +43,9 @@ Sheet checks (highest value first):
   offpage_text      WARNING a drawn label/value/note/body box spills past the
                             sheet border (text clipped at the page edge)
   wire_overlap      WARNING collinear same-axis wires overlap (silent short)
-  passive_on_corner WARNING a passive (R/C/L) pin lands on a wire corner (the net
-                            turns 90deg at the terminal instead of running through)
+  passive_on_corner WARNING a passive (R/C/L) sits on a net elbow — its two pins
+                            are fed on perpendicular axes (net bends across the
+                            part) instead of running straight through it
   bridged_drop      WARNING wire interior crosses a third part's pin (bridge)
   duplicate_wire    INFO    identical segment drawn twice
   redundant_junction INFO   junction with <3 segments / on a pin (cosmetic)
@@ -146,10 +147,11 @@ RULES: list[dict] = [
                 "DNP — the path may be orphaned (intended driver/receiver "
                 "unpopulated). Semantic intent check; advisory only."},
     {"id": "passive_on_corner", "severity": "WARNING", "scope": "sheet",
-     "summary": "A passive (R/C/L) pin lands directly on a wire CORNER — the net "
-                "turns 90deg at the component terminal instead of running straight "
-                "through (or tapping via a short stub). Route the bend clear of the "
-                "pin so the connection is unambiguous"},
+     "summary": "A passive (R/C/L) sits on the elbow of a net — its two terminals "
+                "are fed on perpendicular axes (one horizontal, one vertical) so "
+                "the net bends across the part instead of running straight through "
+                "it. Align the passive in line with the net (stubs parallel to the "
+                "body) and route the 90deg turn clear of the pins"},
     {"id": "bridged_drop", "severity": "WARNING", "scope": "sheet",
      "summary": "Wire interior crosses a third part's pin (possible bridge)"},
     {"id": "duplicate_wire", "severity": "INFO", "scope": "sheet",
@@ -296,65 +298,67 @@ def _check_bridged_drop(s):
     return out
 
 
-def _seg_dir_at(p, a, b):
-    """'H', 'V', or None for the direction of axis-aligned segment a->b at one of
-    its endpoints p (the endpoint must coincide with p; a degenerate zero-length
-    segment returns None)."""
-    (px, py), (ax, ay), (bx, by) = p, a, b
-    on_a = abs(ax - px) < _TOL and abs(ay - py) < _TOL
-    on_b = abs(bx - px) < _TOL and abs(by - py) < _TOL
-    if not (on_a or on_b):
-        return None
-    if abs(ay - by) < _TOL and abs(ax - bx) > _TOL:
-        return "H"
-    if abs(ax - bx) < _TOL and abs(ay - by) > _TOL:
-        return "V"
-    return None
+def _wire_axes_at(s, px, py):
+    """Which axes carry wire MATERIAL at point (px,py) — counting a wire whose
+    endpoint OR interior sits there. Returns a set ⊆ {"H","V"}. (Interior counts,
+    so a stub that ends at a pin AND a bus that passes the pin both register.)"""
+    axes = set()
+    for (a, b) in s._wires:
+        if (abs(a[1] - b[1]) < _TOL and abs(a[1] - py) < _TOL
+                and min(a[0], b[0]) - _TOL <= px <= max(a[0], b[0]) + _TOL):
+            axes.add("H")
+        if (abs(a[0] - b[0]) < _TOL and abs(a[0] - px) < _TOL
+                and min(a[1], b[1]) - _TOL <= py <= max(a[1], b[1]) + _TOL):
+            axes.add("V")
+    return axes
 
 
 def _check_passive_on_corner(s):
-    """A passive (R/C/L) terminal should not sit on a wire CORNER — the net coming
-    in along one axis and turning 90deg exactly at the component pin. The eye
-    can't tell whether the bend connects to the pin or merely passes its elbow,
-    and it reads as a passive "hung off the corner" of a net rather than placed in
-    line with it (the user's "passive on the corner of a net" defect).
+    """A passive (R/C/L) should sit IN LINE with its net, not on the elbow of a
+    corner. Flag a 2-pin passive whose two pin-stubs run on PERPENDICULAR axes —
+    one pin fed by a horizontal wire, the other by a vertical wire — so the net
+    enters along one axis and leaves along the other, with the component body
+    forming one leg of an L-bend (the user's "passive on the corner of a net"
+    defect; e.g. the R30–R33 ladder where each resistor drops vertically into the
+    bus and feeds out horizontally).
 
-    Detected geometrically: a 2-pin passive pin where the ONLY wires terminating
-    are exactly one horizontal + one vertical stub (a clean L-bend) — i.e. the net
-    enters on one axis and leaves on the other right at the pin. The fix is to put
-    the bend one grid step off the pin and approach the terminal with a straight
-    stub, or run the net straight through and tap with a junction.
+    A correctly-placed passive has both stubs COLLINEAR with its body: a vertical
+    body has vertical wires off both ends, a horizontal body has horizontal wires
+    — the net runs straight through the part. Perpendicular stubs mean the part is
+    hung on the bend instead. The fix is to align the part with the net (stubs
+    parallel to the body) and route the 90° turn clear of the terminals.
+
+    Measured by wire MATERIAL on each axis at each pin (endpoint or interior, via
+    _wire_axes_at), so it sees the bend regardless of whether the perpendicular
+    arm is a separate stub, a bus passing the pin, or the body itself.
 
     Skipped, to stay false-positive-free:
-      - junction taps (>=3 segments meet, a real multi-way node with a dot) — a
-        normal connection, not a routing elbow landing on the pin;
-      - straight pass-throughs / single stubs (all segments collinear) — fine;
-      - non-passives and DNP passives (a DNP jumper footprint isn't a routed part).
+      - a pin with wire on BOTH axes already (a true junction/T at the terminal —
+        a multi-way node, reported by other rules, not a simple elbow);
+      - a pin with NO wire (floating / unrouted — not this rule's concern);
+      - non-passives (this is a 2-pin R/C/L placement rule). DNP isn't carried
+        into the sheet geometry, and a DNP passive is still DRAWN, so it's judged
+        on its drawn placement like any other part.
     """
     out = []
-    # All wire endpoints, indexed by rounded point, with the segment kept so we
-    # can classify each meeting segment's direction at that point.
-    ends_at: dict[tuple[int, int], list] = {}
-    for (a, b) in s._wires:
-        for end in (a, b):
-            ends_at.setdefault((round(end[0]), round(end[1])), []).append((a, b))
     for (ref, unit), p in s._placed.items():
         if p.is_power or len(p.pins) != 2:
             continue
         if p.refdes[:1].upper() not in PASSIVE_PREFIXES:
             continue
-        for num, (px, py) in p.pins.items():
-            pk = (round(px), round(py))
-            segs = ends_at.get(pk, [])
-            if len(segs) != 2:
-                continue  # 0/1 = stub or straight run; >=3 = junction tap (fine)
-            dirs = {_seg_dir_at((px, py), a, b) for (a, b) in segs}
-            dirs.discard(None)
-            if dirs == {"H", "V"}:
-                out.append(LintIssue("WARNING", "passive_on_corner",
-                    f"{p.refdes} pin {num} at {pk} sits on a wire corner (the net "
-                    f"turns 90deg at the terminal); move the bend off the pin and "
-                    f"approach it with a straight stub", [p.refdes]))
+        # The single stub axis at each pin (None if it's floating or already a
+        # both-axes junction — neither is a clean elbow we attribute to the part).
+        pin_axis = []
+        for (px, py) in p.pins.values():
+            ax = _wire_axes_at(s, px, py)
+            pin_axis.append(next(iter(ax)) if len(ax) == 1 else None)
+        if set(pin_axis) == {"H", "V"}:        # one pin H, the other V → elbow
+            out.append(LintIssue("WARNING", "passive_on_corner",
+                f"{p.refdes} sits on a wire corner - its two terminals are fed on "
+                f"perpendicular axes (one horizontal, one vertical), so the net "
+                f"bends across the part; align {p.refdes} in line with the net "
+                f"(stubs parallel to the body) and route the 90deg turn clear of "
+                f"the pins", [p.refdes]))
     return out
 
 

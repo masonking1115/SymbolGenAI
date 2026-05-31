@@ -1,9 +1,9 @@
 {
-  "generated_at": 1780204788.7735624,
+  "generated_at": 1780208065.0336103,
   "status": "pass",
   "counts": {
     "ERROR": 0,
-    "WARNING": 2,
+    "WARNING": 0,
     "INFO": 1
   },
   "issues": [
@@ -13,25 +13,6 @@
       "rule": "decap_coverage",
       "message": "rail '+VDDIO' powers IC(s) ['U11'] but has no bypass cap on the net - confirm decoupling is on an adjacent rail/node",
       "refs": []
-    },
-    {
-      "sheet": "bobcat",
-      "severity": "WARNING",
-      "rule": "power_borders_component",
-      "message": "power 'GND' at (8300,10500) sits 90 mil from U20 body (< 100-mil gap; hang the power symbol off a stub, clear of the part)",
-      "refs": [
-        "GND",
-        "U20"
-      ]
-    },
-    {
-      "sheet": "bobcat",
-      "severity": "WARNING",
-      "rule": "passive_on_corner",
-      "message": "R20 pin 1 at (7900, 9900) sits on a wire corner (the net turns 90deg at the terminal); move the bend off the pin and approach it with a straight stub",
-      "refs": [
-        "R20"
-      ]
     }
   ]
 }

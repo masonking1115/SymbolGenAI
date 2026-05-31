@@ -111,17 +111,25 @@ def build_bobcat() -> tuple[AltiumSheet, object]:
     # Place C22 ABOVE pin1's row, orient=2 (pin1=bottom, pin2=top): pin1 routes
     # DOWN to the R20.1 tap at (3000,5900), pin2 routes UP to GND. The pin1 wire
     # stays at y>=5900, clear of every SAMPLE_OUT lane.
-    C22_TAP_X = R20p["1"][0]    # 3000 — the R20.1 column
+    C22_TAP_X = R20p["1"][0]    # 3000 — the cap column
     C22_CY = p1y + 900          # 6800 — above pin1's row
     place("C22", C22_TAP_X, C22_CY, orientation=2)
     C22 = s.pins_of("C22", 1)   # 1=(3000,6700) bottom ; 2=(3000,6900) top
-    s.wire(C22["1"][0], C22["1"][1], C22_TAP_X, p1y)          # C22.1(bottom) -> R20.1 col (T at 3000,5900)
-    # C22.2(top) -> GND: jog right then drop so the GND symbol sits BELOW the
-    # wire (enters from above), not above its net.
-    C22_GX = C22_TAP_X + 400          # 3400
+    # C22.1(bottom) taps the chip-pin1->R20.1 horizontal at its MID-SPAN (x=3300),
+    # NOT at R20.1 (x=3000): drop, jog right, then down to the wire. This keeps the
+    # 90deg bend off R20 pin1, which is left to a single straight horizontal stub.
+    C22_TAP_PT_X = R20p["1"][0] + 300   # 3300 — mid-span of the (3000..3600) wire
+    s.wire(C22["1"][0], C22["1"][1], C22["1"][0], p1y + 200)  # C22.1 down to y=6100
+    s.wire(C22["1"][0], p1y + 200, C22_TAP_PT_X, p1y + 200)   # jog right to x=3300
+    s.wire(C22_TAP_PT_X, p1y + 200, C22_TAP_PT_X, p1y)        # down to T at (3300,5900)
+    # C22.2(top) -> GND: hang LEFT (away from the chip) so the GND symbol clears the
+    # U20 body by >100 mil and still sits BELOW its net (wire enters from above).
+    C22_GX = C22_TAP_X - 400          # 2600 — left of the cap, clear of U20 (left edge ~3600)
+    C22_UP_Y = C22["2"][1] + 200      # 7100 — pin2 stub rises (parallel to the body)
     C22_GY = C22["2"][1] - 400        # 6500
-    s.wire(C22["2"][0], C22["2"][1], C22_GX, C22["2"][1])     # top pin -> right
-    s.wire(C22_GX, C22["2"][1], C22_GX, C22_GY)              # down to GND stub
+    s.wire(C22["2"][0], C22["2"][1], C22["2"][0], C22_UP_Y)   # pin2(top) up (vertical)
+    s.wire(C22["2"][0], C22_UP_Y, C22_GX, C22_UP_Y)          # left at the raised row
+    s.wire(C22_GX, C22_UP_Y, C22_GX, C22_GY)                 # down to GND stub
     s.power_at("GND", C22_GX, C22_GY)
 
     # =====================================================================
@@ -159,9 +167,11 @@ def build_bobcat() -> tuple[AltiumSheet, object]:
     # C23.2(top) -> GND: jog right then drop so the GND symbol sits BELOW the
     # wire (enters from above), not above its net.
     C23_GX = TIE_X + 400              # 7300
+    C23_UP_Y = C23["2"][1] + 200      # 6600 — pin2 stub rises (parallel to the body)
     C23_GY = C23["2"][1] - 400        # 6000
-    s.wire(C23["2"][0], C23["2"][1], C23_GX, C23["2"][1])  # top pin -> right
-    s.wire(C23_GX, C23["2"][1], C23_GX, C23_GY)           # down to GND stub
+    s.wire(C23["2"][0], C23["2"][1], C23["2"][0], C23_UP_Y)  # pin2(top) up (vertical)
+    s.wire(C23["2"][0], C23_UP_Y, C23_GX, C23_UP_Y)         # right at the raised row
+    s.wire(C23_GX, C23_UP_Y, C23_GX, C23_GY)                # down to GND stub
     s.power_at("GND", C23_GX, C23_GY)
 
     # =====================================================================
@@ -241,13 +251,18 @@ def build_bobcat() -> tuple[AltiumSheet, object]:
         pull_x = px + 300 + i * 100   # unique per-pin pull column
         s.wire(px, tap_y, pull_x, tap_y)        # tap -> pull column (T at (px,tap_y))
         if pull_type == "down":
-            # R vertical, pin1 (top) at tap_y, pin2 (bottom) to GND.
-            place(pull_ref, pull_x, tap_y - 100)
-            s.wire(pull_x, tap_y - 200, pull_x, tap_y - 600)
+            # R vertical BELOW the tap: pin1(top) fed by a vertical stub down from
+            # the tap turn, pin2(bottom) to GND — both stubs parallel to the body.
+            place(pull_ref, pull_x, tap_y - 200)
+            s.wire(pull_x, tap_y, pull_x, tap_y - 100)        # tap turn → R.1 (vertical)
+            s.wire(pull_x, tap_y - 300, pull_x, tap_y - 600)  # R.2 → GND
             s.power_at("GND", pull_x, tap_y - 600)
         else:  # "up" — pull-up to +VDDIO
-            place(pull_ref, pull_x, tap_y + 100)
-            s.wire(pull_x, tap_y + 200, pull_x, tap_y + 600)
+            # R vertical ABOVE the tap: pin2(bottom) fed by a vertical stub up from
+            # the tap turn, pin1(top) to +VDDIO — both stubs parallel to the body.
+            place(pull_ref, pull_x, tap_y + 200)
+            s.wire(pull_x, tap_y, pull_x, tap_y + 100)        # tap turn → R.2 (vertical)
+            s.wire(pull_x, tap_y + 300, pull_x, tap_y + 600)  # R.1 → +VDDIO
             s.power_at("+VDDIO", pull_x, tap_y + 600)
 
     # =====================================================================
@@ -364,8 +379,12 @@ def build_bobcat() -> tuple[AltiumSheet, object]:
         place(pull_ref, pull_x, R_CY)
         Rp = s.pins_of(pull_ref, 1)  # 1=(pull_x,R_CY+100) ; 2=(pull_x,R_CY-100)
         s.wire(pull_x, row_y, pull_x, Rp["1"][1])           # row tap -> R.1(top)
-        s.wire(pull_x, Rp["2"][1], GND_COLLECT_X, Rp["2"][1])  # R.2(bot) -> collector
-        pd_bottoms.append(Rp["2"][1])
+        # R.2(bottom) drops a short vertical stub, then turns EAST to the GND
+        # collector — both stubs parallel to the body, the turn clear of the pin.
+        drop_y = Rp["2"][1] - 200
+        s.wire(pull_x, Rp["2"][1], pull_x, drop_y)             # R.2(bot) down (vertical)
+        s.wire(pull_x, drop_y, GND_COLLECT_X, drop_y)          # then east to collector
+        pd_bottoms.append(drop_y)
     # Vertical GND collector tying all four R-bottoms, one GND symbol below the
     # lowest. Interior taps are T-intersections (auto-junctioned), same net.
     top_y, bot_y = max(pd_bottoms), min(pd_bottoms)

@@ -116,7 +116,12 @@ export function PngViewer({ bust, simMode, simBlocks, selectedSimBlock }: Props)
         {mode === "model" ? (
           <ModelView block={block} bust={bust} />
         ) : meta ? (
-          <Canvas key={meta.name + meta.mtime}>
+          // Key by sheet NAME only — NOT mtime — so a Refresh (which bumps the
+          // sheet mtime) does not remount Canvas and throw away the user's
+          // zoom/pan. The fresh image still loads: mtime stays in the ImgLayer
+          // src (cache-bust), and Canvas re-fits only if the new image's natural
+          // size actually changed (its fit effect keys on `nat`).
+          <Canvas key={meta.name}>
             <ImgLayer src={api.pngUrl(meta.name, meta.mtime)} />
             {regionActive && <RegionOverlay region={activeRegion!} />}
           </Canvas>
