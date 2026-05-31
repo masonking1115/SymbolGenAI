@@ -127,7 +127,7 @@ export type TabKey =
   | "review"
   | "simulation";
 
-export type ResourceSubTab = "datasheets" | "bom" | "requirements" | "skills";
+export type ResourceSubTab = "datasheets" | "bom" | "requirements" | "skills" | "agent_models";
 
 export interface DatasheetItem {
   mpn: string;
@@ -211,6 +211,7 @@ export interface ModelChoice {
 }
 export interface AgentModelConfig {
   models: ModelChoice[];
+  groups?: string[];        // display order of agent groups (backend GROUP_ORDER)
   agents: AgentModelEntry[];
 }
 

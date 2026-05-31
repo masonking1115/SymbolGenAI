@@ -40,9 +40,9 @@ parts:
     footprint: Package_DFN_QFN:DFN-3-1EP_1.0x1.0mm_P0.65mm_EP0.5x0.5mm
     notes: PMOS pass element for channel 0
   R40:
-    lib_id: Lib:TNPW06035K11BEEA
+    lib_id: Lib:TNPW06033K65BEEA
     value: 3.65k 0.1%
-    footprint: Resistor_SMD:R_0402_1005Metric
+    footprint: Resistor_SMD:R_0603_1608Metric
     notes: "Channel-0 sense R. 3.65k sets 0–640 µA FS; was 5.11k, which capped regulated FS at ~484 µA (I·R left no headroom over the 0.5 V DUT compliance)."
   Q42:
     lib_id: Lib:2N7002
@@ -72,9 +72,9 @@ parts:
     value: PMZ1200UPEYL
     footprint: Package_DFN_QFN:DFN-3-1EP_1.0x1.0mm_P0.65mm_EP0.5x0.5mm
   R41:
-    lib_id: Lib:TNPW06035K11BEEA
+    lib_id: Lib:TNPW06033K65BEEA
     value: 3.65k 0.1%
-    footprint: Resistor_SMD:R_0402_1005Metric
+    footprint: Resistor_SMD:R_0603_1608Metric
     notes: "Channel-1 sense R — same 3.65k 0.1% as R40 (sets 0–640 µA FS); see R40 note."
   Q43:
     lib_id: Lib:2N7002

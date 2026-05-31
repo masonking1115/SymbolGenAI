@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, subscribeAgent } from "../api";
 import { I } from "../components/Icon";
+import { Canvas, ImgLayer } from "../components/PngViewer";
 import type { LibraryPart, SymbolInfo, SymbolPin } from "../types";
 
 // Per-part symbol-generation state. Keyed by MPN so a generation in progress
@@ -14,7 +15,14 @@ interface GenEntry {
   runId?: string;
 }
 
-export function Library() {
+export function Library({
+  initialPart = null,
+  onPartConsumed,
+}: {
+  /** When set (e.g. a deep-link from Design Resources), auto-select this MPN. */
+  initialPart?: string | null;
+  onPartConsumed?: () => void;
+} = {}) {
   const [parts, setParts] = useState<LibraryPart[]>([]);
   const [sel, setSel] = useState<string | null>(null);
   const [sym, setSym] = useState<SymbolInfo | null>(null);
@@ -49,6 +57,15 @@ export function Library() {
   useEffect(() => {
     refreshParts();
   }, []);
+
+  // Deep-link: a "view part" link from Design Resources sets initialPart; select
+  // it once, then tell the parent it's been consumed so a later re-click of the
+  // same MPN still re-triggers.
+  useEffect(() => {
+    if (!initialPart) return;
+    setSel(initialPart);
+    onPartConsumed?.();
+  }, [initialPart, onPartConsumed]);
 
   // Tear down every live subscription when the whole tab unmounts.
   useEffect(() => {
@@ -530,13 +547,14 @@ function UploadSchLibButton({
 // ---------------------------------------------------------------------------
 function SymbolViewer({ mpn, units }: { mpn: string; units: string[] }) {
   const [active, setActive] = useState(0);
-  const url = api.symbolSvgUrl(mpn, units[active] ?? units[0]);
+  const unit = units[active] ?? units[0];
+  const url = api.symbolSvgUrl(mpn, unit);
   return (
     <div className="mt-4">
       <div className="flex items-baseline gap-3 mb-2">
         <h3 className="text-sm font-semibold text-ink-900">Symbol</h3>
         <span className="text-[11px] text-ink-500">
-          rendered via <code>altium_monkey symbol_to_svg</code>
+          scroll to zoom · drag to pan · double-click to fit
         </span>
         {units.length > 1 && (
           <div className="ml-auto flex items-center gap-1">
@@ -557,12 +575,13 @@ function SymbolViewer({ mpn, units }: { mpn: string; units: string[] }) {
           </div>
         )}
       </div>
-      <div className="border border-edge rounded-md bg-white p-4 grid place-items-center min-h-[280px]">
-        <img
-          src={url}
-          alt={`${mpn} symbol`}
-          className="max-h-[520px] max-w-full"
-        />
+      {/* Pan/zoom canvas (shared with the schematic viewer): wheel-zoom toward
+          cursor, drag to pan, double-click/fit, +/-/1:1 overlay. `key` resets
+          the view when switching units so each renders fit-to-frame. */}
+      <div className="border border-edge rounded-md overflow-hidden h-[420px]">
+        <Canvas key={`${mpn}:${unit}`}>
+          <ImgLayer src={url} />
+        </Canvas>
       </div>
     </div>
   );

@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { api } from "../api";
+import { api, subscribeAgent } from "../api";
 import { I } from "../components/Icon";
 import { PageHeader } from "../components/PageHeader";
 import type {
+  AgentModelConfig,
   BomItem,
   DatasheetItem,
+  LibraryPart,
+  ModelChoice,
   RequirementDoc,
   ResourceSubTab,
   SkillItem,
@@ -16,6 +19,7 @@ const SUBS: { key: ResourceSubTab; label: string }[] = [
   { key: "bom", label: "BOM" },
   { key: "requirements", label: "Design Requirements" },
   { key: "skills", label: "Skills" },
+  { key: "agent_models", label: "Agent Models" },
 ];
 
 /** Read a File into raw base64 (strips the data: URL prefix). Uploads go over
@@ -39,7 +43,7 @@ function fmtSize(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
-export function Resources() {
+export function Resources({ onViewPart }: { onViewPart?: (mpn: string) => void } = {}) {
   const [sub, setSub] = useState<ResourceSubTab>("datasheets");
   return (
     <div className="h-full flex flex-col min-h-0">
@@ -70,10 +74,11 @@ export function Resources() {
       </div>
       <div className="flex-1 min-h-0 overflow-auto thin-scroll px-6 py-4">
         <div className="max-w-[900px]">
-          {sub === "datasheets" && <DatasheetsPanel />}
+          {sub === "datasheets" && <DatasheetsPanel onViewPart={onViewPart} />}
           {sub === "bom" && <BomPanel />}
           {sub === "requirements" && <RequirementsPanel />}
           {sub === "skills" && <SkillsPanel />}
+          {sub === "agent_models" && <AgentModelsPanel />}
           <section className="mt-6 px-3 py-2 rounded border border-edge bg-rail/30 text-[11.5px]">
             <div className="text-ink-500 mb-1">Providers</div>
             <ProvidersBox />
@@ -104,13 +109,33 @@ function ProvidersBox() {
 // ---------------------------------------------------------------------------
 // Datasheets
 // ---------------------------------------------------------------------------
-function DatasheetsPanel() {
+// Per-part symbol-generation lifecycle for the inline "generate" affordance.
+type SymGen = "idle" | "running" | "ok" | "fail";
+
+function DatasheetsPanel({ onViewPart }: { onViewPart?: (mpn: string) => void }) {
   const [items, setItems] = useState<DatasheetItem[]>([]);
   const [mpn, setMpn] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // mpn -> whether a symbol/.SchLib exists, so each datasheet group can either
+  // link to the part or offer to generate one. Sourced from the library list.
+  const [hasSymbol, setHasSymbol] = useState<Record<string, boolean>>({});
+  // mpn -> inline generation state (drives the !/processing/✓ indicator).
+  const [gen, setGen] = useState<Record<string, SymGen>>({});
+
+  const refreshLibrary = useCallback(async () => {
+    try {
+      const r = await api.library();
+      const map: Record<string, boolean> = {};
+      for (const p of r.parts as LibraryPart[]) map[p.mpn] = !!p.has_symbol;
+      setHasSymbol(map);
+    } catch {
+      // ignore — groups fall back to "unknown" (no link, generate offered)
+    }
+  }, []);
 
   const refresh = useCallback(async () => {
     try {
@@ -119,10 +144,32 @@ function DatasheetsPanel() {
     } catch {
       // ignore
     }
-  }, []);
+    await refreshLibrary();
+  }, [refreshLibrary]);
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  // Kick off symbol generation for a part, inline. The ! switches to a spinner
+  // while the subagent runs; on success the library map refreshes so the row
+  // flips to the "view part" link. (Full console lives in the Library tab.)
+  const generate = useCallback((m: string) => {
+    setGen((g) => ({ ...g, [m]: "running" }));
+    api.symbolGen(m)
+      .then(({ run_id }) => {
+        subscribeAgent(
+          run_id,
+          () => {},
+          ({ status }) => {
+            const ok = status === "ok" || status === "replayed";
+            setGen((g) => ({ ...g, [m]: ok ? "ok" : "fail" }));
+            // Re-read the library so has_symbol updates → link appears.
+            refreshLibrary();
+          },
+        );
+      })
+      .catch(() => setGen((g) => ({ ...g, [m]: "fail" })));
+  }, [refreshLibrary]);
 
   const mpns = useMemo(
     () => Array.from(new Set(items.map((i) => i.mpn))).sort(),
@@ -209,6 +256,13 @@ function DatasheetsPanel() {
                 <span className="text-[11px] text-ink-500">
                   {files.length} file{files.length > 1 ? "s" : ""}
                 </span>
+                <PartLinkOrGenerate
+                  mpn={groupMpn}
+                  hasSymbol={hasSymbol[groupMpn]}
+                  gen={gen[groupMpn] ?? "idle"}
+                  onView={onViewPart}
+                  onGenerate={generate}
+                />
               </div>
               <ul className="divide-y divide-edge">
                 {files.map((f) => (
@@ -235,6 +289,185 @@ function DatasheetsPanel() {
           ))
         )}
       </div>
+    </div>
+  );
+}
+
+// Per-group affordance on the right of each datasheet header:
+//  - symbol exists           → "view part" link (jumps to the Library tab)
+//  - generating              → ⏳ processing indicator
+//  - generated this session   → ✓ + link
+//  - no symbol yet            → ⚠️ caution + "Generate symbol"
+//  - failed                  → ⚠️ + "Retry"
+// `hasSymbol` is undefined until the library list loads; treat that as "unknown"
+// and show nothing rather than flashing a false caution.
+function PartLinkOrGenerate({
+  mpn,
+  hasSymbol,
+  gen,
+  onView,
+  onGenerate,
+}: {
+  mpn: string;
+  hasSymbol: boolean | undefined;
+  gen: SymGen;
+  onView?: (mpn: string) => void;
+  onGenerate: (mpn: string) => void;
+}) {
+  const viewLink = (
+    <button
+      onClick={() => onView?.(mpn)}
+      disabled={!onView}
+      className="inline-flex items-center gap-1 text-[11px] text-ink-700 hover:text-ink-900 hover:underline disabled:no-underline disabled:text-ink-400"
+      title={`View ${mpn} in the parts library`}
+    >
+      <I.External size={12} /> view part
+    </button>
+  );
+
+  // Generating — show the processing indicator (per spec, the ! switches to a
+  // processing emoji while running).
+  if (gen === "running") {
+    return (
+      <span className="ml-auto inline-flex items-center gap-1 text-[11px] text-ink-500 shrink-0">
+        <span className="animate-pulse">⏳</span> generating symbol…
+      </span>
+    );
+  }
+
+  // Has a symbol (already, or just generated) → link to the part.
+  if (hasSymbol || gen === "ok") {
+    return <span className="ml-auto shrink-0">{viewLink}</span>;
+  }
+
+  // Known to have NO symbol (or generation failed) → caution + generate/retry.
+  if (hasSymbol === false || gen === "fail") {
+    const failed = gen === "fail";
+    return (
+      <span className="ml-auto inline-flex items-center gap-1.5 shrink-0">
+        <span title={failed ? "Generation failed" : "No symbol for this part yet"}>
+          {failed ? "⚠️" : "❗"}
+        </span>
+        <span className="text-[11px] text-warn">{failed ? "no symbol" : "no symbol yet"}</span>
+        <button
+          onClick={() => onGenerate(mpn)}
+          className="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded border border-edge bg-white text-ink-700 hover:border-ink-300"
+          title="Generate an Altium symbol from this datasheet"
+        >
+          <I.Plus size={11} /> {failed ? "Retry" : "Generate symbol"}
+        </button>
+      </span>
+    );
+  }
+
+  // hasSymbol === undefined → library not loaded yet; render nothing.
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Agent Models — pick the exact Claude model each agent runs on, grouped by
+// category (Symbol / Schematic generation / Simulation / Design review / Chat).
+// Backed by /api/sim/agent-models; persisted server-side. (Moved here from the
+// Simulation tab so every agent's model lives in one place.)
+// ---------------------------------------------------------------------------
+function AgentModelsPanel() {
+  const [cfg, setCfg] = useState<AgentModelConfig | null>(null);
+  const [saving, setSaving] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    api.simAgentModels().then((c) => { if (alive) setCfg(c); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  const setModel = async (kind: string, model: string) => {
+    setSaving(kind);
+    try { setCfg(await api.simSetAgentModel(kind, model)); }
+    catch { /* ignore */ }
+    finally { setSaving(null); }
+  };
+
+  return (
+    <div className="space-y-5">
+      <SectionIntro
+        title="Agent Models"
+        note="Pick the exact Anthropic model each agent runs on, grouped by category. The id is passed to claude --model and applies to that agent's next run. Authoring/repair agents default to Opus; extraction, verdict, and chat to Sonnet."
+      />
+      {!cfg ? (
+        <div className="text-[12px] text-ink-400">loading agent models…</div>
+      ) : (
+        <AgentModelGroups cfg={cfg} saving={saving} onSet={setModel} />
+      )}
+    </div>
+  );
+}
+
+function AgentModelGroups({
+  cfg,
+  saving,
+  onSet,
+}: {
+  cfg: AgentModelConfig;
+  saving: string | null;
+  onSet: (kind: string, model: string) => void;
+}) {
+  // Exact model ids grouped by family (for the <optgroup> dropdown).
+  const families: Array<ModelChoice["family"]> = ["opus", "sonnet", "haiku"];
+  const byFamily = families
+    .map((fam) => ({ fam, models: cfg.models.filter((m) => m.family === fam) }))
+    .filter((g) => g.models.length > 0);
+  const idLabel = (id: string) => cfg.models.find((m) => m.id === id)?.label ?? id;
+
+  // Group order: backend GROUP_ORDER first (any extra groups appended in
+  // discovery order), so the categories read Symbol → Schematic gen → … .
+  const present: string[] = [];
+  for (const a of cfg.agents) if (!present.includes(a.group)) present.push(a.group);
+  const ordered = (cfg.groups ?? []).filter((g) => present.includes(g));
+  for (const g of present) if (!ordered.includes(g)) ordered.push(g);
+
+  const agentRow = (a: AgentModelConfig["agents"][number]) => (
+    <div key={a.kind} className="flex items-center gap-2 text-[12.5px] px-3 py-2">
+      <span className="text-ink-800 flex-1 truncate" title={a.kind}>{a.label}</span>
+      {a.overridden && (
+        <button
+          onClick={() => onSet(a.kind, a.default)}
+          className="text-[10px] text-ink-400 hover:text-ink-700"
+          title={`reset to default (${idLabel(a.default)})`}
+        >
+          reset
+        </button>
+      )}
+      <select
+        value={a.model}
+        disabled={saving === a.kind}
+        onChange={(e) => onSet(a.kind, e.target.value)}
+        title={a.model}
+        className="h-7 w-64 rounded border border-edge bg-white text-[11px] font-mono px-1.5 outline-none focus:border-ink-400 disabled:opacity-50"
+      >
+        {byFamily.map((g) => (
+          <optgroup key={g.fam} label={g.fam.toUpperCase()}>
+            {g.models.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.id}{m.id === a.default ? " · default" : ""}{m.latest ? " · latest" : ""}
+              </option>
+            ))}
+          </optgroup>
+        ))}
+      </select>
+    </div>
+  );
+
+  return (
+    <div className="space-y-3">
+      {ordered.map((grp) => (
+        <div key={grp} className="rounded-lg border border-edge overflow-hidden">
+          <div className="px-3 py-2 border-b border-edge bg-rail/40 text-[11px] uppercase tracking-wide text-ink-500">
+            {grp}
+          </div>
+          <div className="divide-y divide-edge">
+            {cfg.agents.filter((a) => a.group === grp).map(agentRow)}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

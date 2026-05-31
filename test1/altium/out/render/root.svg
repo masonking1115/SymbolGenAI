@@ -1,12 +1,12 @@
 <?xml version="1.0"  encoding="UTF-8" standalone="no"?>
-<svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" stroke-linecap="round" stroke-linejoin="round" fill="none" width="1550" height="1110" viewBox="0 0 1550 1110" data-doc-id="J5Y4VIDM" data-doc-ver="2">
+<svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" stroke-linecap="round" stroke-linejoin="round" fill="none" width="1550" height="1110" viewBox="0 0 1550 1110" data-doc-id="AMRPWHE6" data-doc-ver="2">
 <g id = "scene" >
 <g id = "DocumentMainGroup" >
 <g id = "BackgroundGroup" >
 <rect x = "0" y="0" width="1550" height="1110" fill="#E3E3E3" fill-opacity="1"/>
 </g>
-<g id = "J5Y4VIDM" >
-<g id = "J5Y4VIDM" >
+<g id = "AMRPWHE6" >
+<g id = "AMRPWHE6" >
 <rect x = "0" y="0" width="1550" height="1110" fill="#FFFCF8" fill-opacity="1"/>
 <rect x = "0" y="0" width="1550" height="1110" stroke="#000000" stroke-width="0.5px" vector-effect="non-scaling-stroke"/>
 <rect x = "20" y="20" width="1510" height="1070" fill="#FFFCF8" fill-opacity="1"/>
@@ -49,204 +49,204 @@
 <text x="1536.790123" y="142.779982" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">A</text>
 </g>
 <g id = "DocumentItemsGroup" >
-<g id = "BGLOPOLR" >
-<rect x = "50" y="230" width="400" height="260" fill="#F0E6C8" fill-opacity="1"/>
-<rect x = "50" y="230" width="400" height="260" stroke="#000000" stroke-width="3px"/>
-<g id = "MNRFDFZI" >
-<polygon points="446,246 450,250 446,254 435,254 435,246" fill="#101010" fill-opacity="1"/>
-<polygon points="446,246 450,250 446,254 435,254 435,246" fill="none" stroke="#101010" stroke-width="0.5px" vector-effect="non-scaling-stroke"/>
-<text x="406.848776" y="253" font-size="8.951049px" font-family="Arial" fill="#000000" font-weight="bold" xml:space="preserve">VADJ</text>
-</g>
-<g id = "NQJQFFZA" >
-<polygon points="446,286 450,290 446,294 435,294 435,286" fill="#101010" fill-opacity="1"/>
-<polygon points="446,286 450,290 446,294 435,294 435,286" fill="none" stroke="#101010" stroke-width="0.5px" vector-effect="non-scaling-stroke"/>
-<text x="394.409965" y="293" font-size="8.951049px" font-family="Arial" fill="#000000" font-weight="bold" xml:space="preserve">LDO_EN</text>
-</g>
-<g id = "KNVAGZRF" >
-<polygon points="450,306 450,314 439,314 435,310 439,306" fill="#101010" fill-opacity="1"/>
-<polygon points="450,306 450,314 439,314 435,310 439,306" fill="none" stroke="#101010" stroke-width="0.5px" vector-effect="non-scaling-stroke"/>
-<text x="393.736888" y="313" font-size="8.951049px" font-family="Arial" fill="#000000" font-weight="bold" xml:space="preserve">LDO_PG</text>
-</g>
-<g id = "KUOFHBPQ" >
-<polygon points="446,326 450,330 446,334 435,334 435,326" fill="#101010" fill-opacity="1"/>
-<polygon points="446,326 450,330 446,334 435,334 435,326" fill="none" stroke="#101010" stroke-width="0.5px" vector-effect="non-scaling-stroke"/>
-<text x="393.417832" y="333" font-size="8.951049px" font-family="Arial" fill="#000000" font-weight="bold" xml:space="preserve">LSW_EN</text>
-</g>
-<g id = "FMUDOLPD" >
-<text x="50" y="222" font-size="8.951049px" font-family="Arial" fill="#000000" xml:space="preserve">FMC Connector</text>
-</g>
-<g id = "CFEKDNFI" >
-<text x="50" y="505" font-size="8.055944px" font-family="Arial" fill="#000000" xml:space="preserve">fmc.SchDoc</text>
-</g>
-</g>
-<g id = "IUOPMNTK" >
-<rect x = "570" y="230" width="400" height="260" fill="#F0E6C8" fill-opacity="1"/>
-<rect x = "570" y="230" width="400" height="260" stroke="#000000" stroke-width="3px"/>
-<g id = "WSHFXXKP" >
-<polygon points="581,246 585,250 581,254 570,254 570,246" fill="#101010" fill-opacity="1"/>
-<polygon points="581,246 585,250 581,254 570,254 570,246" fill="none" stroke="#101010" stroke-width="0.5px" vector-effect="non-scaling-stroke"/>
-<text x="590" y="253" font-size="8.951049px" font-family="Arial" fill="#000000" font-weight="bold" xml:space="preserve">VADJ</text>
-</g>
-<g id = "ZDQNBOZL" >
-<polygon points="581,286 585,290 581,294 570,294 570,286" fill="#101010" fill-opacity="1"/>
-<polygon points="581,286 585,290 581,294 570,294 570,286" fill="none" stroke="#101010" stroke-width="0.5px" vector-effect="non-scaling-stroke"/>
-<text x="590" y="293" font-size="8.951049px" font-family="Arial" fill="#000000" font-weight="bold" xml:space="preserve">LDO_EN</text>
-</g>
-<g id = "LMINBQHR" >
-<polygon points="585,306 585,314 574,314 570,310 574,306" fill="#101010" fill-opacity="1"/>
-<polygon points="585,306 585,314 574,314 570,310 574,306" fill="none" stroke="#101010" stroke-width="0.5px" vector-effect="non-scaling-stroke"/>
-<text x="590" y="313" font-size="8.951049px" font-family="Arial" fill="#000000" font-weight="bold" xml:space="preserve">LDO_PG</text>
-</g>
-<g id = "LJCUTRAK" >
-<polygon points="581,326 585,330 581,334 570,334 570,326" fill="#101010" fill-opacity="1"/>
-<polygon points="581,326 585,330 581,334 570,334 570,326" fill="none" stroke="#101010" stroke-width="0.5px" vector-effect="non-scaling-stroke"/>
-<text x="590" y="333" font-size="8.951049px" font-family="Arial" fill="#000000" font-weight="bold" xml:space="preserve">LSW_EN</text>
-</g>
-<g id = "WOZLABVQ" >
-<text x="570" y="222" font-size="8.951049px" font-family="Arial" fill="#000000" xml:space="preserve">Power</text>
-</g>
-<g id = "XDVAPLGR" >
-<text x="570" y="505" font-size="8.055944px" font-family="Arial" fill="#000000" xml:space="preserve">power.SchDoc</text>
-</g>
-</g>
-<g id = "LGZSFAZQ" >
-<rect x = "1090" y="230" width="400" height="260" fill="#F0E6C8" fill-opacity="1"/>
-<rect x = "1090" y="230" width="400" height="260" stroke="#000000" stroke-width="3px"/>
-<g id = "TIEHPWUE" >
-<polygon points="1101,246 1105,250 1101,254 1090,254 1090,246" fill="#101010" fill-opacity="1"/>
-<polygon points="1101,246 1105,250 1101,254 1090,254 1090,246" fill="none" stroke="#101010" stroke-width="0.5px" vector-effect="non-scaling-stroke"/>
-<text x="1110" y="253" font-size="8.951049px" font-family="Arial" fill="#000000" font-weight="bold" xml:space="preserve">BIAS0</text>
-</g>
-<g id = "NFCQZCRO" >
-<polygon points="1101,266 1105,270 1101,274 1090,274 1090,266" fill="#101010" fill-opacity="1"/>
-<polygon points="1101,266 1105,270 1101,274 1090,274 1090,266" fill="none" stroke="#101010" stroke-width="0.5px" vector-effect="non-scaling-stroke"/>
-<text x="1110" y="273" font-size="8.951049px" font-family="Arial" fill="#000000" font-weight="bold" xml:space="preserve">BIAS1</text>
-</g>
-<g id = "ZFFCWKVL" >
-<polygon points="1486,246 1490,250 1486,254 1475,254 1475,246" fill="#101010" fill-opacity="1"/>
-<polygon points="1486,246 1490,250 1486,254 1475,254 1475,246" fill="none" stroke="#101010" stroke-width="0.5px" vector-effect="non-scaling-stroke"/>
-<text x="1423.19493" y="253" font-size="8.951049px" font-family="Arial" fill="#000000" font-weight="bold" xml:space="preserve">CLK_OUT0</text>
-</g>
-<g id = "INOBKVZP" >
-<polygon points="1486,266 1490,270 1486,274 1475,274 1475,266" fill="#101010" fill-opacity="1"/>
-<polygon points="1486,266 1490,270 1486,274 1475,274 1475,266" fill="none" stroke="#101010" stroke-width="0.5px" vector-effect="non-scaling-stroke"/>
-<text x="1424.208916" y="273" font-size="8.951049px" font-family="Arial" fill="#000000" font-weight="bold" xml:space="preserve">CLK_OUT1</text>
-</g>
-<g id = "EXSAVDNW" >
-<polygon points="1486,286 1490,290 1486,294 1475,294 1475,286" fill="#101010" fill-opacity="1"/>
-<polygon points="1486,286 1490,290 1486,294 1475,294 1475,286" fill="none" stroke="#101010" stroke-width="0.5px" vector-effect="non-scaling-stroke"/>
-<text x="1423.203671" y="293" font-size="8.951049px" font-family="Arial" fill="#000000" font-weight="bold" xml:space="preserve">CLK_OUT2</text>
-</g>
-<g id = "BWAVBYPX" >
-<polygon points="1486,306 1490,310 1486,314 1475,314 1475,306" fill="#101010" fill-opacity="1"/>
-<polygon points="1486,306 1490,310 1486,314 1475,314 1475,306" fill="none" stroke="#101010" stroke-width="0.5px" vector-effect="non-scaling-stroke"/>
-<text x="1423.138112" y="313" font-size="8.951049px" font-family="Arial" fill="#000000" font-weight="bold" xml:space="preserve">CLK_OUT3</text>
-</g>
-<g id = "HLMZXSGR" >
-<polygon points="1486,346 1490,350 1486,354 1475,354 1475,346" fill="#101010" fill-opacity="1"/>
-<polygon points="1486,346 1490,350 1486,354 1475,354 1475,346" fill="none" stroke="#101010" stroke-width="0.5px" vector-effect="non-scaling-stroke"/>
-<text x="1443.081294" y="353" font-size="8.951049px" font-family="Arial" fill="#000000" font-weight="bold" xml:space="preserve">GPIO0</text>
-</g>
-<g id = "BVZBXAMS" >
-<polygon points="1486,366 1490,370 1486,374 1475,374 1475,366" fill="#101010" fill-opacity="1"/>
-<polygon points="1486,366 1490,370 1486,374 1475,374 1475,366" fill="none" stroke="#101010" stroke-width="0.5px" vector-effect="non-scaling-stroke"/>
-<text x="1444.09528" y="373" font-size="8.951049px" font-family="Arial" fill="#000000" font-weight="bold" xml:space="preserve">GPIO1</text>
-</g>
-<g id = "XNCWDEVU" >
-<polygon points="1486,386 1490,390 1486,394 1475,394 1475,386" fill="#101010" fill-opacity="1"/>
-<polygon points="1486,386 1490,390 1486,394 1475,394 1475,386" fill="none" stroke="#101010" stroke-width="0.5px" vector-effect="non-scaling-stroke"/>
-<text x="1443.090035" y="393" font-size="8.951049px" font-family="Arial" fill="#000000" font-weight="bold" xml:space="preserve">GPIO2</text>
-</g>
-<g id = "SSRHLVYG" >
-<polygon points="1486,406 1490,410 1486,414 1475,414 1475,406" fill="#101010" fill-opacity="1"/>
-<polygon points="1486,406 1490,410 1486,414 1475,414 1475,406" fill="none" stroke="#101010" stroke-width="0.5px" vector-effect="non-scaling-stroke"/>
-<text x="1443.024476" y="413" font-size="8.951049px" font-family="Arial" fill="#000000" font-weight="bold" xml:space="preserve">GPIO3</text>
-</g>
-<g id = "RJVTEADR" >
-<text x="1090" y="222" font-size="8.951049px" font-family="Arial" fill="#000000" xml:space="preserve">Bobcat DUT</text>
-</g>
-<g id = "QJRPFYNH" >
-<text x="1090" y="505" font-size="8.055944px" font-family="Arial" fill="#000000" xml:space="preserve">bobcat.SchDoc</text>
-</g>
-</g>
-<g id = "LUEYUNNW" >
-<rect x = "50" y="610" width="400" height="260" fill="#F0E6C8" fill-opacity="1"/>
-<rect x = "50" y="610" width="400" height="260" stroke="#000000" stroke-width="3px"/>
-<g id = "QOBARROR" >
-<text x="50" y="602" font-size="8.951049px" font-family="Arial" fill="#000000" xml:space="preserve">EEPROM</text>
-</g>
-<g id = "TEGJZRDJ" >
-<text x="50" y="885" font-size="8.055944px" font-family="Arial" fill="#000000" xml:space="preserve">eeprom.SchDoc</text>
-</g>
-</g>
-<g id = "WBYCXPEP" >
+<g id = "ASSZKWOY" >
 <rect x = "1090" y="610" width="400" height="260" fill="#F0E6C8" fill-opacity="1"/>
 <rect x = "1090" y="610" width="400" height="260" stroke="#000000" stroke-width="3px"/>
-<g id = "BNIFHITB" >
+<g id = "LRTAFCWO" >
 <polygon points="1101,626 1105,630 1101,634 1090,634 1090,626" fill="#101010" fill-opacity="1"/>
 <polygon points="1101,626 1105,630 1101,634 1090,634 1090,626" fill="none" stroke="#101010" stroke-width="0.5px" vector-effect="non-scaling-stroke"/>
 <text x="1110" y="633" font-size="8.951049px" font-family="Arial" fill="#000000" font-weight="bold" xml:space="preserve">CLK_OUT0</text>
 </g>
-<g id = "NUZKIKJJ" >
+<g id = "KURZFYNN" >
 <polygon points="1101,646 1105,650 1101,654 1090,654 1090,646" fill="#101010" fill-opacity="1"/>
 <polygon points="1101,646 1105,650 1101,654 1090,654 1090,646" fill="none" stroke="#101010" stroke-width="0.5px" vector-effect="non-scaling-stroke"/>
 <text x="1110" y="653" font-size="8.951049px" font-family="Arial" fill="#000000" font-weight="bold" xml:space="preserve">CLK_OUT1</text>
 </g>
-<g id = "KJSRFLLN" >
+<g id = "PCXQTZPH" >
 <polygon points="1101,666 1105,670 1101,674 1090,674 1090,666" fill="#101010" fill-opacity="1"/>
 <polygon points="1101,666 1105,670 1101,674 1090,674 1090,666" fill="none" stroke="#101010" stroke-width="0.5px" vector-effect="non-scaling-stroke"/>
 <text x="1110" y="673" font-size="8.951049px" font-family="Arial" fill="#000000" font-weight="bold" xml:space="preserve">CLK_OUT2</text>
 </g>
-<g id = "OWNQLDMS" >
+<g id = "UFWCRRGY" >
 <polygon points="1101,686 1105,690 1101,694 1090,694 1090,686" fill="#101010" fill-opacity="1"/>
 <polygon points="1101,686 1105,690 1101,694 1090,694 1090,686" fill="none" stroke="#101010" stroke-width="0.5px" vector-effect="non-scaling-stroke"/>
 <text x="1110" y="693" font-size="8.951049px" font-family="Arial" fill="#000000" font-weight="bold" xml:space="preserve">CLK_OUT3</text>
 </g>
-<g id = "OEPFEPTF" >
+<g id = "RKSPFYLL" >
 <polygon points="1101,726 1105,730 1101,734 1090,734 1090,726" fill="#101010" fill-opacity="1"/>
 <polygon points="1101,726 1105,730 1101,734 1090,734 1090,726" fill="none" stroke="#101010" stroke-width="0.5px" vector-effect="non-scaling-stroke"/>
 <text x="1110" y="733" font-size="8.951049px" font-family="Arial" fill="#000000" font-weight="bold" xml:space="preserve">GPIO0</text>
 </g>
-<g id = "PRQFPAGM" >
+<g id = "NLEQLNMR" >
 <polygon points="1101,746 1105,750 1101,754 1090,754 1090,746" fill="#101010" fill-opacity="1"/>
 <polygon points="1101,746 1105,750 1101,754 1090,754 1090,746" fill="none" stroke="#101010" stroke-width="0.5px" vector-effect="non-scaling-stroke"/>
 <text x="1110" y="753" font-size="8.951049px" font-family="Arial" fill="#000000" font-weight="bold" xml:space="preserve">GPIO1</text>
 </g>
-<g id = "GJQSOUIJ" >
+<g id = "OIMIABTH" >
 <polygon points="1101,766 1105,770 1101,774 1090,774 1090,766" fill="#101010" fill-opacity="1"/>
 <polygon points="1101,766 1105,770 1101,774 1090,774 1090,766" fill="none" stroke="#101010" stroke-width="0.5px" vector-effect="non-scaling-stroke"/>
 <text x="1110" y="773" font-size="8.951049px" font-family="Arial" fill="#000000" font-weight="bold" xml:space="preserve">GPIO2</text>
 </g>
-<g id = "SUXLVNZQ" >
+<g id = "CWYNQMGV" >
 <polygon points="1101,786 1105,790 1101,794 1090,794 1090,786" fill="#101010" fill-opacity="1"/>
 <polygon points="1101,786 1105,790 1101,794 1090,794 1090,786" fill="none" stroke="#101010" stroke-width="0.5px" vector-effect="non-scaling-stroke"/>
 <text x="1110" y="793" font-size="8.951049px" font-family="Arial" fill="#000000" font-weight="bold" xml:space="preserve">GPIO3</text>
 </g>
-<g id = "BGXDNANU" >
+<g id = "FNGELBCN" >
 <text x="1090" y="602" font-size="8.951049px" font-family="Arial" fill="#000000" xml:space="preserve">Connectors / Breakouts</text>
 </g>
-<g id = "PYHAFEKJ" >
+<g id = "PJWGLHFN" >
 <text x="1090" y="885" font-size="8.055944px" font-family="Arial" fill="#000000" xml:space="preserve">connectors.SchDoc</text>
 </g>
 </g>
-<g id = "XBEXZUWD" >
+<g id = "CVKRQMMI" >
+<rect x = "570" y="230" width="400" height="260" fill="#F0E6C8" fill-opacity="1"/>
+<rect x = "570" y="230" width="400" height="260" stroke="#000000" stroke-width="3px"/>
+<g id = "SEUWMKBN" >
+<polygon points="581,246 585,250 581,254 570,254 570,246" fill="#101010" fill-opacity="1"/>
+<polygon points="581,246 585,250 581,254 570,254 570,246" fill="none" stroke="#101010" stroke-width="0.5px" vector-effect="non-scaling-stroke"/>
+<text x="590" y="253" font-size="8.951049px" font-family="Arial" fill="#000000" font-weight="bold" xml:space="preserve">VADJ</text>
+</g>
+<g id = "ORPJTSQZ" >
+<polygon points="581,286 585,290 581,294 570,294 570,286" fill="#101010" fill-opacity="1"/>
+<polygon points="581,286 585,290 581,294 570,294 570,286" fill="none" stroke="#101010" stroke-width="0.5px" vector-effect="non-scaling-stroke"/>
+<text x="590" y="293" font-size="8.951049px" font-family="Arial" fill="#000000" font-weight="bold" xml:space="preserve">LDO_EN</text>
+</g>
+<g id = "HEGQRMHW" >
+<polygon points="585,306 585,314 574,314 570,310 574,306" fill="#101010" fill-opacity="1"/>
+<polygon points="585,306 585,314 574,314 570,310 574,306" fill="none" stroke="#101010" stroke-width="0.5px" vector-effect="non-scaling-stroke"/>
+<text x="590" y="313" font-size="8.951049px" font-family="Arial" fill="#000000" font-weight="bold" xml:space="preserve">LDO_PG</text>
+</g>
+<g id = "XZSZOSNN" >
+<polygon points="581,326 585,330 581,334 570,334 570,326" fill="#101010" fill-opacity="1"/>
+<polygon points="581,326 585,330 581,334 570,334 570,326" fill="none" stroke="#101010" stroke-width="0.5px" vector-effect="non-scaling-stroke"/>
+<text x="590" y="333" font-size="8.951049px" font-family="Arial" fill="#000000" font-weight="bold" xml:space="preserve">LSW_EN</text>
+</g>
+<g id = "KKCXSEQR" >
+<text x="570" y="222" font-size="8.951049px" font-family="Arial" fill="#000000" xml:space="preserve">Power</text>
+</g>
+<g id = "NCALBIEK" >
+<text x="570" y="505" font-size="8.055944px" font-family="Arial" fill="#000000" xml:space="preserve">power.SchDoc</text>
+</g>
+</g>
+<g id = "DUQXYIKO" >
 <rect x = "570" y="610" width="400" height="260" fill="#F0E6C8" fill-opacity="1"/>
 <rect x = "570" y="610" width="400" height="260" stroke="#000000" stroke-width="3px"/>
-<g id = "FMSCAOWO" >
+<g id = "EPQXQYSP" >
 <polygon points="966,626 970,630 966,634 955,634 955,626" fill="#101010" fill-opacity="1"/>
 <polygon points="966,626 970,630 966,634 955,634 955,626" fill="none" stroke="#101010" stroke-width="0.5px" vector-effect="non-scaling-stroke"/>
 <text x="924.077797" y="633" font-size="8.951049px" font-family="Arial" fill="#000000" font-weight="bold" xml:space="preserve">BIAS0</text>
 </g>
-<g id = "QHPTUOTN" >
+<g id = "BUCMAIEJ" >
 <polygon points="966,646 970,650 966,654 955,654 955,646" fill="#101010" fill-opacity="1"/>
 <polygon points="966,646 970,650 966,654 955,654 955,646" fill="none" stroke="#101010" stroke-width="0.5px" vector-effect="non-scaling-stroke"/>
 <text x="925.091783" y="653" font-size="8.951049px" font-family="Arial" fill="#000000" font-weight="bold" xml:space="preserve">BIAS1</text>
 </g>
-<g id = "OIJPCRQA" >
+<g id = "OABKKWBE" >
 <text x="570" y="602" font-size="8.951049px" font-family="Arial" fill="#000000" xml:space="preserve">Bias Generators</text>
 </g>
-<g id = "BSDGGRNR" >
+<g id = "AWQUDWOT" >
 <text x="570" y="885" font-size="8.055944px" font-family="Arial" fill="#000000" xml:space="preserve">bias.SchDoc</text>
+</g>
+</g>
+<g id = "LTNUCQSL" >
+<rect x = "50" y="230" width="400" height="260" fill="#F0E6C8" fill-opacity="1"/>
+<rect x = "50" y="230" width="400" height="260" stroke="#000000" stroke-width="3px"/>
+<g id = "NRXYAPJM" >
+<polygon points="446,246 450,250 446,254 435,254 435,246" fill="#101010" fill-opacity="1"/>
+<polygon points="446,246 450,250 446,254 435,254 435,246" fill="none" stroke="#101010" stroke-width="0.5px" vector-effect="non-scaling-stroke"/>
+<text x="406.848776" y="253" font-size="8.951049px" font-family="Arial" fill="#000000" font-weight="bold" xml:space="preserve">VADJ</text>
+</g>
+<g id = "ZCYBHEJZ" >
+<polygon points="446,286 450,290 446,294 435,294 435,286" fill="#101010" fill-opacity="1"/>
+<polygon points="446,286 450,290 446,294 435,294 435,286" fill="none" stroke="#101010" stroke-width="0.5px" vector-effect="non-scaling-stroke"/>
+<text x="394.409965" y="293" font-size="8.951049px" font-family="Arial" fill="#000000" font-weight="bold" xml:space="preserve">LDO_EN</text>
+</g>
+<g id = "GLVPBGBH" >
+<polygon points="450,306 450,314 439,314 435,310 439,306" fill="#101010" fill-opacity="1"/>
+<polygon points="450,306 450,314 439,314 435,310 439,306" fill="none" stroke="#101010" stroke-width="0.5px" vector-effect="non-scaling-stroke"/>
+<text x="393.736888" y="313" font-size="8.951049px" font-family="Arial" fill="#000000" font-weight="bold" xml:space="preserve">LDO_PG</text>
+</g>
+<g id = "NOHCTIDR" >
+<polygon points="446,326 450,330 446,334 435,334 435,326" fill="#101010" fill-opacity="1"/>
+<polygon points="446,326 450,330 446,334 435,334 435,326" fill="none" stroke="#101010" stroke-width="0.5px" vector-effect="non-scaling-stroke"/>
+<text x="393.417832" y="333" font-size="8.951049px" font-family="Arial" fill="#000000" font-weight="bold" xml:space="preserve">LSW_EN</text>
+</g>
+<g id = "GYFOGUUY" >
+<text x="50" y="222" font-size="8.951049px" font-family="Arial" fill="#000000" xml:space="preserve">FMC Connector</text>
+</g>
+<g id = "ZRGXMUVL" >
+<text x="50" y="505" font-size="8.055944px" font-family="Arial" fill="#000000" xml:space="preserve">fmc.SchDoc</text>
+</g>
+</g>
+<g id = "WCSZIMPL" >
+<rect x = "1090" y="230" width="400" height="260" fill="#F0E6C8" fill-opacity="1"/>
+<rect x = "1090" y="230" width="400" height="260" stroke="#000000" stroke-width="3px"/>
+<g id = "AUCWFQSZ" >
+<polygon points="1101,246 1105,250 1101,254 1090,254 1090,246" fill="#101010" fill-opacity="1"/>
+<polygon points="1101,246 1105,250 1101,254 1090,254 1090,246" fill="none" stroke="#101010" stroke-width="0.5px" vector-effect="non-scaling-stroke"/>
+<text x="1110" y="253" font-size="8.951049px" font-family="Arial" fill="#000000" font-weight="bold" xml:space="preserve">BIAS0</text>
+</g>
+<g id = "OWPZUEFG" >
+<polygon points="1101,266 1105,270 1101,274 1090,274 1090,266" fill="#101010" fill-opacity="1"/>
+<polygon points="1101,266 1105,270 1101,274 1090,274 1090,266" fill="none" stroke="#101010" stroke-width="0.5px" vector-effect="non-scaling-stroke"/>
+<text x="1110" y="273" font-size="8.951049px" font-family="Arial" fill="#000000" font-weight="bold" xml:space="preserve">BIAS1</text>
+</g>
+<g id = "BQRILMMV" >
+<polygon points="1486,246 1490,250 1486,254 1475,254 1475,246" fill="#101010" fill-opacity="1"/>
+<polygon points="1486,246 1490,250 1486,254 1475,254 1475,246" fill="none" stroke="#101010" stroke-width="0.5px" vector-effect="non-scaling-stroke"/>
+<text x="1423.19493" y="253" font-size="8.951049px" font-family="Arial" fill="#000000" font-weight="bold" xml:space="preserve">CLK_OUT0</text>
+</g>
+<g id = "EQPLHORF" >
+<polygon points="1486,266 1490,270 1486,274 1475,274 1475,266" fill="#101010" fill-opacity="1"/>
+<polygon points="1486,266 1490,270 1486,274 1475,274 1475,266" fill="none" stroke="#101010" stroke-width="0.5px" vector-effect="non-scaling-stroke"/>
+<text x="1424.208916" y="273" font-size="8.951049px" font-family="Arial" fill="#000000" font-weight="bold" xml:space="preserve">CLK_OUT1</text>
+</g>
+<g id = "KLIWVBFX" >
+<polygon points="1486,286 1490,290 1486,294 1475,294 1475,286" fill="#101010" fill-opacity="1"/>
+<polygon points="1486,286 1490,290 1486,294 1475,294 1475,286" fill="none" stroke="#101010" stroke-width="0.5px" vector-effect="non-scaling-stroke"/>
+<text x="1423.203671" y="293" font-size="8.951049px" font-family="Arial" fill="#000000" font-weight="bold" xml:space="preserve">CLK_OUT2</text>
+</g>
+<g id = "BWSKMYRE" >
+<polygon points="1486,306 1490,310 1486,314 1475,314 1475,306" fill="#101010" fill-opacity="1"/>
+<polygon points="1486,306 1490,310 1486,314 1475,314 1475,306" fill="none" stroke="#101010" stroke-width="0.5px" vector-effect="non-scaling-stroke"/>
+<text x="1423.138112" y="313" font-size="8.951049px" font-family="Arial" fill="#000000" font-weight="bold" xml:space="preserve">CLK_OUT3</text>
+</g>
+<g id = "WCSMQBGF" >
+<polygon points="1486,346 1490,350 1486,354 1475,354 1475,346" fill="#101010" fill-opacity="1"/>
+<polygon points="1486,346 1490,350 1486,354 1475,354 1475,346" fill="none" stroke="#101010" stroke-width="0.5px" vector-effect="non-scaling-stroke"/>
+<text x="1443.081294" y="353" font-size="8.951049px" font-family="Arial" fill="#000000" font-weight="bold" xml:space="preserve">GPIO0</text>
+</g>
+<g id = "ZBMNQEGH" >
+<polygon points="1486,366 1490,370 1486,374 1475,374 1475,366" fill="#101010" fill-opacity="1"/>
+<polygon points="1486,366 1490,370 1486,374 1475,374 1475,366" fill="none" stroke="#101010" stroke-width="0.5px" vector-effect="non-scaling-stroke"/>
+<text x="1444.09528" y="373" font-size="8.951049px" font-family="Arial" fill="#000000" font-weight="bold" xml:space="preserve">GPIO1</text>
+</g>
+<g id = "YURZKFRH" >
+<polygon points="1486,386 1490,390 1486,394 1475,394 1475,386" fill="#101010" fill-opacity="1"/>
+<polygon points="1486,386 1490,390 1486,394 1475,394 1475,386" fill="none" stroke="#101010" stroke-width="0.5px" vector-effect="non-scaling-stroke"/>
+<text x="1443.090035" y="393" font-size="8.951049px" font-family="Arial" fill="#000000" font-weight="bold" xml:space="preserve">GPIO2</text>
+</g>
+<g id = "WTNWIUPV" >
+<polygon points="1486,406 1490,410 1486,414 1475,414 1475,406" fill="#101010" fill-opacity="1"/>
+<polygon points="1486,406 1490,410 1486,414 1475,414 1475,406" fill="none" stroke="#101010" stroke-width="0.5px" vector-effect="non-scaling-stroke"/>
+<text x="1443.024476" y="413" font-size="8.951049px" font-family="Arial" fill="#000000" font-weight="bold" xml:space="preserve">GPIO3</text>
+</g>
+<g id = "RLNNHGZA" >
+<text x="1090" y="222" font-size="8.951049px" font-family="Arial" fill="#000000" xml:space="preserve">Bobcat DUT</text>
+</g>
+<g id = "UAXXASVA" >
+<text x="1090" y="505" font-size="8.055944px" font-family="Arial" fill="#000000" xml:space="preserve">bobcat.SchDoc</text>
+</g>
+</g>
+<g id = "XUXXJDYN" >
+<rect x = "50" y="610" width="400" height="260" fill="#F0E6C8" fill-opacity="1"/>
+<rect x = "50" y="610" width="400" height="260" stroke="#000000" stroke-width="3px"/>
+<g id = "PIRTNGNH" >
+<text x="50" y="602" font-size="8.951049px" font-family="Arial" fill="#000000" xml:space="preserve">EEPROM</text>
+</g>
+<g id = "GJJWVECT" >
+<text x="50" y="885" font-size="8.055944px" font-family="Arial" fill="#000000" xml:space="preserve">eeprom.SchDoc</text>
 </g>
 </g>
 </g>

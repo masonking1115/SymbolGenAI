@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, subscribeAgent } from "../api";
 import { I } from "../components/Icon";
-import type { AgentModelConfig, ModelChoice, SimBlock, SimRequirements, SimResult, SimSeries, SimXAxis } from "../types";
+import type { SimBlock, SimRequirements, SimResult, SimSeries, SimXAxis } from "../types";
 
 type StepState = "pending" | "active" | "pass" | "fail" | "warn" | "done";
 
@@ -261,7 +261,6 @@ export function Simulation({ setHealth, blocks, selected, onBlocksChanged }: Pro
   // block/sim = pending) so a Run-suggestion reflects its real state.
   const [clStatus, setClStatus] = useState<Record<string, "pending" | "applied">>({});
   const [reqOpen, setReqOpen] = useState(false);
-  const [modelsOpen, setModelsOpen] = useState(false);
   // Pass criteria edited in the Requirements panel are also shown (read-only) on
   // each sim_type card; keep a per-(block,sim) override so the card reflects an
   // edit immediately without needing the parent to re-fetch the blocks catalog.
@@ -568,18 +567,12 @@ export function Simulation({ setHealth, blocks, selected, onBlocksChanged }: Pro
               {block.status}
             </span>
             <span className="text-[10px] text-ink-500 font-mono">{block.sheet}</span>
-            {/* per-block controls: edit requirements + clear cache + agent models */}
+            {/* per-block controls: edit requirements + clear cache.
+                (Per-agent model selection now lives in Design Resources →
+                Agent Models, grouped by category.) */}
             <div className="ml-auto flex items-center gap-1.5">
               <button
-                onClick={() => { setModelsOpen((v) => !v); setReqOpen(false); }}
-                className={"h-7 px-2.5 inline-flex items-center gap-1.5 rounded-md border text-[11px] " +
-                  (modelsOpen ? "border-ink-300 bg-rail text-ink-900" : "border-edge bg-white text-ink-600 hover:border-ink-300")}
-                title="Which Claude model each sim agent runs on"
-              >
-                <I.Dot size={12} /> Agent models
-              </button>
-              <button
-                onClick={() => { setReqOpen((v) => !v); setModelsOpen(false); }}
+                onClick={() => setReqOpen((v) => !v)}
                 className={"h-7 px-2.5 inline-flex items-center gap-1.5 rounded-md border text-[11px] " +
                   (reqOpen ? "border-ink-300 bg-rail text-ink-900" : "border-edge bg-white text-ink-600 hover:border-ink-300")}
               >
@@ -601,8 +594,6 @@ export function Simulation({ setHealth, blocks, selected, onBlocksChanged }: Pro
             setHealth={setHealth}
             onChanged={onBlocksChanged}
           />
-
-          {modelsOpen && <AgentModelPicker />}
 
           {reqOpen && (
             <RequirementsEditor
@@ -914,83 +905,6 @@ function ModelAgentLog({ lines, running }: { lines: string[]; running: boolean }
 }
 
 // ---------------------------------------------------------------------------
-// Per-agent model picker: choose which Claude model each sim agent runs on
-// (extraction/verdict vs. the heavier model-generator). Backed by
-// /api/sim/agent-models; persisted server-side.
-function AgentModelPicker() {
-  const [cfg, setCfg] = useState<AgentModelConfig | null>(null);
-  const [saving, setSaving] = useState<string | null>(null);
-  useEffect(() => {
-    let alive = true;
-    api.simAgentModels().then((c) => { if (alive) setCfg(c); }).catch(() => {});
-    return () => { alive = false; };
-  }, []);
-  if (!cfg) return <div className="mt-3 text-[11px] text-ink-400">loading agent models…</div>;
-  const setModel = async (kind: string, model: string) => {
-    setSaving(kind);
-    try { setCfg(await api.simSetAgentModel(kind, model)); } catch { /* ignore */ } finally { setSaving(null); }
-  };
-  // Exact model ids grouped by family (latest first within each), for <optgroup>.
-  const families: Array<ModelChoice["family"]> = ["opus", "sonnet", "haiku"];
-  const byFamily = families
-    .map((fam) => ({ fam, models: cfg.models.filter((m) => m.family === fam) }))
-    .filter((g) => g.models.length > 0);
-  const idLabel = (id: string) => cfg.models.find((m) => m.id === id)?.label ?? id;
-  // Section the agents by their group (Simulation / Schematic), preserving the
-  // backend's order within each.
-  const groupsOrder: string[] = [];
-  for (const a of cfg.agents) if (!groupsOrder.includes(a.group)) groupsOrder.push(a.group);
-  const agentRow = (a: typeof cfg.agents[number]) => (
-    <div key={a.kind} className="flex items-center gap-2 text-[12px]">
-      <span className="text-ink-800 flex-1 truncate" title={a.kind}>{a.label}</span>
-      {a.overridden && (
-        <button onClick={() => setModel(a.kind, a.default)}
-          className="text-[10px] text-ink-400 hover:text-ink-700" title={`reset to default (${idLabel(a.default)})`}>
-          reset
-        </button>
-      )}
-      <select
-        value={a.model}
-        disabled={saving === a.kind}
-        onChange={(e) => setModel(a.kind, e.target.value)}
-        title={a.model}
-        className="h-7 w-56 rounded border border-edge bg-white text-[11px] font-mono px-1.5 outline-none focus:border-ink-400 disabled:opacity-50"
-      >
-        {byFamily.map((g) => (
-          <optgroup key={g.fam} label={g.fam.toUpperCase()}>
-            {g.models.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.id}{m.id === a.default ? " · default" : ""}{m.latest ? " · latest" : ""}
-              </option>
-            ))}
-          </optgroup>
-        ))}
-      </select>
-    </div>
-  );
-  return (
-    <div className="mt-3 rounded-md border border-edge bg-rail/40 p-3">
-      <div className="text-[11px] uppercase tracking-wide text-ink-500 mb-2">
-        Agent models · exact Anthropic model per agent (simulation + schematic)
-      </div>
-      <div className="space-y-3">
-        {groupsOrder.map((grp) => (
-          <div key={grp}>
-            <div className="text-[10px] uppercase tracking-wide text-ink-400 mb-1">{grp}</div>
-            <div className="space-y-1.5">
-              {cfg.agents.filter((a) => a.group === grp).map(agentRow)}
-            </div>
-          </div>
-        ))}
-      </div>
-      <div className="text-[10px] text-ink-400 mt-2">
-        Exact pinned model ids passed to <span className="font-mono">claude --model</span>. Applies to the next run of each agent;
-        authoring/repair agents default to Opus, extraction/verdict/chat to Sonnet.
-      </div>
-    </div>
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Clear-cache menu: drop a block's cached sim state so the next Run re-derives
 // it. Scope chosen at click time (scenario / datasheet params / all).

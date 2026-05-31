@@ -130,21 +130,32 @@ AGENT_MODELS_FILE = STATE_DIR / "agent_models.json"
 # a group (for GUI sectioning). Keep kind ids stable (persisted + sent over the
 # API). Defaults are full ids: heavy authoring/repair agents on the frontier
 # model, the lighter extraction/verdict/chat agents balanced.
+# Each agent kind is tagged with a `group` (the category the GUI's per-agent
+# model picker sections it under) and a default model. Groups are ordered for
+# display by GROUP_ORDER below. Authoring/repair agents default to Opus;
+# extraction/verdict/chat to Sonnet.
 AGENT_KINDS: dict[str, dict] = {
-    # --- Simulation agents ---
-    "sim_setup":     {"label": "Datasheet & scenario agent", "group": "Simulation",  "default": "claude-sonnet-4-6"},
-    "sim_interpret": {"label": "Verdict agent",              "group": "Simulation",  "default": "claude-sonnet-4-6"},
-    "sim_generate":  {"label": "SPICE-model generator",      "group": "Simulation",  "default": "claude-opus-4-8"},
-    "sim_update":    {"label": "Schematic-sync agent",       "group": "Simulation",  "default": "claude-opus-4-8"},
-    "sim_chat_edit": {"label": "Sim chat-edit agent",        "group": "Simulation",  "default": "claude-sonnet-4-6"},
-    # --- Schematic / generation agents ---
-    "apply":         {"label": "Apply-changelog agent",      "group": "Schematic",   "default": "claude-opus-4-8"},
-    "lint_fix":      {"label": "Lint/validator fix agent",   "group": "Schematic",   "default": "claude-opus-4-8"},
-    "symbol_gen":    {"label": "Symbol generator",           "group": "Schematic",   "default": "claude-opus-4-8"},
-    "rule_gen":      {"label": "Rule generator",             "group": "Schematic",   "default": "claude-opus-4-8"},
-    "topology_adapt":{"label": "Topology-adapt agent",       "group": "Schematic",   "default": "claude-opus-4-8"},
-    "chat":          {"label": "Chat / thinking-partner",    "group": "Schematic",   "default": "claude-sonnet-4-6"},
+    # --- Symbol ---
+    "symbol_gen":    {"label": "Symbol generator",           "group": "Symbol",       "default": "claude-opus-4-8"},
+    # --- Schematic generation ---
+    "apply":         {"label": "Apply-changelog agent",      "group": "Schematic generation", "default": "claude-opus-4-8"},
+    "lint_fix":      {"label": "Lint/validator fix agent",   "group": "Schematic generation", "default": "claude-opus-4-8"},
+    "topology_adapt":{"label": "Topology-adapt agent",       "group": "Schematic generation", "default": "claude-opus-4-8"},
+    # --- Simulation ---
+    "sim_setup":     {"label": "Datasheet & scenario agent", "group": "Simulation",   "default": "claude-sonnet-4-6"},
+    "sim_interpret": {"label": "Verdict agent",              "group": "Simulation",   "default": "claude-sonnet-4-6"},
+    "sim_generate":  {"label": "SPICE-model generator",      "group": "Simulation",   "default": "claude-opus-4-8"},
+    "sim_update":    {"label": "Schematic-sync agent",       "group": "Simulation",   "default": "claude-opus-4-8"},
+    "sim_chat_edit": {"label": "Sim chat-edit agent",        "group": "Simulation",   "default": "claude-sonnet-4-6"},
+    # --- Design review ---
+    "rule_gen":      {"label": "Rule generator",             "group": "Design review", "default": "claude-opus-4-8"},
+    # --- Chat ---
+    "chat":          {"label": "Chat / thinking-partner",    "group": "Chat",         "default": "claude-sonnet-4-6"},
 }
+# Display order of the groups in the picker (any group not listed sorts last).
+GROUP_ORDER: list[str] = [
+    "Symbol", "Schematic generation", "Simulation", "Design review", "Chat",
+]
 # Back-compat alias (was sim-only); both names point at the same registry.
 SIM_AGENT_KINDS = AGENT_KINDS
 
@@ -174,6 +185,7 @@ def agent_model_config() -> dict:
     overrides = _load_agent_models()
     return {
         "models": MODEL_CATALOG,
+        "groups": GROUP_ORDER,
         "agents": [
             {"kind": k, "label": v["label"], "group": v.get("group", "Other"),
              "model": model_for(k),
@@ -582,6 +594,44 @@ You will receive a list of changelog items the user accumulated. Your job:
    altium/build_<sheet>.py, design_requirements.md). Use Read, Edit, Write.
    (This is the Altium pipeline — edit altium/build_*.py, NOT gen/build_*.py,
    which no longer exists.)
+
+   VALUE↔MPN RECONCILIATION (e.g. a resistor whose `value:` no longer matches
+   its `lib_id:` MPN): repoint the part to the CORRECT MPN for its value. The
+   correct MPN may not have a symbol yet — check `Parts Library/<MPN>/`:
+     • If `Parts Library/<MPN>/<MPN>.SchLib` exists → just repoint `lib_id`
+       (and the matching `footprint`) in netlist/*.yaml.
+     • If the `.SchLib` is MISSING but a datasheet PDF is present in
+       `Parts Library/<MPN>/` → DO NOT STOP. CREATE THE SYMBOL FIRST, then
+       repoint. Your CWD is the test1/ project dir, and the backend's venv Python
+       is FIRST on your PATH — so run the authoring tool with a plain, unquoted
+       `python` as ONE command (no `cd`, no `&&` chaining, no absolute path: a
+       quoted/absolute interpreter or a `cd …&&` prefix hits the permission gate;
+       bare `python` is allow-listed and resolves to the correct interpreter):
+
+       (CASE 1 — value swap of an existing part) The new part is the SAME package
+       and pin layout as a part already in the design (e.g. R40/R41 go from a
+       5.11k MPN to a 3.65k MPN — same 0603 thin-film resistor, different value).
+       DO NOT author from a fresh pin-spec, and DO NOT just copy the sibling's
+       .SchLib file — a regenerated symbol lands pins on a clean grid that won't
+       match the sibling's hand-tuned geometry (the sheet builder routes the old
+       coordinates → placement SHORTS/splits nets → build fails), and a raw file
+       copy leaves the WRONG internal symbol name. Use the clone mode, which
+       copies the sibling geometry AND renames the symbol identity correctly:
+           python -m altium.author_symbol "<NEW_MPN>" --clone-from "<SIBLING_MPN>"
+       (The sibling is the MPN the refs point at TODAY. Clone needs equal-length
+       MPNs — same-series swaps always are. Component VALUES live in the netlist,
+       not the symbol, so you do not patch a value in the symbol.)
+
+       (CASE 2 — genuinely new part, no equivalent sibling) Write
+       `Parts Library/<MPN>/<MPN>.pinspec.json` (reference R/C/U/…, Value,
+       Footprint, Manufacturer, MPN, and every pin from the datasheet), then:
+           python -m altium.author_symbol "<MPN>"
+
+       In BOTH cases, confirm the printed pin/unit count, THEN repoint the refs
+       (R40/R41 or whichever) `lib_id` AND `footprint` together so value, MPN,
+       and package all agree.
+       Only STOP a value↔MPN item if NO datasheet exists for the correct MPN
+       (then it's a genuine sourcing decision for a human).
 2. Be conservative: make the smallest change that satisfies the bullet.
    If a bullet is ambiguous, do the most reasonable interpretation and
    note your assumption in the final summary. When a change depends on a
@@ -1009,10 +1059,23 @@ async def start_compact(session_id: str) -> AgentRun | None:
 # instead of stalling on a permission-gated PDF read — the exact gap that made
 # the CFF/adjustable-mode decision unverifiable. read_pdf.py is text-only and
 # read-only; acceptEdits still governs all file writes.
+# The apply/symbol-gen agents must run the SAME interpreter as this backend
+# (sys.executable) — it's the venv that has altium_monkey (a bare `python` on
+# PATH may be system Python without it). The spawned `claude -p`'s allowed_tools
+# SCOPES Bash permissions, so the full interpreter path must be allowlisted here
+# explicitly (settings.local.json does NOT govern these scoped subprocess
+# agents). Without this, author_symbol invocations hit an approval gate the
+# headless loop can't satisfy and stall.
+_VENV_PY = sys.executable.replace("\\", "/")
 _DESIGN_AGENT_TOOLS = [
     "Read", "Edit", "Write", "Glob", "Grep",
     "Bash(python:*)", "Bash(python3:*)", "Bash(pdftotext:*)",
     "Bash(cd:*)", "Bash(ls:*)", "Bash(cat:*)",
+    # The backend's own interpreter, by full path (and a glob), so
+    # `"<venv>/python.exe" -m test1.altium.author_symbol …` runs without a prompt.
+    f'Bash({_VENV_PY}:*)',
+    f'Bash("{_VENV_PY}":*)',
+    "Bash(*altium_spike/.venv/Scripts/python.exe*)",
 ]
 
 

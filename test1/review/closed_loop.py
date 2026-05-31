@@ -443,16 +443,36 @@ async def _dispatch_action(L: Loop, action: Action) -> None:
     import agent as agent_mod
 
     if action.kind == "apply":
-        # Look up findings for the targeted rule IDs to build a context blob.
-        # Reuse existing start_apply_pass -- it reads the changelog. We
-        # bypass the changelog by setting up a synthetic one-shot context.
-        # For Phase 4, we use the existing apply agent + emit the targets
-        # in its prompt by pushing them to changelog first.
+        # Reuse start_apply_pass -- it reads the changelog. Push one rich item
+        # per targeted rule so the apply agent gets the finding's actual detail
+        # (subject, what was observed, the suggested fix) instead of a bare
+        # "address rule X" — otherwise it has to re-derive everything and is
+        # more likely to STOP. Fall back to the bare form if we can't find the
+        # finding (e.g. semantic findings carried forward without a live object).
+        fmap = {f.rule_id: f for f in L.findings_current}
+        # Rule fix_hints (not stored on Finding) — fetch once for the summary.
+        try:
+            from .rule_eval import load_rules
+            hints = {r.id: getattr(r, "fix_hint", "") or "" for r in load_rules().rules}
+        except Exception:
+            hints = {}
         for rid in action.targets:
-            entry = agent_mod.append_changelog(
-                f"closed-loop: address rule {rid}",
-                source="closed_loop",
-            )
+            f = fmap.get(rid)
+            if f is not None:
+                bits = [f"closed-loop: resolve {rid} — {f.title}"]
+                subj = (f.subject or "").strip()
+                refs = ", ".join(f.component_refs) if f.component_refs else ""
+                if subj or refs:
+                    bits.append(f"({subj}{(' · refs ' + refs) if refs else ''})")
+                if f.observed:
+                    bits.append(f"Observed: {f.observed}")
+                hint = hints.get(rid, "")
+                if hint:
+                    bits.append(f"Fix: {hint}")
+                summary = " ".join(bits)
+            else:
+                summary = f"closed-loop: address rule {rid}"
+            entry = agent_mod.append_changelog(summary, source="closed_loop")
             if entry and entry.get("id"):
                 L.changelog_item_ids.append(entry["id"])
         run = await agent_mod.start_apply_pass()

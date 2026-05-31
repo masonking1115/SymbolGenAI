@@ -2,6 +2,41 @@
 
 Deferred work items (not blocking; pick up when convenient).
 
+## Multi-agent console (2026-05-30) — TODO
+
+- [ ] **Visually see + click through every spawned agent and what each is doing.**
+      The closed loop spawns multiple sub-agents (apply, symbol_gen, lint_fix, sim,
+      missing_part, topology_adapt) — the user wants a console that lists ALL of
+      them (running + finished) and lets you click each to see its live "doing +
+      thinking" stream. WorkflowConsole already does a split per-agent view for the
+      loop's current round; extend it to (a) show agents across ALL rounds / the
+      whole loop, (b) include the eval + sim sub-runs, (c) a clear running/done
+      badge per agent, (d) click-to-expand each agent's full reasoning (reuse
+      LiveConsole + the /api/agent/{id}/stream replay). Tie into the per-round
+      actions[].agent_run_id already on the loop audit.
+
+## System capability test catalog (2026-05-30) — DONE (seeded; grow over time)
+
+- [x] **Created the living capability-test catalog at `test1/SYSTEM_TESTS.md`.**
+      Seeded with **T1 — Incorrect part: value↔MPN mismatch → autonomous symbol
+      generation + remediation** (loop `a66156e2`, PASS): the loop detected
+      `CHK_VALUE_MATCHES_MPN`, cloned the 3.65k symbol from its 5.11k sibling via
+      `author_symbol --clone-from`, repointed R40/R41 lib_id+footprint, rebuilt
+      0/0/0, and reached `all_clear`. Add a new T# entry per new capability;
+      follow the T1 template (Scenario/Setup/Expected flow/Result/Wiring/Caveats).
+
+## Datasheets → part link / generate (2026-05-30) — DONE
+
+- [x] **Each datasheet group links to its part (or offers to generate one).** DONE:
+      `DatasheetsPanel` now joins datasheet MPNs to the library list (`has_symbol`).
+      Per group header: symbol exists → "view part" link (jumps to Library + auto-
+      selects via App `goToPart`/`pendingPart` → `Library initialPart`); no symbol →
+      ❗ caution + "Generate symbol"; generating → ⏳ "generating symbol…"; success →
+      flips to the link (library re-read); fail → ⚠️ + Retry. Generation runs INLINE
+      (symbolGen + subscribeAgent in the panel; full console stays in Library). New
+      `PartLinkOrGenerate` component. NOTE: inline generate hits the same venv-python
+      approval prompt as the Library/sim runs — the allowlist fix below unblocks it.
+
 ## Console UX (2026-05-30) — IN PROGRESS
 
 - [ ] **Symbol-gen console survives part switching.** In the Library tab, kicking
@@ -15,11 +50,12 @@ Deferred work items (not blocking; pick up when convenient).
       symbol-gen subagent console is currently dark `bg-[#0F1115]`). Apply a light
       background uniformly to every console/live-stream view (Library symbol-gen,
       Workflow console steps/raw, any LiveConsole/agent-stream panels).
-- [ ] **Zoom + pan the symbol in the parts viewer.** The Library tab's
-      `SymbolViewer` renders the generated symbol SVG statically — add zoom
-      (wheel / +- buttons) and pan (drag) so the user can inspect pin detail.
-      Likely a pan/zoom wrapper around the SVG `<img>`/inline SVG with a reset
-      control; keep it lightweight (no heavy dep unless already present).
+- [x] **Zoom + pan the symbol in the parts viewer.** DONE: `SymbolViewer` now
+      reuses the shared pan/zoom `Canvas` + `ImgLayer` from PngViewer (the same
+      one the schematic viewer uses) — wheel-zoom toward cursor, drag to pan,
+      double-click/fit, +/-/1:1 overlay, %-readout. `key={mpn:unit}` resets the
+      view fit-to-frame on unit/part switch. No new dependency (reused existing
+      component); no import cycle; bundle size unchanged.
 - [ ] **Inspect the TNPW06035K11BEEA symbol-gen run output.** User pasted a trace
       showing the subagent ended `✓ subagent ok` but the `author_symbol` venv-Python
       invocation kept hitting per-call approval prompts (not allowlisted) — same

@@ -196,17 +196,91 @@ def build_from_file(mpn: str) -> Path:
     return build_from_spec(spec)
 
 
+def build_from_clone(mpn: str, source_mpn: str) -> Path:
+    """Author <MPN>.SchLib by CLONING an existing sibling part's .SchLib —
+    GEOMETRY-IDENTICAL (same pin coordinates, body, pitch), only the part
+    identity swapped.
+
+    Why this exists: the sheet builders (altium/build_<sheet>.py) route a part's
+    pins at coordinates calibrated to that part's EXACT symbol geometry. A symbol
+    re-authored from a pin-spec lands its pins on a clean 200-mil grid, which may
+    NOT match a hand-tuned sibling — placing the regenerated part then shifts pin
+    positions and shorts/splits nets. For a same-package value swap (e.g. one
+    0603 thin-film resistor value to another), the correct move is to copy the
+    sibling's .SchLib verbatim and only rename the symbol identity. Component
+    *values* live in the netlist (netlist/*.yaml `value:`), not the symbol, so no
+    value field needs patching here.
+
+    The symbol identity appears in TWO encodings inside the .SchLib (an OLE
+    compound file): the canonical symbol name is a UTF-16LE entry in the OLE
+    storage directory (what `get_symbol_names` reads), and the same string also
+    appears in `|`-delimited ASCII records (LibRef0, LibReference, DesignItemId,
+    the symbol-name Text). We rewrite BOTH. A length-equal rename (typical for a
+    same-series swap, e.g. TNPW0603xxxxBEEA → 16 chars either way) is fully
+    offset-safe in the OLE directory; an unequal-length rename would shift the
+    UTF-16 directory entry, so we refuse it and tell the caller to use a
+    pin-spec instead.
+    """
+    src_path = schlib_path(source_mpn)
+    if not src_path.exists():
+        raise FileNotFoundError(f"clone source .SchLib not found: {src_path}")
+    src_b = source_mpn.encode("latin1")
+    new_b = mpn.encode("latin1")
+    src_u16 = source_mpn.encode("utf-16-le")
+    new_u16 = mpn.encode("utf-16-le")
+    data = src_path.read_bytes()
+    if src_b not in data or src_u16 not in data:
+        raise ValueError(
+            f"source .SchLib {source_mpn!r} not found in both ASCII + UTF-16 "
+            "forms; cannot clone-rename safely")
+    if len(src_b) != len(new_b):
+        # Unequal length would move the UTF-16 OLE directory entry (the byte
+        # offsets that index the storage are length-sensitive). Don't risk
+        # corruption — the caller should author from a pin-spec for this part.
+        raise ValueError(
+            f"clone requires equal-length MPNs (OLE directory is offset-"
+            f"sensitive): {source_mpn!r} ({len(source_mpn)}) vs {mpn!r} "
+            f"({len(mpn)}). Author from a pin-spec instead.")
+    data = data.replace(src_u16, new_u16).replace(src_b, new_b)
+    out_path = schlib_path(mpn)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_bytes(data)
+    # Verify the clone parses and exposes exactly the renamed symbol.
+    names = AltiumSchLib.get_symbol_names(out_path)
+    if names != [mpn]:
+        raise RuntimeError(
+            f"clone wrote {out_path} but symbol names = {names} (expected "
+            f"[{mpn!r}])")
+    return out_path
+
+
 def main(argv: list[str]) -> int:
     if not argv:
-        print("usage: python -m test1.altium.author_symbol <MPN>", file=sys.stderr)
+        print("usage: python -m test1.altium.author_symbol <MPN> "
+              "[--clone-from <SOURCE_MPN>]", file=sys.stderr)
         return 2
     mpn = argv[0]
-    out = build_from_file(mpn)
-    from .symlib import read_pins
-    pins = read_pins(mpn)
-    units = sorted({u for *_, u in pins.values()})
-    extra = f", {len(units)} units" if len(units) > 1 else ""
-    print(f"Wrote {out} — symbol {mpn!r} ({len(pins)} pins{extra})")
+    clone_from: str | None = None
+    if "--clone-from" in argv:
+        i = argv.index("--clone-from")
+        if i + 1 >= len(argv):
+            print("--clone-from requires a SOURCE_MPN", file=sys.stderr)
+            return 2
+        clone_from = argv[i + 1]
+
+    if clone_from:
+        out = build_from_clone(mpn, clone_from)
+        from .symlib import read_pins
+        pins = read_pins(mpn)
+        print(f"Wrote {out} — symbol {mpn!r} CLONED from {clone_from!r} "
+              f"({len(pins)} pins, geometry-identical)")
+    else:
+        out = build_from_file(mpn)
+        from .symlib import read_pins
+        pins = read_pins(mpn)
+        units = sorted({u for *_, u in pins.values()})
+        extra = f", {len(units)} units" if len(units) > 1 else ""
+        print(f"Wrote {out} — symbol {mpn!r} ({len(pins)} pins{extra})")
     return 0
 
 

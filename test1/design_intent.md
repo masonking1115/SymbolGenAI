@@ -37,15 +37,15 @@ involved so it's verifiable.
   R40/R41 back toward 5.11k** to "match the part number" — fix the MPN instead
   (see next bullet). The direction is fixed: lower R_sense satisfies the ceiling.
 
-- **R40/R41 MPN still references the 5.11k part (`Lib:TNPW06035K11BEEA`) while the
-  value is 3.65k** — a real value↔MPN mismatch (rule CHK_VALUE_MATCHES_MPN). The
-  correct fix is to repoint the lib_id to a 3.65k 0.1% part in the same TNPW0603
-  e3 series (e.g. TNPW06033K65BEEA), which needs a new per-MPN `.SchLib` authored
-  with pin geometry IDENTICAL to the existing resistor symbol (so R40/R41 routing
-  in `build_bias.py` doesn't shift). This requires a build to verify — it was left
-  for a human / build-capable pass, not auto-applied. (The entry also carries a
-  pre-existing package mismatch: TNPW0603 MPN vs `R_0402_1005Metric` footprint —
-  resolve both together when selecting the real part.)
+- **R40/R41 value↔MPN mismatch RESOLVED (2026-05-30).** Repointed `lib_id`
+  `Lib:TNPW06035K11BEEA` (5.11k) → `Lib:TNPW06033K65BEEA` (3.65k 0.1%, same
+  TNPW0603 e3 series) to match the 3.65k value (rule CHK_VALUE_MATCHES_MPN). A new
+  per-MPN `.SchLib` was authored (`Parts Library/TNPW06033K65BEEA/`) from a pinspec
+  copied from the 5.11k sibling, so pin geometry is IDENTICAL and `build_bias.py`
+  routing doesn't shift. The pre-existing package mismatch was fixed in the same
+  pass: footprint `R_0402_1005Metric` → `R_0603_1608Metric` (TNPW0603 is a 0603,
+  confirmed RR1608M in tnpw_e3.pdf). Do NOT raise the value back to 5.11k — see
+  prior bullet (lower R_sense is required for the FS ceiling).
 
 - **R42/R43 are DNP (0Ω jumpers left unpopulated)** — the 2N7002 isolator is the
   active POR-failsafe path, not the jumper. Don't model/treat them as closed.

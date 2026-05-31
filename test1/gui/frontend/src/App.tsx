@@ -51,6 +51,15 @@ export default function App() {
     setTabRaw(t);
     try { localStorage.setItem(TAB_LS_KEY, t); } catch { /* ignore */ }
   }, []);
+
+  // Cross-tab deep-link to a library part: Design Resources → Datasheets has a
+  // "view part" link per MPN that switches to the Library tab and auto-selects
+  // it. Mirrors the selectSimBlock → setTab("simulation") pattern below.
+  const [pendingPart, setPendingPart] = useState<string | null>(null);
+  const goToPart = useCallback((mpn: string) => {
+    setPendingPart(mpn);
+    setTab("library");
+  }, [setTab]);
   // Live mirror of `tab` for callbacks that must read the CURRENT tab without
   // re-binding (e.g. the gated setHealth handed to the always-mounted Simulation).
   const tabRef = useRef(tab);
@@ -204,9 +213,9 @@ export default function App() {
   // The other tabs have no background work, so they mount on demand as usual.
   const otherContent =
     tab === "resources" ? (
-      <Resources />
+      <Resources onViewPart={goToPart} />
     ) : tab === "library" ? (
-      <Library />
+      <Library initialPart={pendingPart} onPartConsumed={() => setPendingPart(null)} />
     ) : tab === "review" ? (
       <Review
         onArtifactsChanged={onArtifactsChanged}
