@@ -278,8 +278,7 @@ async def _install_and_author(mpn: str, ds_path: Path) -> bool:
     sys.path.insert(0, str(PROJECT_DIR / "gui" / "backend"))
     import agent as agent_mod
     run = await agent_mod.start_symbol_gen(mpn, f"{mpn}.pdf")
-    while run.status == "running":
-        await asyncio.sleep(0.5)
+    await agent_mod.await_run_bounded(run)   # startup-hang watchdog (A3)
     return run.status == "ok" and (target_dir / f"{mpn}.SchLib").exists()
 
 
@@ -299,11 +298,7 @@ async def _place_into_schematic(L: Loop, rule: Rule, cand: Candidate) -> bool:
     agent_mod.append_changelog(msg, source="closed_loop")
     run = await agent_mod.start_apply_pass()
     L.sub_runs.append(run.run_id)
-    while run.status == "running":
-        if L.cancelled:
-            agent_mod.cancel_run(run.run_id)
-            return False
-        await asyncio.sleep(0.5)
+    await agent_mod.await_run_bounded(run, should_cancel=lambda: L.cancelled)
     return run.status == "ok"
 
 
@@ -368,11 +363,9 @@ async def _sim_verify(L: Loop, rule: Rule, cand: Candidate) -> tuple[bool, float
             agent_mod.append_changelog(msg, source="closed_loop")
         run = await agent_mod.start_apply_pass()
         L.sub_runs.append(run.run_id)
-        while run.status == "running":
-            if L.cancelled:
-                agent_mod.cancel_run(run.run_id)
-                return False, closest_margin, results
-            await asyncio.sleep(0.5)
+        disp = await agent_mod.await_run_bounded(run, should_cancel=lambda: L.cancelled)
+        if disp == "cancelled":
+            return False, closest_margin, results
         # Rebuild before next sim attempt
         from .closed_loop import _rebuild_project
         bs, _ = await _rebuild_project()
@@ -403,11 +396,9 @@ async def _topology_adapt(L: Loop, rule: Rule, best: CandidateAudit) -> dict:
     sheet = rule.applies_to.sheet or "?"
     run = await agent_mod.start_topology_adapt(rule.id, best.mpn, stuck, sheet)
     L.sub_runs.append(run.run_id)
-    while run.status == "running":
-        if L.cancelled:
-            agent_mod.cancel_run(run.run_id)
-            return {"status": "cancelled", "summary": "cancelled"}
-        await asyncio.sleep(0.5)
+    disp = await agent_mod.await_run_bounded(run, should_cancel=lambda: L.cancelled)
+    if disp == "cancelled":
+        return {"status": "cancelled", "summary": "cancelled"}
     if run.status != "ok":
         return {"status": "fail", "summary": f"topology_adapt agent failed: {run.status}"}
 

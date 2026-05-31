@@ -100,7 +100,74 @@ SKILLS_DIR = RESOURCES_DIR / "skills"           # agent skills (md), used by cha
 sys.path.insert(0, str(PROJECT_DIR.parent))
 from test1.sim import service as sim_service  # noqa: E402
 from test1.sim import simconfig as sim_config  # noqa: E402
-from test1.altium import symlib as symlib  # noqa: E402  — native Altium symbols
+# Native Altium symbols. This pulls in altium_monkey transitively — on the WRONG
+# interpreter (system python, no altium_monkey) this is where import dies. Turn
+# that raw ModuleNotFoundError into the actionable boot message (A2) so the cause
+# is unmistakable, rather than a deep traceback in symlib.
+try:
+    from test1.altium import symlib as symlib  # noqa: E402
+except ModuleNotFoundError as _e:
+    if BACKEND == "altium" and "altium_monkey" in str(_e):
+        print(
+            "\n" + "=" * 72 +
+            "\nBACKEND CANNOT START — altium_monkey is not importable on this "
+            "interpreter.\n"
+            f"  python : {sys.executable}\n"
+            f"  error  : {_e}\n\n"
+            "Launch on the spike venv (test1/gui/run_backend.ps1 / .sh), NOT a bare\n"
+            "`python app.py` on system Python.\n" + "=" * 72 + "\n",
+            file=sys.stderr, flush=True,
+        )
+        raise SystemExit(2)
+    raise
+
+
+# ---------------------------------------------------------------------------
+# Boot guard — refuse to start misconfigured (A2)
+# ---------------------------------------------------------------------------
+# The recurring failure: the backend gets launched on SYSTEM python instead of
+# the spike venv, so `import altium_monkey` fails and EVERY Altium build the
+# backend spawns dies with ModuleNotFoundError — silently, looking like the loop
+# "did nothing". The interpreter that runs the build subprocess is THIS process's
+# sys.executable, so the only safe check is: can WE import altium_monkey? If not,
+# stop now with a loud, actionable message rather than serving a backend that
+# can't build. (KiCad backend doesn't need altium_monkey — guarded by BACKEND.)
+def _boot_environment_summary() -> dict:
+    """What interpreter/env is this backend running on — surfaced in /api/state so
+    the GUI (and a human) can see at a glance whether builds will work."""
+    ok = True
+    reason = ""
+    if BACKEND == "altium":
+        try:
+            import altium_monkey  # noqa: F401
+        except Exception as e:
+            ok = False
+            reason = f"cannot import altium_monkey ({e.__class__.__name__}: {e})"
+    return {
+        "python": sys.executable,
+        "in_venv": (sys.prefix != getattr(sys, "base_prefix", sys.prefix)),
+        "backend": BACKEND,
+        "build_ready": ok,
+        "reason": reason,
+    }
+
+
+def _assert_boot_ok() -> None:
+    """Called from main() BEFORE uvicorn binds. Hard-fails a misconfigured launch."""
+    env = _boot_environment_summary()
+    if not env["build_ready"]:
+        msg = (
+            "\n" + "=" * 72 +
+            "\nBACKEND REFUSING TO START — it cannot build the Altium design.\n"
+            f"  python : {env['python']}\n"
+            f"  in_venv: {env['in_venv']}\n"
+            f"  reason : {env['reason']}\n\n"
+            "Launch it on the spike venv interpreter (the one with altium_monkey),\n"
+            "e.g. via test1/gui/run_backend.ps1 / run_backend.sh, NOT a bare\n"
+            "`python app.py` on system Python.\n" + "=" * 72 + "\n"
+        )
+        print(msg, file=sys.stderr, flush=True)
+        raise SystemExit(2)
 
 
 # ---------------------------------------------------------------------------
@@ -206,6 +273,7 @@ def state() -> JSONResponse:
         "has_error_log": ERROR_LOG.exists(),
         "has_findings_json": FINDINGS_JSON.exists(),
         "has_semantic": SEMANTIC_FINDINGS.exists(),
+        "env": _boot_environment_summary(),    # interpreter / build-readiness (A2)
         "runs": [
             {"run_id": r.run_id, "kind": r.kind, "status": r.status,
              "returncode": r.returncode, "lines": len(r.lines)}
@@ -439,6 +507,57 @@ def _parse_lint_from_lines(lines: list[str]) -> list[dict]:
     return out
 
 
+def _current_source_hash() -> str:
+    """Hash the design SOURCE the same way build_project._source_hash does, so we
+    can tell whether out/lint.json reflects the CURRENT sources or is stale."""
+    import hashlib
+    h = hashlib.sha256()
+    files = []
+    for d in (NETLIST_DIR, PROJECT_DIR / "altium"):
+        if d.exists():
+            for pat in ("*.yaml", "*.yml", "build_*.py"):
+                files.extend(sorted(d.glob(pat)))
+    for p in sorted(files):
+        try:
+            h.update(p.name.encode())
+            h.update(p.read_bytes())
+        except OSError:
+            pass
+    return h.hexdigest()[:16]
+
+
+@app.get("/api/build-status")
+def build_status() -> JSONResponse:
+    """THE single source of truth for "what is the current build's status" (A4).
+    Every tab/header should read THIS instead of computing its own — it returns
+    the on-disk build's gate result (from out/lint.json), when it was built, and
+    whether the design sources have changed since (stale). Also reports the
+    interpreter/build-readiness so a misconfigured backend is visible."""
+    body = {
+        "env": _boot_environment_summary(),
+        "counts": {"ERROR": 0, "WARNING": 0, "INFO": 0},
+        "status": "unknown",      # "pass" | "fail" | "unknown"
+        "generated_at": None,
+        "source_hash": None,
+        "stale": None,            # True if sources changed since the build
+        "timestamp": time.time(),
+    }
+    p = ALTIUM_OUT / "lint.json"
+    if BACKEND == "altium" and p.exists():
+        try:
+            data = json.loads(p.read_text())
+            body["counts"] = data.get("counts") or body["counts"]
+            body["status"] = data.get("status", "unknown")
+            body["generated_at"] = data.get("generated_at")
+            stamped = data.get("source_hash")
+            body["source_hash"] = stamped
+            if stamped is not None:
+                body["stale"] = (stamped != _current_source_hash())
+        except (ValueError, OSError):
+            pass
+    return JSONResponse(body, headers={"Cache-Control": "no-store"})
+
+
 @app.get("/api/lint")
 def lint(run_id: str | None = None) -> JSONResponse:
     """Return the lint report for the MOST RECENT build.
@@ -476,10 +595,13 @@ def lint(run_id: str | None = None) -> JSONResponse:
                 s: sum(1 for i in issues if i["severity"] == s)
                 for s in ("ERROR", "WARNING", "INFO")
             }
+            stamped = data.get("source_hash")
             body = {
                 "run_id": None,
                 "status": data.get("status", "unknown"),
                 "generated_at": data.get("generated_at"),
+                "source_hash": stamped,
+                "stale": (stamped != _current_source_hash()) if stamped is not None else None,
                 "issues": issues,
                 "rules": rules,
                 "counts": counts,
@@ -1931,11 +2053,34 @@ class ApplyAndGenOpts(BaseModel):
     # gates). When True (the "Errors + warnings fixed" tick) the loop also keeps
     # fixing until WARNINGs reach zero too. Ignored unless loop_review is on.
     fix_warnings: bool = False
+    # How many apply->build->fix rounds the loop may run before giving up. The user
+    # picks this in the GUI (default 3, recommended); clamped server-side to
+    # [1, LOOP_MAX_ROUNDS_CEILING]. None -> the default.
+    max_rounds: int | None = None
 
 
-# Hard cap on apply->build->fix rounds when loop_review is on (mirrors the sim
-# iterate cap: bounded so a stubborn failure can't spin forever).
+# Default + hard ceiling on apply->build->fix rounds when loop_review is on
+# (bounded so a stubborn failure can't spin forever). The user may choose any value
+# in [1, LOOP_MAX_ROUNDS_CEILING]; LOOP_MAX_ROUNDS is the recommended default.
 LOOP_MAX_ROUNDS = 3
+LOOP_MAX_ROUNDS_CEILING = 10
+# Per-round watchdog: a lint-fix `claude -p` agent that blocks at startup (seen on
+# Windows: 0% CPU, no output, never terminates) would otherwise hang the whole
+# loop chain forever at `await _await_agent`. Cap each fix pass; on timeout we
+# cancel it and stop the loop with a clear message instead of stalling. Generous
+# so a genuinely-working fix (a couple minutes of edits) is never killed.
+LOOP_FIX_TIMEOUT_S = 240
+
+
+def _clamp_rounds(n: int | None, default: int = LOOP_MAX_ROUNDS) -> int:
+    """Clamp a user-supplied round count to [1, LOOP_MAX_ROUNDS_CEILING]; None ->
+    default."""
+    if n is None:
+        return default
+    try:
+        return max(1, min(LOOP_MAX_ROUNDS_CEILING, int(n)))
+    except (TypeError, ValueError):
+        return default
 
 
 def _read_lint_failures() -> dict:
@@ -1975,6 +2120,67 @@ def _gates_passed(failures: dict, fix_warnings: bool = False) -> bool:
     if fix_warnings and int(counts.get("WARNING", 0)) != 0:
         return False
     return True
+
+
+# ---------------------------------------------------------------------------
+# Propose-verify-commit — a design-editing pass may only IMPROVE or HOLD the
+# build, never regress it (A1). The agent edits the builders in place; we snapshot
+# first, rebuild, and if the result is WORSE than before the pass we restore the
+# snapshot. This makes the loop monotonic: a bad edit (e.g. the agent shipping a
+# net SHORT while "fixing" a warning) is silently rolled back instead of landing.
+# ---------------------------------------------------------------------------
+# The files an editing agent is allowed to touch — the declarative design source.
+_EDITABLE_DESIGN_DIRS = [NETLIST_DIR, PROJECT_DIR / "altium"]
+_EDITABLE_DESIGN_GLOBS = ["*.yaml", "*.yml", "build_*.py"]
+
+
+def _design_snapshot() -> dict[str, str]:
+    """Read every editable design file into an in-memory {path: text} map. Cheap
+    (a few dozen small text files); used to restore after a regressing edit."""
+    snap: dict[str, str] = {}
+    for d in _EDITABLE_DESIGN_DIRS:
+        if not d.exists():
+            continue
+        for pat in _EDITABLE_DESIGN_GLOBS:
+            for p in d.glob(pat):
+                try:
+                    snap[str(p)] = p.read_text(encoding="utf-8")
+                except OSError:
+                    pass
+    return snap
+
+
+def _restore_snapshot(snap: dict[str, str]) -> list[str]:
+    """Restore files whose content changed from the snapshot. Returns the list of
+    restored paths (for logging). Files the agent CREATED are left in place (a new
+    part file is additive, not a regression of existing geometry)."""
+    restored: list[str] = []
+    for path, text in snap.items():
+        p = Path(path)
+        try:
+            if not p.exists() or p.read_text(encoding="utf-8") != text:
+                p.write_text(text, encoding="utf-8")
+                restored.append(p.name)
+        except OSError:
+            pass
+    return restored
+
+
+def _build_quality(failures: dict) -> tuple:
+    """A comparable score of how good a build is — LOWER is better. Ordered tuple:
+      (build_failed, error_count, short_count, warning_count)
+    so a fix that clears a warning but introduces a SHORT scores strictly worse and
+    is rejected. `failures` is a _read_lint_failures() payload."""
+    counts = failures.get("counts", {}) or {}
+    build_failed = 1 if (failures.get("exit") not in (0, None)
+                         or failures.get("status") == "fail") else 0
+    errors = int(counts.get("ERROR", 0))
+    # SHORTs are the worst class of error — count them explicitly so "traded a
+    # warning for a short" is always a regression even if total ERROR count ties.
+    shorts = sum(1 for i in failures.get("issues", [])
+                 if "short" in (i.get("rule", "") + i.get("message", "")).lower())
+    warns = int(counts.get("WARNING", 0))
+    return (build_failed, errors, shorts, warns)
 
 
 def _sim_targets_from_items(items: list[dict]) -> list[tuple[str, str | None]]:
@@ -2078,10 +2284,18 @@ async def run_apply_and_generate(opts: ApplyAndGenOpts = ApplyAndGenOpts()) -> d
         while r is not None and r.status == "running":
             await asyncio.sleep(0.25)
 
-    async def _await_agent(run_id: str) -> None:
+    async def _await_agent(run_id: str, timeout_s: float | None = None) -> bool:
+        """Wait for an agent run to leave 'running'. Returns True when it finished,
+        False if timeout_s elapsed first (the caller should then cancel it). Without
+        a timeout this waits indefinitely (legacy behavior)."""
         ar = agent_mod.get_run(run_id)
+        waited = 0.0
         while ar is not None and ar.status == "running":
+            if timeout_s is not None and waited >= timeout_s:
+                return False
             await asyncio.sleep(0.25)
+            waited += 0.25
+        return True
 
     async def _build_once() -> str:
         cmd, cwd = _generate_cmd()
@@ -2133,6 +2347,17 @@ async def run_apply_and_generate(opts: ApplyAndGenOpts = ApplyAndGenOpts()) -> d
     # appear. (Altium backend only — the loop reads the validator+lint gate.)
     if opts.loop_review and BACKEND == "altium":
         fix_warnings = bool(opts.fix_warnings)
+        max_rounds = _clamp_rounds(opts.max_rounds)
+
+        def _note(msg: str) -> None:
+            """Surface a loop-level note to the GUI by appending it to the latest
+            generate run's output (the console the frontend is already streaming),
+            and to the backend log."""
+            print(f"[loop-review] {msg}", flush=True)
+            gen = next((r for r in reversed(list(_RUNS.values()))
+                        if r.kind == "generate"), None)
+            if gen is not None:
+                gen.lines.append(f"[LOOP] {msg}")
 
         async def chain_with_loop_review() -> None:
             if apply_run_id:
@@ -2140,13 +2365,46 @@ async def run_apply_and_generate(opts: ApplyAndGenOpts = ApplyAndGenOpts()) -> d
             await _build_once()
             failures = _read_lint_failures()
             rnd = 0
-            while not _gates_passed(failures, fix_warnings) and rnd < LOOP_MAX_ROUNDS:
+            while not _gates_passed(failures, fix_warnings) and rnd < max_rounds:
                 rnd += 1
+                # PROPOSE-VERIFY-COMMIT (A1): snapshot the design + remember how good
+                # the build is RIGHT NOW, so we can reject a fix that makes it worse.
+                before_q = _build_quality(failures)
+                snap = _design_snapshot()
                 fix = await agent_mod.start_lint_fix_pass(
-                    failures, rnd, LOOP_MAX_ROUNDS, fix_warnings=fix_warnings)
-                await _await_agent(fix.run_id)
+                    failures, rnd, max_rounds, fix_warnings=fix_warnings)
+                # Watchdog: a lint-fix agent can block at startup and never finish,
+                # which would stall this chain forever. Bound the wait; on timeout
+                # cancel the agent and STOP the loop with a clear note rather than
+                # hanging (the build keeps whatever the last good rebuild produced).
+                finished = await _await_agent(fix.run_id, timeout_s=LOOP_FIX_TIMEOUT_S)
+                if not finished:
+                    agent_mod.cancel_run(fix.run_id)
+                    restored = _restore_snapshot(snap)   # undo any partial edit
+                    _note(f"fix round {rnd} timed out after {LOOP_FIX_TIMEOUT_S}s "
+                          f"(agent did not respond) — reverted "
+                          f"{len(restored)} file(s) and stopped the loop. Re-run, or "
+                          f"address the remaining findings manually.")
+                    await _build_once()                  # rebuild from the restored state
+                    failures = _read_lint_failures()
+                    break
                 await _build_once()
-                failures = _read_lint_failures()
+                after = _read_lint_failures()
+                after_q = _build_quality(after)
+                if after_q > before_q:
+                    # The fix REGRESSED the build (e.g. cleared a warning but added a
+                    # SHORT, or broke the build). Roll it back — the loop may only
+                    # improve or hold. Stop: an agent making things worse won't
+                    # self-correct, and we won't ship the regression.
+                    restored = _restore_snapshot(snap)
+                    await _build_once()
+                    failures = _read_lint_failures()
+                    _note(f"fix round {rnd} REGRESSED the build "
+                          f"(quality {before_q} -> {after_q}: build_failed/errors/"
+                          f"shorts/warnings) — reverted {len(restored)} file(s) and "
+                          f"stopped. The design is back to its pre-round state.")
+                    break
+                failures = after
             # Close the loop back to the sim: ONLY for sim-originated items, and
             # ONLY once the build is gate-clean (no point re-simming a broken design).
             if sim_targets and _gates_passed(failures, fix_warnings):
@@ -2159,7 +2417,7 @@ async def run_apply_and_generate(opts: ApplyAndGenOpts = ApplyAndGenOpts()) -> d
             "queued_items": len(items),
             "loop_review": True,
             "fix_warnings": fix_warnings,
-            "max_rounds": LOOP_MAX_ROUNDS,
+            "max_rounds": max_rounds,
         }
 
     # ---- PLAIN path (unchanged behavior) -----------------------------------
@@ -2662,14 +2920,21 @@ def review_providers() -> dict:
 from test1.review import closed_loop as _loop_mod
 
 
+class LoopStartBody(BaseModel):
+    # How many review rounds to run (user-chosen; clamped to [1, MAX_ROUNDS] by
+    # closed_loop.clamp_rounds, default MAX_ROUNDS_DEFAULT). None -> default.
+    max_rounds: int | None = None
+
+
 @app.post("/api/loop/start")
-async def loop_start() -> dict:
+async def loop_start(body: LoopStartBody = LoopStartBody()) -> dict:
     # Reject if another loop is currently running.
     for L in _loop_mod._LOOPS.values():
         if L.status == "running":
             raise HTTPException(409, f"loop {L.loop_id} already running")
-    loop_id = _loop_mod.start_loop()
-    return {"loop_id": loop_id}
+    loop_id = _loop_mod.start_loop(max_rounds=body.max_rounds)
+    L = _loop_mod._LOOPS[loop_id]
+    return {"loop_id": loop_id, "max_rounds": L.max_rounds}
 
 
 @app.get("/api/loop/latest")
@@ -2868,6 +3133,8 @@ def png_snapshot(loop_id: str, name: str):
 
 def main() -> None:
     import uvicorn
+    _assert_boot_ok()   # refuse to start on the wrong interpreter (A2)
+    print(f"[boot] {_boot_environment_summary()}", flush=True)
     uvicorn.run("app:app", host="127.0.0.1", port=8765, reload=False)
 
 

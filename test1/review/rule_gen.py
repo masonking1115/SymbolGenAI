@@ -270,9 +270,9 @@ async def _dispatch_rule_gen_agent(
                 "attempt": attempt + 1,
                 "max_attempts": 3,
             })
-        # Wait for completion - poll the run status
-        while run.status == "running":
-            await asyncio.sleep(0.5)
+        # Wait for completion with a startup-hang watchdog (A3) — a stuck agent
+        # must not block this dispatch forever.
+        await agent_mod.await_run_bounded(run)
         if run.status != "ok" or not out_path.exists():
             last_error = (f"agent run status={run.status}, "
                           f"output present={out_path.exists()}")

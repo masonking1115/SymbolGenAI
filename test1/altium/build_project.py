@@ -31,6 +31,42 @@ PROJECT = "test1"
 _build_centered = build_centered
 
 
+def _source_hash() -> str:
+    """A short content hash of the design SOURCE (netlist YAML + altium builders).
+    Stamped into lint.json so a consumer (the GUI, the loop) can tell whether the
+    report reflects the CURRENT sources or is stale (sources edited since the
+    build). Single source of truth for "is this build up to date" (A4)."""
+    import hashlib
+    from .config import OUT_DIR as _OUT
+    proj = _OUT.parent.parent              # test1/
+    h = hashlib.sha256()
+    files = []
+    for d in (proj / "netlist", proj / "altium"):
+        if d.exists():
+            for pat in ("*.yaml", "*.yml", "build_*.py"):
+                files.extend(sorted(d.glob(pat)))
+    for p in sorted(files):
+        try:
+            h.update(p.name.encode())
+            h.update(p.read_bytes())
+        except OSError:
+            pass
+    return h.hexdigest()[:16]
+
+
+def _write_lint_json(status: str, counts: dict, report: list) -> None:
+    """The ONE place lint.json is written — stamps it with build time + a source
+    hash so every reader (GUI tabs, the loop's gate) shares one authoritative
+    record of the current build's status (A4)."""
+    (OUT_DIR / "lint.json").write_text(json.dumps({
+        "generated_at": time.time(),
+        "source_hash": _source_hash(),
+        "status": status,
+        "counts": counts,
+        "issues": report,
+    }, indent=2))
+
+
 def main() -> int:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     # Every lint issue from THIS build, attributed to its sheet, so the GUI can
@@ -63,12 +99,7 @@ def main() -> int:
         print(f"symbol library: MISSING {len(missing)} symbol(s): {', '.join(missing)}")
         # Persist the report (same shape as the normal exit path) so the GUI lint
         # panel + the closed loop see the missing-symbol ERROR, then fail cleanly.
-        (OUT_DIR / "lint.json").write_text(json.dumps({
-            "generated_at": time.time(),
-            "status": "fail",
-            "counts": {"ERROR": 1, "WARNING": 0, "INFO": 0},
-            "issues": report,
-        }, indent=2))
+        _write_lint_json("fail", {"ERROR": 1, "WARNING": 0, "INFO": 0}, report)
         print("\nFAILURES: missing symbols — see report")
         return 1
     lib_path, _ = get_library()
@@ -169,12 +200,7 @@ def main() -> int:
     sev = {"ERROR": 0, "WARNING": 0, "INFO": 0}
     for r in report:
         sev[r["severity"]] = sev.get(r["severity"], 0) + 1
-    (OUT_DIR / "lint.json").write_text(json.dumps({
-        "generated_at": time.time(),
-        "status": "fail" if fails else "pass",
-        "counts": sev,
-        "issues": report,
-    }, indent=2))
+    _write_lint_json("fail" if fails else "pass", sev, report)
 
     print("-" * 36)
     print(f"wrote {prj_path.name} referencing root + {len(docs)} child sheets")

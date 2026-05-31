@@ -763,6 +763,34 @@ def cancel_run(run_id: str) -> bool:
     return True
 
 
+# Default startup-hang watchdog for any caller awaiting a spawned agent. A
+# `claude -p` agent can block before producing output (seen on Windows: 0% CPU,
+# never terminates) — without a deadline the awaiting coroutine hangs forever.
+AGENT_RUN_TIMEOUT_S = 300
+
+
+async def await_run_bounded(run: "AgentRun", *, timeout_s: float = AGENT_RUN_TIMEOUT_S,
+                            should_cancel=None) -> str:
+    """Wait for `run` to leave 'running', honoring an optional caller cancel flag
+    AND a startup-hang watchdog. THE one way loop code should wait on an agent —
+    no bare `while run.status == 'running'` polling (which can hang forever).
+
+    `should_cancel` is an optional zero-arg callable; if it returns True we cancel
+    the run and return 'cancelled'. On timeout we cancel and return 'timeout'.
+    Otherwise returns the run's terminal status ('ok'/'fail'/'cancelled')."""
+    waited = 0.0
+    while run.status == "running":
+        if should_cancel is not None and should_cancel():
+            cancel_run(run.run_id)
+            return "cancelled"
+        if waited >= timeout_s:
+            cancel_run(run.run_id)
+            return "timeout"
+        await asyncio.sleep(0.5)
+        waited += 0.5
+    return run.status
+
+
 async def _spawn_claude(
     *,
     prompt: str,
@@ -771,10 +799,14 @@ async def _spawn_claude(
     allowed_tools: list[str] | None = None,
     add_dir: Path | None = None,
     model: str | None = None,
+    thinking_tokens: int | None = None,
 ) -> tuple[asyncio.subprocess.Process, list[str]]:
     """Spawn `claude -p` and return (proc, cmd). Output format is
     stream-json so we can parse per-event. `model` overrides the global MODEL
-    (used by the per-agent model selection); falls back to MODEL when None."""
+    (used by the per-agent model selection); falls back to MODEL when None.
+    `thinking_tokens` overrides the default extended-thinking budget — set it low
+    for mechanical passes (e.g. lint_fix) so the agent doesn't stall in a long
+    think before acting."""
     cmd = [
         CLAUDE,
         "-p", prompt,
@@ -807,10 +839,16 @@ async def _spawn_claude(
     # reason — not just the right outcome (the prior no-change run was opaque).
     # Keep the budget modest: enough to reason about a topology/feasibility call,
     # not so large it bloats latency. Respect an existing override if set.
-    env.setdefault("MAX_THINKING_TOKENS", "4000")
+    env["MAX_THINKING_TOKENS"] = str(thinking_tokens if thinking_tokens is not None
+                                     else int(os.environ.get("MAX_THINKING_TOKENS", "4000")))
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         cwd=str(PROJECT_DIR),
+        # Close stdin: this is a headless `claude -p` run. If the child inherits the
+        # backend's stdin and ever tries to read it (a prompt fallback, a TTY probe)
+        # it would block forever at 0% CPU — the exact lint-fix hang seen on Windows
+        # that stalled the loop. DEVNULL makes any such read return EOF immediately.
+        stdin=asyncio.subprocess.DEVNULL,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
         env=env,
@@ -1071,6 +1109,11 @@ _DESIGN_AGENT_TOOLS = [
     "Read", "Edit", "Write", "Glob", "Grep",
     "Bash(python:*)", "Bash(python3:*)", "Bash(pdftotext:*)",
     "Bash(cd:*)", "Bash(ls:*)", "Bash(cat:*)",
+    # Read-only git inspection (git diff/status/show/log) — agents reach for it to
+    # see what the apply pass changed. Allowing it (it's read-only here) stops the
+    # call from hitting the permission gate, which — now that the headless child's
+    # stdin is /dev/null — would abort the agent (rc -1) instead of just prompting.
+    "Bash(git:*)",
     # The backend's own interpreter, by full path (and a glob), so
     # `"<venv>/python.exe" -m test1.altium.author_symbol …` runs without a prompt.
     f'Bash({_VENV_PY}:*)',
@@ -1107,6 +1150,12 @@ backend built it, and the build DID NOT pass its gates. You are given the exact
 failures. Fix them — and ONLY them — with the smallest edits to netlist/*.yaml
 and altium/build_<sheet>.py.
 
+TOOLS — IMPORTANT: Use ONLY Read, Grep, Glob, and Edit. Do NOT run ANY shell/Bash
+command — no `git`, no `python`, no `cd`, no exploratory commands. You have the
+exact failures and full file access already; everything you need is reachable by
+Read/Grep. (This pass runs head-less with no terminal: a Bash command that needs
+approval cannot be answered and will abort the whole pass before you fix anything.)
+
 1. Read each failing sheet's builder (altium/build_<sheet>.py) and netlist
    (netlist/<sheet>.yaml) and fix the specific issues listed. A connectivity
    failure usually means a pin/net wasn't fully wired; a layout ERROR
@@ -1115,8 +1164,9 @@ and altium/build_<sheet>.py.
 2. Do NOT introduce new parts or change the design intent — you are repairing
    the apply pass's edits to pass the gates, not redesigning.
 3. DO NOT run the build yourself — the backend rebuilds after you return and
-   re-checks. If a failure is genuinely not fixable by an edit here (e.g. it
-   needs a design decision), say so in your summary rather than guessing.
+   re-checks (you don't need git/python to see changes — Read the files). If a
+   failure is genuinely not fixable by an edit here (e.g. it needs a design
+   decision), say so in your summary rather than guessing.
 4. Finish with a terse summary: which issues you fixed and how.
 
 {_lint_expectations()}
@@ -1178,6 +1228,13 @@ async def start_lint_fix_pass(failures: dict, round_no: int, max_rounds: int,
         permission_mode="acceptEdits",
         allowed_tools=_DESIGN_AGENT_TOOLS,
         model=model_for("lint_fix"),
+        # Extended thinking OFF for this pass. Measured: with thinking enabled the
+        # agent reads the files then spirals in an open-ended "reason about the
+        # geometry" think (48+ thinking events, no Edit) and never finishes — the
+        # original loop "hang". A small non-zero budget (1000) did NOT cap it. With
+        # thinking_tokens=0 it reads → Edits → returns success (~85s). Lint fixes
+        # are mechanical grid nudges; they don't need deliberation.
+        thinking_tokens=0,
     )
     run = _register("lint_fix")
     asyncio.create_task(_run_subprocess(run, proc))

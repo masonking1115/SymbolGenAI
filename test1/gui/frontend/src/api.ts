@@ -170,13 +170,13 @@ export const api = {
   changelogClear: () =>
     j<{ ok: boolean }>("/api/changelog/clear", { method: "POST" }),
 
-  applyAndGenerate: (loopReview = false, fixWarnings = false) =>
+  applyAndGenerate: (loopReview = false, fixWarnings = false, maxRounds?: number) =>
     j<{ apply_run_id: string | null; generate_run_id: string | null; queued_items: number; loop_review?: boolean; fix_warnings?: boolean; max_rounds?: number }>(
       "/api/run/apply-and-generate",
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ loop_review: loopReview, fix_warnings: fixWarnings }),
+        body: JSON.stringify({ loop_review: loopReview, fix_warnings: fixWarnings, max_rounds: maxRounds }),
       },
     ),
   symbolGen: (mpn: string) =>
@@ -425,8 +425,12 @@ export const api = {
     }),
 
   // ---- Closed-loop design review: loop orchestration (Phase 4) -------------
-  loopStart: async (): Promise<{ loop_id: string }> => {
-    const r = await fetch("/api/loop/start", { method: "POST" });
+  loopStart: async (maxRounds?: number): Promise<{ loop_id: string; max_rounds?: number }> => {
+    const r = await fetch("/api/loop/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ max_rounds: maxRounds }),
+    });
     if (!r.ok) throw new Error("loop start failed");
     return r.json();
   },

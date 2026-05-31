@@ -2,6 +2,36 @@
 
 Deferred work items (not blocking; pick up when convenient).
 
+## Build status must be consistent + live across all tabs (2026-05-31) — TODO
+
+- [ ] **Every tab's build/lint status must agree and be up to date.** Observed:
+      Design Review header showed ERRORS 0 / WARNINGS 0 / "healthy" while the
+      Schematic Generator showed ERRORS 1 / WARNINGS 0 / INFOS 1 **at the same
+      time** — the two read different/stale sources. Both should reflect the SAME
+      current build (the on-disk `out/lint.json`, served by GET /api/lint) and
+      refresh when it changes (after a build / loop / regenerate). Pick one source
+      of truth, have Review's header + the Generator's StatCards + any health
+      badge all read it, and invalidate/re-fetch on the same triggers
+      (`onArtifactsChanged`, loop completion, generate completion). Likely Review
+      computes "healthy" from its findings report (semantic eval), not the layout
+      lint — reconcile what "status" means per tab or show both clearly.
+
+## Configurable loop count — regeneration + design review (2026-05-31) — DONE
+
+- [x] **User chooses how many fix rounds the regeneration loop runs.** New shared
+      `RoundsPicker` (1–10, default **3 (recommended)**) sits next to the Fix-errors
+      ticks on the Schematic Generator, shown only when a loop mode is on. Threaded:
+      Generator.tsx → `api.applyAndGenerate(loopReview, fixWarnings, maxRounds)` →
+      `ApplyAndGenOpts.max_rounds` → `_clamp_rounds()` → the chain's
+      `while ... rnd < max_rounds`. Server clamps to [1, LOOP_MAX_ROUNDS_CEILING=10];
+      None → LOOP_MAX_ROUNDS=3. Verified: 7→7, 99→10, 0→1.
+- [x] **Same for the design review (closed loop).** Same `RoundsPicker` next to the
+      "Design review" button. Threaded: Review.tsx → `api.loopStart(maxRounds)` →
+      `/api/loop/start` (LoopStartBody.max_rounds) → `start_loop(max_rounds)` →
+      `Loop.max_rounds` (clamped via `closed_loop.clamp_rounds`, default
+      MAX_ROUNDS_DEFAULT=3, ceiling MAX_ROUNDS=10) → the round loop + lint_fix
+      dispatch use `L.max_rounds`. Verified clamp_rounds: None→3, 0→1, 50→10.
+
 ## Linter — two new placement/routing rules (2026-05-31) — DONE
 
 - [x] **`passive_on_corner` (WARNING).** A passive (R/C/L) pin must not land on a

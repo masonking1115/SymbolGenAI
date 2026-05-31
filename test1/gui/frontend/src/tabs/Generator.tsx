@@ -4,6 +4,7 @@ import { ChangelogPanel } from "../components/ChangelogPanel";
 import { Console } from "../components/Console";
 import { I } from "../components/Icon";
 import { PageHeader } from "../components/PageHeader";
+import { RoundsPicker } from "../components/RoundsPicker";
 import type {
   AgentDecision,
   Freshness,
@@ -74,6 +75,8 @@ export function Generator({
   const [loopMode, setLoopMode] = useState<"off" | "errors" | "errors_warnings">("off");
   const loopReview = loopMode !== "off";
   const fixWarnings = loopMode === "errors_warnings";
+  // How many apply→build→fix rounds the loop may run (1–10; 3 recommended).
+  const [loopRounds, setLoopRounds] = useState(3);
   // Which severity's detail list is expanded under the count cards (click to open).
   const [openSev, setOpenSev] = useState<Severity | null>(null);
   // Whether the linter checklist section is expanded.
@@ -165,7 +168,7 @@ export function Generator({
       // call orchestrates both runs.
       setLines((prev) => [...prev, "Contacting backend for build orchestration..."]);
       const { apply_run_id, generate_run_id, loop_review, fix_warnings, max_rounds } =
-        await api.applyAndGenerate(loopReview, fixWarnings);
+        await api.applyAndGenerate(loopReview, fixWarnings, loopReview ? loopRounds : undefined);
       setLines((prev) => [...prev, `Backend connected: apply_run_id=${apply_run_id || "none"} generate_run_id=${generate_run_id ?? "pending"}`]);
       if (loop_review) {
         const scope = fix_warnings ? "errors + warnings" : "errors";
@@ -421,18 +424,25 @@ export function Generator({
               the active one turns the loop off (plain one-shot generate). */}
           <LoopTick
             label="Fix errors"
-            title="After applying changes, build and read the validator + layout-lint gates; if any ERRORs remain, an agent fixes them and rebuilds (up to 3 rounds) so Generate lands a build with zero lint ERRORs. Warnings stay advisory."
+            title="After applying changes, build and read the validator + layout-lint gates; if any ERRORs remain, an agent fixes them and rebuilds (up to the chosen number of rounds) so Generate lands a build with zero lint ERRORs. Warnings stay advisory."
             checked={loopMode === "errors"}
             disabled={runState === "running"}
             onToggle={() => setLoopMode((m) => (m === "errors" ? "off" : "errors"))}
           />
           <LoopTick
             label="Fix errors + warnings"
-            title="Same fix loop as 'Fix errors', but the agent also clears every WARNING — it keeps fixing and rebuilding (up to 3 rounds) until both ERRORs and WARNINGs reach zero. INFO stays advisory."
+            title="Same fix loop as 'Fix errors', but the agent also clears every WARNING — it keeps fixing and rebuilding (up to the chosen number of rounds) until both ERRORs and WARNINGs reach zero. INFO stays advisory."
             checked={loopMode === "errors_warnings"}
             disabled={runState === "running"}
             onToggle={() => setLoopMode((m) => (m === "errors_warnings" ? "off" : "errors_warnings"))}
           />
+          {loopReview && (
+            <RoundsPicker
+              value={loopRounds}
+              onChange={setLoopRounds}
+              disabled={runState === "running"}
+            />
+          )}
           <button
             onClick={() => {
               refreshLint();

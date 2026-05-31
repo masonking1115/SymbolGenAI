@@ -368,7 +368,11 @@ def build_bobcat() -> tuple[AltiumSheet, object]:
     pd_bottoms = []
     for i, (pn, net, pull_ref, pull_x) in enumerate(GPIO):
         px, py = U[pn]
-        row_y = CHIP_TOP_Y + 1400 + i * 400   # 7900, 8300, 8700, 9100
+        # Row pitch i*600 (was i*400): consecutive pull-down R bodies are 200 mil
+        # apart in x and 600 in y -> ~632-mil diagonal gap, above cramped_cluster's
+        # 300-mil floor. (Only the rows move further OUT; the GND drops still run
+        # down each R's px-100 column, so the proven anti-short routing is intact.)
+        row_y = CHIP_TOP_Y + 1400 + i * 600
         s.wire(px, py, px, row_y)                   # up to own row
         s.wire(px, row_y, GPIO_PORT_X, row_y)       # LEFT to port (span [1200, px])
         s.port(net, GPIO_PORT_X, row_y, io=PortIOType.OUTPUT, style=PortStyle.LEFT_RIGHT)

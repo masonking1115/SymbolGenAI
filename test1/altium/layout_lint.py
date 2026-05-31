@@ -34,6 +34,13 @@ Sheet checks (highest value first):
   off_center        WARNING sheet content is bunched against an edge rather than
                             centered on the page
   cramped_spacing   WARNING two components sit closer than the min readable gap
+  cramped_cluster   WARNING parts packed tight on a DIAGONAL (close in both axes —
+                            the staircase cramped_spacing's axis test misses)
+  power_clearance_all_sides WARNING a GND/power glyph lacks a clear unit of space
+                            on all sides (another power glyph or the page edge
+                            crowds it)
+  body_wire_clearance WARNING a component body sits < a grid unit from a wire that
+                            doesn't connect to it (a net crammed alongside the part)
   label_overlap     WARNING two drawn text/label boxes overlap (unreadable
                             "glob" — value text under a port name, etc.)
   label_over_symbol WARNING a label/port/value text box overlaps a component
@@ -43,9 +50,9 @@ Sheet checks (highest value first):
   offpage_text      WARNING a drawn label/value/note/body box spills past the
                             sheet border (text clipped at the page edge)
   wire_overlap      WARNING collinear same-axis wires overlap (silent short)
-  passive_on_corner WARNING a passive (R/C/L) sits on a net elbow — its two pins
-                            are fed on perpendicular axes (net bends across the
-                            part) instead of running straight through it
+  passive_on_corner WARNING a 2-pin RLC passive is not in line with its net — the
+                            net runs perpendicular to the body at a terminal (an
+                            L-bend corner, or a bus strung along the pin row)
   bridged_drop      WARNING wire interior crosses a third part's pin (bridge)
   duplicate_wire    INFO    identical segment drawn twice
   redundant_junction INFO   junction with <3 segments / on a pin (cosmetic)
@@ -102,6 +109,24 @@ RULES: list[dict] = [
      "summary": "Content bunched against an edge rather than centered"},
     {"id": "cramped_spacing", "severity": "WARNING", "scope": "sheet",
      "summary": "Two components closer than the min readable gap"},
+    {"id": "cramped_cluster", "severity": "WARNING", "scope": "sheet",
+     "summary": "Components packed too tightly on a DIAGONAL (close in both axes "
+                "at once — the staircase that cramped_spacing's axis-aligned test "
+                "misses, e.g. a stepped R30-R33 pull-down ladder). Spread them out "
+                "so each has a readable gap to its neighbour on every side"},
+    {"id": "power_clearance_all_sides", "severity": "WARNING", "scope": "sheet",
+     "summary": "A GND or power glyph does NOT have a clear unit of space on all "
+                "sides from another SYMBOL — another power glyph or the page edge "
+                "crowds its box, so it reads as touching its surroundings. Give the "
+                "symbol a full grid of clearance (complements power_borders_"
+                "component, which guards glyph-vs-component-body)"},
+    {"id": "body_wire_clearance", "severity": "WARNING", "scope": "sheet",
+     "summary": "A component body nearly touches a NON-connecting wire running "
+                "alongside it (< half a grid of clear space — the symbol crammed "
+                "against a bus/net). Threshold is half a grid so the unavoidable "
+                "spacing of a passive in a tight pin-drop field is accepted; only a "
+                "genuine near-touch trips it. (Distinct from wire_through_body, "
+                "which is a wire actually crossing the body.)"},
     {"id": "decap_grouping", "severity": "WARNING", "scope": "sheet",
      "summary": "Same-rail decoupling cells (GND<->passive<->rail) clustered in "
                 "one area but scattered instead of aligned into a neat bank"},
@@ -147,11 +172,12 @@ RULES: list[dict] = [
                 "DNP — the path may be orphaned (intended driver/receiver "
                 "unpopulated). Semantic intent check; advisory only."},
     {"id": "passive_on_corner", "severity": "WARNING", "scope": "sheet",
-     "summary": "A passive (R/C/L) sits on the elbow of a net — its two terminals "
-                "are fed on perpendicular axes (one horizontal, one vertical) so "
-                "the net bends across the part instead of running straight through "
-                "it. Align the passive in line with the net (stubs parallel to the "
-                "body) and route the 90deg turn clear of the pins"},
+     "summary": "A 2-pin RLC passive (R/C/L) is not IN LINE with its net — the wire "
+                "runs on the axis PERPENDICULAR to the body at a terminal, so the "
+                "part hangs off the net's elbow or is strung sideways off a trunk "
+                "instead of sitting in its path. Covers both the L-bend corner and "
+                "a bus running along a pin row (e.g. bypass caps under a horizontal "
+                "rail). Align the part with the net (stubs parallel to the body)"},
     {"id": "bridged_drop", "severity": "WARNING", "scope": "sheet",
      "summary": "Wire interior crosses a third part's pin (possible bridge)"},
     {"id": "duplicate_wire", "severity": "INFO", "scope": "sheet",
@@ -314,31 +340,36 @@ def _wire_axes_at(s, px, py):
 
 
 def _check_passive_on_corner(s):
-    """A passive (R/C/L) should sit IN LINE with its net, not on the elbow of a
-    corner. Flag a 2-pin passive whose two pin-stubs run on PERPENDICULAR axes —
-    one pin fed by a horizontal wire, the other by a vertical wire — so the net
-    enters along one axis and leaves along the other, with the component body
-    forming one leg of an L-bend (the user's "passive on the corner of a net"
-    defect; e.g. the R30–R33 ladder where each resistor drops vertically into the
-    bus and feeds out horizontally).
+    """A 2-pin RLC passive (R/C/L) should sit IN LINE with its net: the wire enters
+    one terminal along the body axis, passes through the part, and leaves the other
+    terminal along the SAME axis. Flag a passive where the net instead runs on the
+    axis PERPENDICULAR to the body at either terminal — the part is hung off the
+    net's elbow or strung sideways off a trunk rather than placed in its path. Two
+    forms of the same defect, now both caught:
+      - the corner/elbow: one terminal fed horizontally, the other vertically, so
+        the body is one leg of an L-bend (e.g. a pull-down dropped into a bus and
+        fed out sideways);
+      - the through-trunk: a bus runs straight ALONG one terminal's row/column
+        (perpendicular to the body) with the part tapped off it, e.g. the
+        C13/C18/C14/C19 bypass caps strung under a horizontal +rail that runs
+        across their top pins.
 
-    A correctly-placed passive has both stubs COLLINEAR with its body: a vertical
-    body has vertical wires off both ends, a horizontal body has horizontal wires
-    — the net runs straight through the part. Perpendicular stubs mean the part is
-    hung on the bend instead. The fix is to align the part with the net (stubs
-    parallel to the body) and route the 90° turn clear of the terminals.
+    Correctly placed: BOTH terminals carry wire only ALONG the body axis (a
+    vertical part has vertical stubs both ends; a horizontal part, horizontal) —
+    the net is collinear with the part and runs straight through it. The fix is to
+    align the part with its net (stubs parallel to the body) and route any 90deg
+    turn / trunk clear of the terminals.
 
-    Measured by wire MATERIAL on each axis at each pin (endpoint or interior, via
-    _wire_axes_at), so it sees the bend regardless of whether the perpendicular
-    arm is a separate stub, a bus passing the pin, or the body itself.
+    Detected via wire MATERIAL on each axis at each pin (endpoint OR interior, via
+    _wire_axes_at), so it sees the perpendicular net whether it's a stub, a bus
+    passing the pin, or the body itself. Body axis from the two pins' positions.
 
     Skipped, to stay false-positive-free:
-      - a pin with wire on BOTH axes already (a true junction/T at the terminal —
-        a multi-way node, reported by other rules, not a simple elbow);
-      - a pin with NO wire (floating / unrouted — not this rule's concern);
-      - non-passives (this is a 2-pin R/C/L placement rule). DNP isn't carried
-        into the sheet geometry, and a DNP passive is still DRAWN, so it's judged
-        on its drawn placement like any other part.
+      - a part with no determinable body axis (pins not axis-aligned) or a pin with
+        no wire at all (floating / unrouted — not this rule's concern);
+      - non-passives (this is a 2-pin R/C/L placement rule). DNP isn't carried into
+        the sheet geometry, and a DNP passive is still DRAWN, so it's judged on its
+        drawn placement like any other part.
     """
     out = []
     for (ref, unit), p in s._placed.items():
@@ -346,19 +377,27 @@ def _check_passive_on_corner(s):
             continue
         if p.refdes[:1].upper() not in PASSIVE_PREFIXES:
             continue
-        # The single stub axis at each pin (None if it's floating or already a
-        # both-axes junction — neither is a clean elbow we attribute to the part).
-        pin_axis = []
-        for (px, py) in p.pins.values():
-            ax = _wire_axes_at(s, px, py)
-            pin_axis.append(next(iter(ax)) if len(ax) == 1 else None)
-        if set(pin_axis) == {"H", "V"}:        # one pin H, the other V → elbow
+        (x1, y1), (x2, y2) = p.pins.values()
+        if abs(x1 - x2) < _TOL:
+            body, perp = "V", "H"
+        elif abs(y1 - y2) < _TOL:
+            body, perp = "H", "V"
+        else:
+            continue  # body not axis-aligned — can't reason about in-line-ness
+        # The net is "across" the part if wire runs on the perpendicular axis at
+        # EITHER terminal. (A pin with no wire contributes nothing — floating, not
+        # this rule's concern.)
+        perp_pins = [n for n, (px, py) in p.pins.items()
+                     if perp in _wire_axes_at(s, px, py)]
+        if perp_pins:
             out.append(LintIssue("WARNING", "passive_on_corner",
-                f"{p.refdes} sits on a wire corner - its two terminals are fed on "
-                f"perpendicular axes (one horizontal, one vertical), so the net "
-                f"bends across the part; align {p.refdes} in line with the net "
-                f"(stubs parallel to the body) and route the 90deg turn clear of "
-                f"the pins", [p.refdes]))
+                f"{p.refdes} is not in line with its net - the wire runs "
+                f"{'horizontally' if perp == 'H' else 'vertically'} across "
+                f"terminal{'s' if len(perp_pins) > 1 else ''} "
+                f"{', '.join(perp_pins)} (perpendicular to the {body}-oriented "
+                f"body), so the part hangs off the net instead of sitting in its "
+                f"path; align {p.refdes} with the net (stubs parallel to the body) "
+                f"and route the turn/trunk clear of the pins", [p.refdes]))
     return out
 
 
@@ -436,6 +475,11 @@ def _check_power_orientation(s):
 
 # --- layout-quality checks (general placement/routing conventions) ----------
 MIN_SYMBOL_GAP = 200     # mil — min clear gap between two component pin-boxes
+# Diagonal-crowding threshold: two parts separated on BOTH axes (so cramped_spacing,
+# which needs single-axis overlap, can't see them) but whose true clear body gap is
+# below this read as a cramped staircase. Set above the well-spaced banks' pitch
+# (~310 mil clear) and above the cramped ladders (~210-230) so it splits them.
+MIN_CLUSTER_GAP = 300    # mil — min clear gap for diagonally-adjacent parts
 OFF_CENTER_FRAC = 0.18   # content center may stray this fraction of page size
 _BODY_MARGIN = 60        # mil — inflate thin (2-pin) part boxes for crossing test
 
@@ -637,6 +681,63 @@ def _check_power_borders_component(s):
     return out
 
 
+# A power/GND glyph should float in clear space — a full grid unit of nothing on
+# every side except where its own stub connects. Below this it reads as touching
+# its surroundings (the user's "GND should have a unit of space on all sides").
+# Scope: glyph-vs-SYMBOL clearance — another power glyph or the page edge. (A wire
+# running alongside a rail tap is normal and intentional in a dense schematic, so
+# foreign wires are NOT treated as crowders here — that would false-positive on
+# every rail tap. Wires hemming a glyph in are a symptom of a cramped layout, which
+# cramped_cluster / cramped_spacing catch on the parts themselves.)
+POWER_SIDE_CLEAR = 100   # mil — one grid unit of required clear space
+
+
+def _check_power_clearance_all_sides(s):
+    """A GND/power glyph must have a clear unit of space around it so it doesn't
+    read as touching another SYMBOL. Flag a glyph whose POWER_SIDE_CLEAR-padded box
+    is intruded by:
+      - ANOTHER power glyph's box (two grounds/rails crammed side by side — e.g.
+        the +3V3 sitting on top of R60/R61's rail glyphs), or
+      - the page edge (the glyph pressed into the border).
+
+    Complements power_borders_component (glyph-vs-component-BODY): together they
+    require a power symbol to stand clear of every drawn thing — parts, other power
+    glyphs, and the frame. Foreign signal/rail wires are intentionally NOT counted
+    (a wire alongside a rail tap is normal); a glyph hemmed in by wires is a cramped
+    LAYOUT, surfaced by cramped_cluster/cramped_spacing on the parts."""
+    out = []
+    glyphs = [lb for lb in s._labels
+              if lb.kind == "power" and (getattr(lb, "body_box", None) or lb.box)]
+    # page usable area (same basis as offpage_text), for the edge check
+    paper = getattr(s, "_chosen_paper", None) or s.paper
+    W, H = s._PAPER_MIL.get(paper, (0, 0))
+    margin = getattr(s, "_PAPER_MARGIN", {}).get(paper, 0) if W else 0
+    for lb in glyphs:
+        gb = getattr(lb, "body_box", None) or lb.box
+        pad = (gb[0] - POWER_SIDE_CLEAR, gb[1] - POWER_SIDE_CLEAR,
+               gb[2] + POWER_SIDE_CLEAR, gb[3] + POWER_SIDE_CLEAR)
+        what = None
+        # (1) another power glyph's box within the clearance unit
+        for other in glyphs:
+            if other is lb:
+                continue
+            ob = getattr(other, "body_box", None) or other.box
+            if _gap_between(gb, ob) < POWER_SIDE_CLEAR:
+                what = f"the {other.name!r} glyph"
+                break
+        # (2) page edge inside the clearance unit
+        if what is None and W and (pad[0] < margin or pad[1] < margin
+                                   or pad[2] > W - margin or pad[3] > H - margin):
+            what = "the page edge"
+        if what is not None:
+            out.append(LintIssue("WARNING", "power_clearance_all_sides",
+                f"power {lb.name!r} at ({lb.x},{lb.y}) has no clear space on all "
+                f"sides ({what} sits within {POWER_SIDE_CLEAR} mil of its glyph); "
+                f"give it a full grid of clearance so it doesn't read as touching "
+                f"another symbol", [lb.name]))
+    return out
+
+
 def _check_wire_through_body(s):
     """A net should tap a pin END, not cross a component body. Flag a wire whose
     interior passes through a part's (inflated) pin-box without ending on one of
@@ -660,6 +761,74 @@ def _check_wire_through_body(s):
                     f"wire {a}->{b} crosses {part.refdes} body (route the net to a "
                     f"pin end, not through the symbol)", [part.refdes]))
                 break
+    return out
+
+
+# Minimum clear gap (mil) between a component body and a wire that does NOT connect
+# to it — below this the wire reads as CRAMMED against / touching the symbol. Set to
+# HALF a grid (50): a body that genuinely abuts a foreign net (0-49 mil) is flagged,
+# but the geometrically-forced spacing of a passive in a 200-mil pin-drop field is
+# NOT. (A 90-mil-wide body between drops 200 mil apart can clear each neighbour by at
+# most (200-90)/2 = 55 mil — so a 100-mil threshold was UNSATISFIABLE there and
+# flagged tidy, normal ladders. 55 > 50, so those now pass; only a real near-touch
+# trips it.) A gap of exactly 0 (wire crossing the body) is wire_through_body's job.
+BODY_WIRE_CLEAR = 50   # mil — half a grid (genuine near-touch, not pitch-limited)
+
+
+def _check_body_wire_clearance(s):
+    """A component body must keep a clear grid unit from any wire that ISN'T one of
+    its own connections. Flag a part whose drawn body sits 0 < gap < BODY_WIRE_CLEAR
+    from a non-connecting wire that runs alongside it (the wire's span overlaps the
+    body's extent on the perpendicular axis) — the "resistor too close to the net"
+    case: a bus/net column crammed against the symbol with no breathing room.
+
+    Distinct from its neighbours:
+      - wire_through_body: a wire whose interior CROSSES the body (gap 0 / overlap).
+        This rule deliberately starts ABOVE 0 so it never double-reports that.
+      - bridged_drop: a wire interior crossing a third part's PIN.
+    Exemptions (false-positive guards):
+      - any wire touching one of the part's OWN pins is a connection, never a
+        crowder, even though it reaches the body edge;
+      - a gap of exactly one grid (>= BODY_WIRE_CLEAR) is acceptable spacing.
+    Measured against the TRUE drawn body (graphic_box) so the gap is real clear
+    space, not pin-extent."""
+    out = []
+    for (ref, unit), part in s._placed.items():
+        if part.is_power or not part.pins:
+            continue
+        gb = part.graphic_box if getattr(part, "graphic_box", None) else _part_bbox(part)
+        bx0, by0, bx1, by1 = gb
+        own = {(round(px), round(py)) for (px, py) in part.pins.values()}
+        best = None                     # (gap, axis, coord)
+        for (a, b) in s._wires:
+            if (round(a[0]), round(a[1])) in own or (round(b[0]), round(b[1])) in own:
+                continue                # the part's own connection
+            if abs(a[0] - b[0]) < _TOL:                       # vertical wire at x
+                wx = a[0]
+                lo, hi = min(a[1], b[1]), max(a[1], b[1])
+                if hi < by0 - _TOL or lo > by1 + _TOL:
+                    continue            # doesn't run alongside the body
+                if bx0 - _TOL <= wx <= bx1 + _TOL:
+                    continue            # inside the footprint -> wire_through_body's case
+                gap = (wx - bx1) if wx > bx1 else (bx0 - wx)
+                if best is None or gap < best[0]:
+                    best = (gap, "column", round(wx))
+            elif abs(a[1] - b[1]) < _TOL:                     # horizontal wire at y
+                wy = a[1]
+                lo, hi = min(a[0], b[0]), max(a[0], b[0])
+                if hi < bx0 - _TOL or lo > bx1 + _TOL:
+                    continue
+                if by0 - _TOL <= wy <= by1 + _TOL:
+                    continue
+                gap = (wy - by1) if wy > by1 else (by0 - wy)
+                if best is None or gap < best[0]:
+                    best = (gap, "row", round(wy))
+        if best is not None and 0 < best[0] < BODY_WIRE_CLEAR:
+            gap, axis, coord = best
+            out.append(LintIssue("WARNING", "body_wire_clearance",
+                f"{part.refdes} body sits {gap:.0f} mil from a non-connecting wire "
+                f"({axis} {coord}) running alongside it (< {BODY_WIRE_CLEAR}-mil "
+                f"gap); move the part a grid clear of the net", [part.refdes]))
     return out
 
 
@@ -748,6 +917,45 @@ def _check_cramped_spacing(s):
                 out.append(LintIssue("WARNING", "cramped_spacing",
                     f"{pa.refdes} and {pb.refdes} are only {int(gap)} mil apart "
                     f"(<{MIN_SYMBOL_GAP}); add spacing", [pa.refdes, pb.refdes]))
+    return out
+
+
+def _check_cramped_cluster(s):
+    """Components packed too tightly on a DIAGONAL. cramped_spacing only fires
+    when two part boxes OVERLAP on one axis and are close on the other; a stepped
+    staircase (each part offset in BOTH x and y from its neighbour, e.g. the
+    R30-R33 pull-down ladder) is separated on both axes, so that check never sees
+    it — yet it reads just as cramped. Flag a pair that is separated on BOTH axes
+    (the case cramped_spacing provably skips) whose true clear body gap is below
+    MIN_CLUSTER_GAP. The fix is to spread the parts out (e.g. lay the ladder in a
+    straight column/row at a readable pitch) so each has clear space all round.
+
+    Reports each cramped part once, naming its nearest neighbour, so a long
+    staircase yields one row per part rather than O(n^2) pair spam."""
+    out = []
+    parts = [(p.refdes, (p.graphic_box if getattr(p, "graphic_box", None)
+                         else _part_bbox(p)))
+             for (_r, _u), p in s._placed.items() if not p.is_power and p.pins]
+    for i, (ra, ba) in enumerate(parts):
+        best = None
+        for j, (rb, bb) in enumerate(parts):
+            if i == j or ra == rb:
+                continue
+            # only the diagonal case: separated on BOTH axes (else cramped_spacing
+            # owns it). sep>0 on an axis ⇒ boxes don't overlap on that axis.
+            sepx = max(ba[0] - bb[2], bb[0] - ba[2])
+            sepy = max(ba[1] - bb[3], bb[1] - ba[3])
+            if sepx <= 0 or sepy <= 0:
+                continue
+            g = _gap_between(ba, bb)
+            if best is None or g < best[0]:
+                best = (g, rb)
+        if best is not None and best[0] < MIN_CLUSTER_GAP:
+            out.append(LintIssue("WARNING", "cramped_cluster",
+                f"{ra} is only {best[0]:.0f} mil (diagonal) from {best[1]} "
+                f"(<{MIN_CLUSTER_GAP}); the parts are stacked in a tight staircase "
+                f"- spread them out so each has a readable gap on every side",
+                [ra, best[1]]))
     return out
 
 
@@ -1148,9 +1356,12 @@ ALL_CHECKS = (_check_off_grid, _check_diagonal, _check_out_of_bounds,
               _check_power_straddles_net, _check_stub_t_short,
               _check_ground_on_top, _check_power_stub_side,
               _check_power_borders_component,
+              _check_power_clearance_all_sides,
               _check_wire_through_body,
+              _check_body_wire_clearance,
               _check_pin_wire_crosses_body, _check_off_center,
-              _check_cramped_spacing, _check_decap_grouping,
+              _check_cramped_spacing, _check_cramped_cluster,
+              _check_decap_grouping,
               _check_passive_declutter, _check_label_overlap,
               _check_label_over_symbol, _check_label_symbol_clearance,
               _check_wire_through_port,
@@ -1328,6 +1539,40 @@ def main() -> int:
     print("-" * 50)
     print(f"TOTAL: {total['ERROR']} ERROR, {total['WARNING']} WARNING, {total['INFO']} INFO")
     return 1 if total["ERROR"] else 0
+
+
+# ---------------------------------------------------------------------------
+# Rule-satisfiability invariant (A5)
+# ---------------------------------------------------------------------------
+# Hard lesson: a WARNING-level geometric rule whose threshold is geometrically
+# IMPOSSIBLE to satisfy is worse than no rule — it makes the closed loop churn
+# forever chasing a target no layout can hit. body_wire_clearance once used a
+# 100-mil threshold, but a passive body (PASSIVE_BODY_W mil wide) placed in a
+# standard pin-drop field (D_PITCH mil apart) can clear each neighbouring drop by
+# at most (DPITCH - body)/2 mil — so 100 was unsatisfiable and flagged tidy
+# ladders. Encode that bound here so a future threshold bump that re-breaks it is
+# caught at import (and by test_rule_satisfiability), not in a churning live loop.
+#
+# Principle for any new geometric clearance rule: its threshold must be <= the
+# clearance ACHIEVABLE given the grid/pitch the design is built on. If you can't
+# state an achievable bound, the rule isn't well-posed.
+_STD_PIN_PITCH = 200      # mil — the chip pin / drop-column pitch the builders use
+PASSIVE_BODY_W = 90       # mil — drawn width of a 2-pin passive body (R/C/L glyph)
+_MAX_ACHIEVABLE_BODY_WIRE_CLEAR = (_STD_PIN_PITCH - PASSIVE_BODY_W) / 2  # = 55
+
+
+def _assert_rules_satisfiable() -> None:
+    """Fail loudly if a clearance constant encodes an unsatisfiable rule."""
+    assert BODY_WIRE_CLEAR <= _MAX_ACHIEVABLE_BODY_WIRE_CLEAR, (
+        f"body_wire_clearance threshold ({BODY_WIRE_CLEAR} mil) exceeds the max "
+        f"achievable clearance ({_MAX_ACHIEVABLE_BODY_WIRE_CLEAR:.0f} mil) for a "
+        f"{PASSIVE_BODY_W}-mil body in a {_STD_PIN_PITCH}-mil pin field — the rule "
+        f"would be UNSATISFIABLE and make the fix loop churn. Lower the threshold "
+        f"or widen the pitch."
+    )
+
+
+_assert_rules_satisfiable()   # checked at import — a bad threshold can't ship
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ import type { DiffMode } from "../components/DiffPanes";
 import { FindingsSummary } from "../components/FindingsSummary";
 import { I } from "../components/Icon";
 import { PageHeader } from "../components/PageHeader";
+import { RoundsPicker } from "../components/RoundsPicker";
 import { WorkflowSection } from "../components/WorkflowSection";
 import { RulesSection } from "../components/RulesSection";
 import type { Finding, FindingAction, FindingsReport, FixQueueEntry,
@@ -72,6 +73,8 @@ export function Review({
 }: Props) {
   const [report, setReport] = useState<FindingsReport | null>(null);
   const [runState, setRunState] = useState<RunState>("idle");
+  // How many rounds the closed-loop review may run (1–10; 3 recommended).
+  const [reviewRounds, setReviewRounds] = useState(3);
   const [queue, setQueue] = useState<Map<string, FixQueueEntry>>(new Map());
 
   const refresh = useCallback(async () => {
@@ -153,7 +156,7 @@ export function Review({
     setRunState("running");
     setHealth({ text: "loop starting…", tone: "neutral" });
     try {
-      const { loop_id } = await api.loopStart();
+      const { loop_id } = await api.loopStart(reviewRounds);
       setActiveLoopId(loop_id);
       // The loop can finish almost instantly when the design already passes
       // every rule (0 findings → 0 rounds → all_clear in ~100ms). In that case
@@ -219,6 +222,11 @@ export function Review({
           >
             <I.Play size={14} /> Design review
           </button>
+          <RoundsPicker
+            value={reviewRounds}
+            onChange={setReviewRounds}
+            disabled={runState === "running"}
+          />
           <button
             onClick={refresh}
             className="h-9 px-3 inline-flex items-center gap-2 rounded-md border border-edge text-ink-700 text-sm hover:border-ink-300"

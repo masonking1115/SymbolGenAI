@@ -209,8 +209,11 @@ def build_power() -> tuple[AltiumSheet, object]:
     #      The window between the OUT bus (6400) and the J-cluster drop column
     #      (COMMON_COL_X=8400) only holds four clean columns at ≥400 pitch:
     #      6800 (clear of the LDO_PG riser at 6700) .. 8000 (clear of 8400).
-    # Place caps at y = OUT_Y - 100 (pin1 top at OUT_Y, pin2 goes down).
-    C_OUT_DEC_Y = OUT_Y - 100   # 5500
+    # Drop the bank so pin1 sits 200 BELOW the OUT trunk and reaches it with a
+    # vertical stub (collinear with the V body) — the trunk no longer runs
+    # horizontally THROUGH pin1 (passive_on_corner), and C19's body clears the
+    # SNS riser at SNS_SENSE_X. pin2 still drops to the GND rail.
+    C_OUT_DEC_Y = OUT_Y - 300   # 5300
     OUT_CAP_BANK = [
         ("C13", OUT_BUS_X + 400),    # 6800 — 22µF bulk
         ("C18", OUT_BUS_X + 800),    # 7200 — 22µF bulk (parallel → raises COUT)
@@ -297,7 +300,7 @@ def build_power() -> tuple[AltiumSheet, object]:
     # Does (6300,5800)→(6800,5800) cross anything? OUT_BUS is at y=4800..5600 at x=6400.
     # The OUT_BUS has wire from (6400,5200) to (6400,5600). PG wire at y=5800 — different y. Safe.
 
-    R13_CX = PG_TAP_X + 400   # 6400 — spaced clear of R12 (was +200, too cramped)
+    R13_CX = PG_TAP_X + 600   # 6600 — spaced clear of R12 (diagonal gap ~453 > 300)
     place("R13", R13_CX, PG_Y, orientation=3)
     # orient=3 -> pin2=(6300,5800) on the PG-stub side, pin1=(6500,5800) outward.
     s.wire(PG_TAP_X, PG_Y, R13_CX - 100, PG_Y)        # 6000 -> 6300 (R13 pin2)
@@ -305,7 +308,7 @@ def build_power() -> tuple[AltiumSheet, object]:
     # port body never lands on the C13/C14 value text (the old glob). The body
     # extends east (side="right") into open space; the wire ends at its west
     # edge from below, so it is not impaled.
-    LDO_PG_X = R13_CX + 300            # 6700 (clear of SNS jog column 6500)
+    LDO_PG_X = R13_CX + 300            # 6900 (clear of SNS jog column 6500)
     LDO_PG_Y = RAIL_3V3_Y - 600        # 6500 (above caps, below the +3V3 rail)
     s.wire(R13_CX + 100, PG_Y, LDO_PG_X, PG_Y)        # 6500 -> 6700
     s.wire(LDO_PG_X, PG_Y, LDO_PG_X, LDO_PG_Y)        # up 5800 -> 6500

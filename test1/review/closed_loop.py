@@ -41,9 +41,26 @@ NETLIST_DIR = PROJECT_DIR / "netlist"
 SNAPSHOT_ROOT = OUT_DIR / "render_snapshots"
 LOOPS_STATE_DIR = PROJECT_DIR / "gui" / "state" / "loops"
 
-MAX_ROUNDS = 10
+MAX_ROUNDS = 10              # hard ceiling on review rounds
+MAX_ROUNDS_DEFAULT = 3       # recommended default the GUI pre-selects
 PLATEAU_STREAK = 2
 WEB_CALL_BUDGET = 50         # parts + knowledge fetches across one loop
+# Per-sub-agent watchdog: a spawned `claude -p` agent (apply / lint_fix / …) can
+# block at startup and never terminate, which would otherwise hang the loop on its
+# `while run.status == "running"` wait forever. Cap each sub-run; on timeout cancel
+# it and mark the action failed so the round still completes. Generous so a
+# genuinely-working agent is never killed mid-edit.
+SUBRUN_TIMEOUT_S = 300
+
+
+def clamp_rounds(n: int | None, default: int = MAX_ROUNDS_DEFAULT) -> int:
+    """Clamp a user-supplied review round count to [1, MAX_ROUNDS]; None -> default."""
+    if n is None:
+        return default
+    try:
+        return max(1, min(MAX_ROUNDS, int(n)))
+    except (TypeError, ValueError):
+        return default
 
 
 # ---- Dataclasses --------------------------------------------------------
@@ -73,6 +90,7 @@ class Round:
     build_status: str = ""           # "ok" | "fail" | "skipped"
     lint_summary: dict | None = None
     sim_results: list[dict] = field(default_factory=list)
+    note: str = ""                   # e.g. a propose-verify-commit revert message
 
 
 @dataclass
@@ -80,8 +98,12 @@ class Loop:
     loop_id: str
     started_at: float
     status: str = "running"      # "running" | "all_clear" | "plateau" |
-                                 #   "max_rounds" | "cancelled" | "error"
+                                 #   "max_rounds" | "cancelled" | "error" |
+                                 #   "reverted" (a round regressed the build; rolled back)
     round: int = 0
+    # How many rounds this loop may run before stopping (user-chosen in the GUI,
+    # default MAX_ROUNDS_DEFAULT; clamped to [1, MAX_ROUNDS] at creation).
+    max_rounds: int = MAX_ROUNDS
     rounds: list[Round] = field(default_factory=list)
     findings_initial: list[Finding] = field(default_factory=list)
     findings_current: list[Finding] = field(default_factory=list)
@@ -436,6 +458,28 @@ async def emit(L: Loop, event: str, **data) -> None:
 
 # ---- Sub-agent dispatch wrappers (call into agent.py) -------------------
 
+async def _await_subrun(L: Loop, run, action: Action) -> str:
+    """Wait for a spawned sub-agent run to finish, honoring loop-cancel AND a
+    startup-hang watchdog. Delegates to agent.await_run_bounded (the single shared
+    watchdog, A3); sets action.status/finished_at for the cancelled/timeout cases
+    so the caller can just return on those. Returns "ok"/"fail"/"cancelled"/
+    "timeout"."""
+    import sys as _sys
+    _sys.path.insert(0, str(PROJECT_DIR / "gui" / "backend"))
+    import agent as agent_mod
+    disp = await agent_mod.await_run_bounded(
+        run, timeout_s=SUBRUN_TIMEOUT_S, should_cancel=lambda: L.cancelled)
+    if disp in ("cancelled", "timeout"):
+        agent_mod.cancel_run(run.run_id)   # idempotent; ensures the proc is gone
+        action.status = "cancelled" if disp == "cancelled" else "fail"
+        action.finished_at = time.time()
+        if disp == "timeout":
+            action.summary = (f"{action.kind}: timed out after {SUBRUN_TIMEOUT_S}s "
+                              f"(agent did not respond) — cancelled")
+        return disp
+    return "ok" if run.status == "ok" else "fail"
+
+
 async def _dispatch_action(L: Loop, action: Action) -> None:
     """Run one Action to completion. Updates action.status + summary in place."""
     import sys
@@ -478,14 +522,10 @@ async def _dispatch_action(L: Loop, action: Action) -> None:
         run = await agent_mod.start_apply_pass()
         action.agent_run_id = run.run_id
         L.sub_runs.append(run.run_id)
-        while run.status == "running":
-            if L.cancelled:
-                agent_mod.cancel_run(run.run_id)
-                action.status = "cancelled"
-                action.finished_at = time.time()
-                return
-            await asyncio.sleep(0.5)
-        action.status = "ok" if run.status == "ok" else "fail"
+        disp = await _await_subrun(L, run, action)
+        if disp in ("cancelled", "timeout"):
+            return
+        action.status = disp
         action.summary = f"apply pass: {run.status} ({len(action.targets)} targets)"
 
     elif action.kind == "lint_fix":
@@ -493,17 +533,13 @@ async def _dispatch_action(L: Loop, action: Action) -> None:
         from .closed_loop_helpers import _read_lint_failures
         failures = _read_lint_failures()
         run = await agent_mod.start_lint_fix_pass(failures, round_no=L.round,
-                                                  max_rounds=MAX_ROUNDS)
+                                                  max_rounds=L.max_rounds)
         action.agent_run_id = run.run_id
         L.sub_runs.append(run.run_id)
-        while run.status == "running":
-            if L.cancelled:
-                agent_mod.cancel_run(run.run_id)
-                action.status = "cancelled"
-                action.finished_at = time.time()
-                return
-            await asyncio.sleep(0.5)
-        action.status = "ok" if run.status == "ok" else "fail"
+        disp = await _await_subrun(L, run, action)
+        if disp in ("cancelled", "timeout"):
+            return
+        action.status = disp
         action.summary = f"lint_fix: {run.status}"
 
     elif action.kind == "sim":
@@ -554,6 +590,43 @@ async def _dispatch_action(L: Loop, action: Action) -> None:
 
 
 _VENV_PY = Path(r"C:\Users\mking\Downloads\altium_spike\.venv\Scripts\python.exe")
+
+
+# Propose-verify-commit safety net for the review loop (A1). A round's apply/fix
+# agents edit the declarative design in place; if a round leaves the build BROKEN
+# (validation short / non-zero exit) when it was buildable before, we restore the
+# pre-round snapshot so the loop can't ship a regression. (Unlike the Generator
+# loop we don't gate on warning COUNT here — a structural apply legitimately
+# changes findings — only on "the build must not become unbuildable".)
+_EDIT_DIRS = [NETLIST_DIR, PROJECT_DIR / "altium"]
+_EDIT_GLOBS = ["*.yaml", "*.yml", "build_*.py"]
+
+
+def _design_snapshot() -> dict[str, str]:
+    snap: dict[str, str] = {}
+    for d in _EDIT_DIRS:
+        if not d.exists():
+            continue
+        for pat in _EDIT_GLOBS:
+            for p in d.glob(pat):
+                try:
+                    snap[str(p)] = p.read_text(encoding="utf-8")
+                except OSError:
+                    pass
+    return snap
+
+
+def _restore_snapshot(snap: dict[str, str]) -> list[str]:
+    restored: list[str] = []
+    for path, text in snap.items():
+        p = Path(path)
+        try:
+            if not p.exists() or p.read_text(encoding="utf-8") != text:
+                p.write_text(text, encoding="utf-8")
+                restored.append(p.name)
+        except OSError:
+            pass
+    return restored
 
 
 async def _rebuild_project() -> tuple[str, dict | None]:
@@ -629,7 +702,7 @@ async def run_loop(loop_id: str) -> None:
         await emit(L, "eval_done", findings=len(L.findings_initial))
         await emit(L, "loop_start", findings=len(L.findings_initial))
 
-        for r in range(1, MAX_ROUNDS + 1):
+        for r in range(1, L.max_rounds + 1):
             if L.cancelled:
                 break
             if not L.findings_current:
@@ -644,6 +717,11 @@ async def run_loop(loop_id: str) -> None:
             # Fingerprint the netlist BEFORE this round's actions so we can scope
             # the re-eval to the sheets/components the round actually changed.
             fp_before = _netlist_fingerprint()
+            # Snapshot the editable design + whether it was buildable, so a round
+            # that breaks the build (introduces a short) can be rolled back (A1).
+            round_snapshot = _design_snapshot()
+            was_buildable = (R.n == 1) or all(
+                (rr.build_status in ("ok", "", "skipped")) for rr in L.rounds[:-1])
 
             for action in plan_actions(L.findings_current):
                 if L.cancelled:
@@ -685,6 +763,24 @@ async def run_loop(loop_id: str) -> None:
                         R.build_status, R.lint_summary = await _rebuild_project()
                         await emit(L, "build_end", round=r,
                                    status=R.build_status, lint=R.lint_summary)
+
+                # PROPOSE-VERIFY-COMMIT (A1): if this round broke a build that was
+                # OK before (a regression — most importantly a net SHORT), roll the
+                # round's edits back, rebuild from the snapshot, and stop. The loop
+                # may improve or hold, never leave the design unbuildable.
+                if R.build_status == "fail" and was_buildable and not L.cancelled:
+                    restored = _restore_snapshot(round_snapshot)
+                    await emit(L, "build_start", round=r)
+                    R.build_status, R.lint_summary = await _rebuild_project()
+                    await emit(L, "build_end", round=r,
+                               status=R.build_status, lint=R.lint_summary)
+                    R.note = (f"round {r} regressed the build (became unbuildable) — "
+                              f"reverted {len(restored)} file(s) to the pre-round "
+                              f"state and stopped")
+                    await emit(L, "round_reverted", round=r,
+                               restored=len(restored), note=R.note)
+                    L.status = "reverted"
+                    break
 
             # Scope the re-eval to the impacted area. Compare the netlist after the
             # build to fp_before; only re-check rules whose subject is on a changed
@@ -920,10 +1016,12 @@ def write_findings_json(L: Loop) -> None:
 
 
 
-def start_loop() -> str:
-    """Allocate a new Loop, register it, kick off the run task."""
+def start_loop(max_rounds: int | None = None) -> str:
+    """Allocate a new Loop, register it, kick off the run task. max_rounds is the
+    user's chosen round budget (clamped to [1, MAX_ROUNDS]; None -> the default)."""
     loop_id = uuid.uuid4().hex[:8]
-    L = Loop(loop_id=loop_id, started_at=time.time())
+    L = Loop(loop_id=loop_id, started_at=time.time(),
+             max_rounds=clamp_rounds(max_rounds))
     _LOOPS[loop_id] = L
     asyncio.create_task(run_loop(loop_id))
     return loop_id
