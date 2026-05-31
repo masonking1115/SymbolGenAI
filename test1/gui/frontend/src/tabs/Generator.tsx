@@ -136,7 +136,9 @@ export function Generator({
       setLint(r);
       const c = r.counts;
       const tone = c.ERROR > 0 ? "err" : c.WARNING > 0 ? "warn" : "ok";
-      setHealth({ text: `${c.ERROR}E · ${c.WARNING}W · ${c.INFO}I`, tone });
+      // Prefix the source so this reads distinctly from the Review tab's
+      // rule/semantic findings (different measures of "status").
+      setHealth({ text: `lint: ${c.ERROR}E · ${c.WARNING}W · ${c.INFO}I`, tone });
     } catch {
       // ignore
     }

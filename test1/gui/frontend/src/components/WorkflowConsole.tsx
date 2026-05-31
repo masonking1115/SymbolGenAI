@@ -12,8 +12,10 @@
 import { useEffect, useRef, useState } from "react";
 import { subscribeAgent } from "../api";
 import { I } from "./Icon";
+import { LiveConsole } from "./LiveConsole";
+import type { LoopRound } from "../types";
 
-export type ConsoleView = "steps" | "raw";
+export type ConsoleView = "steps" | "agents" | "raw";
 
 export interface ActiveAgent {
   id: string;            // agent_run_id
@@ -121,9 +123,81 @@ function StructuredAgentPanel({ agent }: { agent: ActiveAgent }) {
   );
 }
 
+// ---- "All agents" roll-up ------------------------------------------------
+// Every agent spawned across the WHOLE loop (all rounds), newest first — one
+// scannable list with a round tag + status badge, each click-to-expand to its
+// live (and post-hoc) reasoning stream. Complements the per-round Steps view.
+interface FlatAgent {
+  id: string; kind: string; status: string; targets: string[];
+  round: number; started_at: number;
+}
+
+function flattenAgents(rounds: LoopRound[]): FlatAgent[] {
+  const out: FlatAgent[] = [];
+  for (const r of rounds) {
+    for (const a of r.actions ?? []) {
+      if (!a.agent_run_id) continue;       // only real sub-agents (eval spawns none)
+      out.push({
+        id: a.agent_run_id, kind: a.kind, status: a.status,
+        targets: a.targets ?? [], round: r.n, started_at: a.started_at,
+      });
+    }
+  }
+  // Newest first; de-dupe by run id (an action can appear across summary refreshes).
+  const seen = new Set<string>();
+  return out
+    .sort((x, y) => (y.started_at || 0) - (x.started_at || 0))
+    .filter((a) => (seen.has(a.id) ? false : (seen.add(a.id), true)));
+}
+
+function AllAgentsRow({ a }: { a: FlatAgent }) {
+  const running = a.status === "running";
+  const [open, setOpen] = useState(running);
+  useEffect(() => { if (running) setOpen(true); }, [running]);
+  const dot = a.status === "ok" ? "●" : a.status === "fail" ? "✗"
+    : a.status === "cancelled" ? "⊗" : "◐";
+  const tone = a.status === "ok" ? "text-ok" : a.status === "fail" ? "text-err"
+    : a.status === "cancelled" ? "text-ink-500" : "text-violet-600";
+  return (
+    <div className="rounded border border-edge bg-white">
+      <button onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center gap-1.5 px-2 py-1.5 text-[11.5px] text-left hover:bg-rail/30">
+        <span className={"transition-transform text-ink-400 " + (open ? "rotate-180" : "")}>
+          <I.Caret size={10} />
+        </span>
+        {running
+          ? <span className="w-2.5 h-2.5 rounded-full border-2 border-ink-300 border-t-violet-500 animate-spin" />
+          : <span className={tone}>{dot}</span>}
+        <span className="font-medium text-ink-800">{a.kind}</span>
+        <span className="text-[9.5px] px-1 rounded-full bg-ink-100 text-ink-500">round {a.round}</span>
+        {a.targets.length > 0 && (
+          <span className="font-mono text-[10px] text-ink-400 truncate">
+            {a.targets.slice(0, 3).join(", ")}{a.targets.length > 3 ? "…" : ""}
+          </span>
+        )}
+        <span className={"ml-auto font-mono text-[9.5px] " + tone}>{a.status}</span>
+        <span className="font-mono text-[9.5px] text-ink-300">{a.id.slice(0, 6)}</span>
+      </button>
+      {open && (
+        <div className="px-2 pb-2">
+          <LiveConsole
+            agentRunId={a.id}
+            label={`${a.kind} · round ${a.round} · ${a.status}`}
+            idlePlaceholder={running ? "waiting for agent output…" : "(agent finished — reasoning below)"}
+            minHeightPx={72}
+            maxHeightPx={220}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface Props {
   // The agents that are (or were) active this round — each gets a panel.
   agents: ActiveAgent[];
+  // Every round's actions (all rounds), for the "All agents" roll-up view.
+  rounds?: LoopRound[];
   // Raw loop-activity lines (the discrete event feed) for the Raw view.
   rawLines: string[];
   running: boolean;
@@ -131,7 +205,7 @@ interface Props {
   phaseNarration?: string;
 }
 
-export function WorkflowConsole({ agents, rawLines, running, phaseNarration }: Props) {
+export function WorkflowConsole({ agents, rounds, rawLines, running, phaseNarration }: Props) {
   const [view, setView] = useState<ConsoleView>("steps");
   const rawRef = useRef<HTMLPreElement | null>(null);
 
@@ -144,29 +218,47 @@ export function WorkflowConsole({ agents, rawLines, running, phaseNarration }: P
   }, [rawLines]);
 
   const liveAgents = agents.filter(a => a.id);
+  const allAgents = flattenAgents(rounds ?? []);
 
+  const VIEW_LABEL: Record<ConsoleView, string> = { steps: "Steps", agents: "Agents", raw: "Raw" };
   return (
     <div className="border-t border-edge px-4 py-2.5 bg-rail/20">
       <div className="text-[11px] text-ink-500 mb-1.5 flex items-center gap-2">
         <I.Terminal size={11} />
         <span>console</span>
-        {/* Steps | Raw toggle */}
+        {/* Steps | Agents | Raw toggle */}
         <span className="inline-flex rounded border border-edge overflow-hidden ml-1">
-          {(["steps", "raw"] as const).map(v => (
+          {(["steps", "agents", "raw"] as const).map(v => (
             <button key={v} onClick={() => setView(v)}
               className={"px-2 py-0.5 text-[10px] " +
                 (view === v ? "bg-ink-900 text-white" : "bg-white text-ink-600 hover:bg-ink-50")}>
-              {v === "steps" ? "Steps" : "Raw"}
+              {VIEW_LABEL[v]}
             </button>
           ))}
         </span>
         {phaseNarration && <span className="text-ink-600 truncate">· {phaseNarration}</span>}
         <span className="ml-auto text-[10px] text-ink-400">
-          {view === "steps" ? `${liveAgents.length} agent${liveAgents.length === 1 ? "" : "s"}` : `${rawLines.length} lines`}
+          {view === "steps" ? `${liveAgents.length} this round`
+            : view === "agents" ? `${allAgents.length} total`
+            : `${rawLines.length} lines`}
         </span>
       </div>
 
-      {view === "steps" ? (
+      {view === "agents" ? (
+        allAgents.length === 0 ? (
+          <div className="rounded border border-edge bg-white px-3 py-4 text-[11.5px] text-ink-500"
+               style={{ minHeight: 120 }}>
+            No agents have run in this loop yet. Each spawned sub-agent (apply,
+            symbol-gen, lint-fix, sim, missing-part, topology) appears here — click
+            one to see what it did + its reasoning.
+          </div>
+        ) : (
+          // Flat list of EVERY agent across ALL rounds, newest first.
+          <div className="space-y-1 overflow-auto" style={{ maxHeight: 360 }}>
+            {allAgents.map(a => <AllAgentsRow key={a.id} a={a} />)}
+          </div>
+        )
+      ) : view === "steps" ? (
         liveAgents.length === 0 ? (
           <div className="rounded border border-edge bg-white px-3 py-4 text-[11.5px] text-ink-500"
                style={{ minHeight: 120 }}>

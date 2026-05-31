@@ -26,13 +26,12 @@ Deferred work items (not blocking; pick up when convenient).
       persisted "running" rehydrates as idle (the SSE can't resume after remount;
       no phantom spinner — mirrors the sim-tab rule). A new run still clears + re-saves.
 
-## Sim tab: whole header toggles the block dropdown, not just the arrow (2026-05-31) — TODO
+## Sim tab: whole header toggles the block dropdown, not just the arrow (2026-05-31) — DONE
 
-- [ ] **Clicking anywhere on the Simulation tab header/row should open the block
-      dropdown.** Currently only the small ▸ arrow toggles it. Make the whole
-      "Simulation" label/row the click target (the arrow stays as an affordance).
-      Likely the sidebar's Simulation group header (Sidebar.tsx) — widen the
-      clickable area to the full row.
+- [x] **Clicking anywhere on the Simulation row drives the block dropdown.** DONE —
+      Sidebar.tsx: the main Simulation button now navigates+opens when arriving from
+      another tab, and TOGGLES open/closed when already on the sim tab. The ▸ caret
+      stays as an explicit affordance (its own toggle, stopPropagation).
 
 ## Add the schematic-gen diff option to the Generator page (2026-05-31) — DONE
 
@@ -182,19 +181,18 @@ to PDF; also at `Parts Library/Bobcat/`). Target = `test1/design_requirements.md
       flipped stale (changed=[power]), vddio_pdn (bobcat.yaml) stayed fresh; restored
       cleanly. An unchanged-sheet block never flips.
 
-## Build status must be consistent + live across all tabs (2026-05-31) — TODO
+## Build status must be consistent + live across all tabs (2026-05-31) — DONE
 
-- [ ] **Every tab's build/lint status must agree and be up to date.** Observed:
-      Design Review header showed ERRORS 0 / WARNINGS 0 / "healthy" while the
-      Schematic Generator showed ERRORS 1 / WARNINGS 0 / INFOS 1 **at the same
-      time** — the two read different/stale sources. Both should reflect the SAME
-      current build (the on-disk `out/lint.json`, served by GET /api/lint) and
-      refresh when it changes (after a build / loop / regenerate). Pick one source
-      of truth, have Review's header + the Generator's StatCards + any health
-      badge all read it, and invalidate/re-fetch on the same triggers
-      (`onArtifactsChanged`, loop completion, generate completion). Likely Review
-      computes "healthy" from its findings report (semantic eval), not the layout
-      lint — reconcile what "status" means per tab or show both clearly.
+- [x] **Every tab's build/lint status must agree and be up to date.** Root cause:
+      the two tabs measure DIFFERENT things — Review reads `api.findings()` (rule/
+      semantic eval), Generator reads `api.lint()` (geometric layout lint) — and
+      Review only re-fetched on mount, so it went STALE after a generate elsewhere.
+      Fixed BOTH: (1) Review now takes `refreshSignal={bust}` and re-fetches findings
+      whenever artifacts change (build/generate/loop), so it can't go stale relative
+      to the build — same invalidation signal the Generator already uses. (2) Made
+      the two status surfaces source-explicit so they're not read as one disagreeing
+      number: status bar now shows `review: …` vs `lint: …`, and the Review badge is
+      "Review findings: all clear/needs review" (tooltip: separate from layout-lint).
 
 ## Configurable loop count — regeneration + design review (2026-05-31) — DONE
 
@@ -257,18 +255,19 @@ to PDF; also at `Parts Library/Bobcat/`). Target = `test1/design_requirements.md
       is the Library tab's PartDetail (tabs/Library.tsx), not Design Resources.
       Only show it when `properties.Datasheet` exists; otherwise leave the space.
 
-## Multi-agent console (2026-05-30) — TODO
+## Multi-agent console (2026-05-30) — DONE
 
-- [ ] **Visually see + click through every spawned agent and what each is doing.**
-      The closed loop spawns multiple sub-agents (apply, symbol_gen, lint_fix, sim,
-      missing_part, topology_adapt) — the user wants a console that lists ALL of
-      them (running + finished) and lets you click each to see its live "doing +
-      thinking" stream. WorkflowConsole already does a split per-agent view for the
-      loop's current round; extend it to (a) show agents across ALL rounds / the
-      whole loop, (b) include the eval + sim sub-runs, (c) a clear running/done
-      badge per agent, (d) click-to-expand each agent's full reasoning (reuse
-      LiveConsole + the /api/agent/{id}/stream replay). Tie into the per-round
-      actions[].agent_run_id already on the loop audit.
+- [x] **Visually see + click through every spawned agent and what each is doing.**
+      DONE — added an "Agents" view to WorkflowConsole (third toggle beside Steps/
+      Raw). `flattenAgents(rounds)` rolls up EVERY action with an agent_run_id across
+      ALL rounds (newest first, de-duped), each row showing kind + round tag + status
+      badge (running spinner / ok / fail / cancelled) and click-to-expand its full
+      reasoning via LiveConsole (backend replays the buffered stream for any id, so
+      finished agents from earlier rounds repopulate). Covers apply / symbol_gen /
+      lint_fix / sim / missing_part / topology_adapt — every sub-agent that carries a
+      run id (the eval phase spawns none, noted in the empty state). WorkflowSection
+      passes `rounds={summary.rounds}`. (Per-round Steps view + Round-history rows
+      kept as-is.)
 
 ## System capability test catalog (2026-05-30) — DONE (seeded; grow over time)
 
@@ -294,17 +293,16 @@ to PDF; also at `Parts Library/Bobcat/`). Target = `test1/design_requirements.md
 
 ## Console UX (2026-05-30) — IN PROGRESS
 
-- [ ] **Symbol-gen console survives part switching.** In the Library tab, kicking
-      off "Generate symbol" shows the live subagent console; switching to another
-      part and back makes the console vanish and only restart when the run
-      finishes. Root cause: `genLog`/`genState` are reset by the `useEffect([sel])`
-      and the live subscription is parent-local with no re-attach. Fix: track
-      per-part run state (run_id keyed by MPN), don't clear a running part's log on
-      switch, and re-attach to the in-progress run on return.
-- [ ] **Make all console displays white** to match the other sections (the
-      symbol-gen subagent console is currently dark `bg-[#0F1115]`). Apply a light
-      background uniformly to every console/live-stream view (Library symbol-gen,
-      Workflow console steps/raw, any LiveConsole/agent-stream panels).
+- [x] **Symbol-gen console survives part switching.** DONE (verified 2026-05-31,
+      already implemented). Library.tsx keeps per-MPN gen state (`gen: Record<mpn,
+      GenEntry>`), holds live subscriptions keyed by run_id (`subs` ref), and
+      re-attaches to an in-progress run on return to a part (the backend replays the
+      full stream). The displayed console reads from `gen[sel]`, stable across switches.
+- [x] **Make all console displays white.** DONE (verified 2026-05-31 — no dark
+      console surfaces remain). The dark `bg-[#0F1115]` was already replaced; an
+      exhaustive sweep found every console/log/stream display on a white/light bg
+      (LiveConsole, WorkflowConsole, Console, Library symbol-gen, sim model-agent
+      log all `bg-white`/light). Only action BUTTONS stay dark (intentional).
 - [x] **Zoom + pan the symbol in the parts viewer.** DONE: `SymbolViewer` now
       reuses the shared pan/zoom `Canvas` + `ImgLayer` from PngViewer (the same
       one the schematic viewer uses) — wheel-zoom toward cursor, drag to pan,

@@ -300,6 +300,7 @@ export default function App() {
       <Review
         onArtifactsChanged={onArtifactsChanged}
         setHealth={setHealth}
+        refreshSignal={bust}
         activeLoopId={activeLoopId}
         setActiveLoopId={setActiveLoopId}
         loopSummary={loopSummary}

@@ -29,6 +29,10 @@ interface DiffData {
 interface Props {
   onArtifactsChanged: () => void;
   setHealth: (h: { text: string; tone: "ok" | "warn" | "err" | "neutral" } | undefined) => void;
+  /** Bumped (App's `bust`) whenever the design artifacts change — a build /
+   *  generate / loop. Re-fetch findings so the Review header never goes stale
+   *  relative to the current build (the cross-tab consistency fix). */
+  refreshSignal?: number;
   /** Navigate back to the Generator tab after autofix completes. */
   // Loop state lifted to App.tsx so the right pane can swap PngViewer for
   // DiffPanes when a completed loop is awaiting accept/reject.
@@ -66,7 +70,7 @@ function indexQueue(q: FixQueueEntry[]): Map<string, FixQueueEntry> {
 }
 
 export function Review({
-  onArtifactsChanged, setHealth,
+  onArtifactsChanged, setHealth, refreshSignal,
   activeLoopId, setActiveLoopId, loopSummary, setLoopSummary,
   loopDiff, diffSheet, setDiffSheet, diffMode, setDiffMode,
   hasRealDiff, diffVisible, setDiffVisibleOverride,
@@ -83,7 +87,10 @@ export function Review({
       setReport(r);
       const s = r.summary;
       const tone = s.ERROR > 0 ? "err" : s.WARNING > 0 ? "warn" : "ok";
-      setHealth({ text: `${s.ERROR}E · ${s.WARNING}W · ${s.INFO}I`, tone });
+      // Prefix the source so this never reads as "the same status" as the
+      // Generator's layout-lint counts (the two measure different things:
+      // review = rule/semantic findings, generator = geometric lint).
+      setHealth({ text: `review: ${s.ERROR}E · ${s.WARNING}W · ${s.INFO}I`, tone });
     } catch {
       // ignore
     }
@@ -127,6 +134,15 @@ export function Review({
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  // Re-fetch findings when the design artifacts change elsewhere (build / generate
+  // / loop bumps refreshSignal), so the Review header stays in sync with the
+  // current build instead of showing stale findings from a prior state.
+  useEffect(() => {
+    if (refreshSignal === undefined) return;
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshSignal]);
 
   // Re-attach to the most recent loop on mount (so reload doesn't lose state).
   // Skip if a fresh start has already populated activeLoopId.
@@ -206,9 +222,9 @@ export function Review({
               {isHealthy ? <I.Check size={12} /> : <I.Dot size={12} />}
             </span>
             <div>
-              <div className="text-[11px] uppercase tracking-wide">System</div>
+              <div className="text-[11px] uppercase tracking-wide" title="Status of the design-review rules/findings — separate from the Generator's layout-lint">Review findings</div>
               <div className="text-sm font-medium">
-                {isHealthy ? "healthy" : "needs review"}
+                {isHealthy ? "all clear" : "needs review"}
               </div>
             </div>
           </div>

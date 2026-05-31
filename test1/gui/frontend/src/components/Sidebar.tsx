@@ -89,8 +89,15 @@ export function Sidebar({
             <div key={it.key}>
               <button
                 onClick={() => {
-                  onChange(it.key);
-                  if (isSim) setSimOpen(true);
+                  // Clicking anywhere on the Simulation row drives the dropdown
+                  // (not just the small caret): navigate + open when arriving from
+                  // another tab; toggle open/closed when already on the sim tab.
+                  if (isSim) {
+                    if (isActive) setSimOpen((v) => !v);
+                    else { onChange(it.key); setSimOpen(true); }
+                  } else {
+                    onChange(it.key);
+                  }
                 }}
                 className={
                   "w-full flex items-center gap-2 px-2 py-2 rounded-md text-sm transition " +

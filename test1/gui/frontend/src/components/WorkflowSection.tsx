@@ -322,6 +322,7 @@ export function WorkflowSection({ loopId, onLoopCompleted, setHealth, onSummary 
       ) : (
         <WorkflowConsole
           agents={activeAgents}
+          rounds={summary?.rounds ?? []}
           rawLines={loopLog}
           running={isRunning}
           phaseNarration={phaseNarration}
