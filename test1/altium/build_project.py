@@ -9,6 +9,7 @@ the Altium backend (the analogue of running gen_schematic.py for KiCad).
 from __future__ import annotations
 
 import json
+import re
 import time
 import traceback
 
@@ -16,7 +17,6 @@ from altium_monkey.altium_prjpcb import AltiumPrjPcb
 
 from ..gen.validator import validate as _revalidate_post_autofix
 from .build_all import BUILDERS
-from .build_root import build_root
 from .build_symbols import get_library
 from .config import OUT_DIR, RENDER_DIR
 from .layout_lint import counts as lint_counts
@@ -24,6 +24,81 @@ from .layout_lint import lint, lint_library, lint_netlist_semantics
 from .shared import build_centered
 
 PROJECT = "test1"
+
+
+def _schdoc_unique_id(schdoc) -> str | None:
+    """The SchDoc's own FileHeader UniqueID, so the .PrjPcb references it by its
+    real identity (not a freshly-invented one). Read straight from the file bytes;
+    the FileHeader UniqueID is the first such token."""
+    try:
+        m = re.search(rb"\|UniqueID=([A-Za-z0-9]+)", schdoc.read_bytes())
+        return m.group(1).decode() if m else None
+    except OSError:
+        return None
+
+
+def _component_pin_counts(doc) -> list[int]:
+    """Pins per component in a parsed AltiumSchDoc (component children that are
+    pins). A component with 0 pins is a 'ghost' — the signature of a serialization
+    desync (a malformed record upstream drops the child pins of the components
+    written after it)."""
+    counts = []
+    for comp in doc.components:
+        kids = getattr(comp, "children", None) or []
+        counts.append(sum(1 for k in kids if type(k).__name__ == "AltiumSchPin"))
+    return counts
+
+
+def verify_saved_sheet(sheet, path) -> list[str]:
+    """Build-time FAIL-SAFE: re-read the just-saved .SchDoc and assert it
+    serialized soundly for Altium. Catches the whole class of save-time corruption
+    that is INVISIBLE in memory and only surfaces as an Altium connectivity-compile
+    hang on project open (root cause history: auto_fix_text wrote a note location
+    as a raw SchPointMils, desyncing serialization so two components were written
+    pinless — Altium then infinite-loops compiling nets to a pinless component).
+
+    Two checks:
+      (1) no component serialized as a ghost (0 pins) — the direct hang trigger;
+      (2) reloaded component count + total pin count match the in-memory sheet —
+          catches any record drop, not just pins-on-a-component.
+
+    Returns a list of error strings (empty = OK). Caller fails the build on any.
+    """
+    from altium_monkey.altium_schdoc import AltiumSchDoc
+
+    errs: list[str] = []
+    try:
+        reloaded = AltiumSchDoc(path)
+    except Exception as e:  # noqa: BLE001
+        return [f"save-integrity: re-reading {path.name} failed: {type(e).__name__}: {e}"]
+
+    reloaded_pins = _component_pin_counts(reloaded)
+    ghosts = sum(1 for n in reloaded_pins if n == 0)
+    if ghosts:
+        errs.append(
+            f"save-integrity: {ghosts} pinless 'ghost' component(s) in saved "
+            f"{path.name} — serialization desync (would hang Altium on open). "
+            f"Likely a record written with a wrong-typed field (e.g. .location as "
+            f"SchPointMils instead of .to_coord_point()); check the most recent "
+            f"doc-mutating pass (auto_fix_*).")
+
+    # Cross-check counts against the in-memory sheet (what we intended to write).
+    try:
+        mem_comps = len(list(sheet.doc.components))
+        mem_pins = sum(_component_pin_counts(sheet.doc))
+        re_comps = len(reloaded_pins)
+        re_pins = sum(reloaded_pins)
+        if re_comps != mem_comps:
+            errs.append(f"save-integrity: {path.name} component count {re_comps} "
+                        f"!= in-memory {mem_comps} (records dropped on save).")
+        if re_pins != mem_pins:
+            errs.append(f"save-integrity: {path.name} total pin count {re_pins} "
+                        f"!= in-memory {mem_pins} (pin records dropped on save).")
+    except Exception as e:  # noqa: BLE001
+        errs.append(f"save-integrity: count cross-check on {path.name} errored: "
+                    f"{type(e).__name__}: {e}")
+    return errs
+
 
 # Centering now lives in shared.build_centered so EVERY build path (this driver
 # AND every standalone build_<sheet> main()) centers identically — one source of
@@ -140,7 +215,19 @@ def main() -> int:
             powerfixes += s.auto_fix_power_stub_side()
             if powerfixes:
                 _revalidate_post_autofix(s, nl)
-            s.save(OUT_DIR / f"{name}.SchDoc")
+            sheet_path = OUT_DIR / f"{name}.SchDoc"
+            s.save(sheet_path)
+            # FAIL-SAFE: re-read the saved file and verify it serialized soundly
+            # for Altium (no pinless 'ghost' components; counts match in-memory).
+            # A serialization desync here is INVISIBLE in memory and otherwise only
+            # surfaces as an Altium connectivity-compile hang on project open.
+            integrity_errs = verify_saved_sheet(s, sheet_path)
+            if integrity_errs:
+                fails += 1
+                for msg in integrity_errs:
+                    print(f"{name:12} {'-':6} {'-':14} SAVE-INTEGRITY FAIL: {msg}")
+                    report.append({"sheet": name, "severity": "ERROR",
+                                   "rule": "save_integrity", "message": msg, "refs": []})
             s.render_svg(RENDER_DIR / f"{name}.svg")
             docs.append(f"{name}.SchDoc")
             issues = lint(s)
@@ -179,18 +266,20 @@ def main() -> int:
                            "refs": []})
             print(f"{name:12} {'-':6} {'-':14} FAIL: {type(e).__name__}: {e}")
 
-    # Root sheet (hierarchy only — no netlist to validate). Centered like the
-    # child sheets (build_centered passes through the bare sheet root returns).
-    root = build_centered(build_root)
-    root.save(OUT_DIR / "root.SchDoc")
-    root.render_svg(RENDER_DIR / "root.svg")
-    print(f"{'root':12} {getattr(root, '_chosen_paper', '?'):6} OK")
-
-    # Project file: root first, then children.
+    # FLAT (non-hierarchical) project: the 6 child sheets are siblings and
+    # cross-sheet signals connect by matching PORT name (the design already wires
+    # every inter-sheet net as same-named ports on two/three sheets). There is
+    # intentionally NO root sheet. Net scope is pinned to Flat (ports global) so
+    # Altium does not fall back to "Automatic", which would pick Hierarchical and
+    # require sheet symbols/entries. (build_root.py is retained but no longer
+    # built.) NOTE: the Altium project-open hang we chased was NOT actually the
+    # hierarchy — root cause was a serialization bug (see the save_integrity gate
+    # above + verify/altium_open_check.py); flat is kept because the design is
+    # genuinely flat-by-port and it's the simpler/correct model.
     prj = AltiumPrjPcb.create_minimal(PROJECT)
-    prj.add_document("root.SchDoc")
+    prj.config.set("Design", "NetIdentifierScope", "Flat")
     for d in docs:
-        prj.add_document(d)
+        prj.add_document(d, unique_id=_schdoc_unique_id(OUT_DIR / d))
     prj_path = OUT_DIR / f"{PROJECT}.PrjPcb"
     prj.save(prj_path)
 
@@ -203,7 +292,7 @@ def main() -> int:
     _write_lint_json("fail" if fails else "pass", sev, report)
 
     print("-" * 36)
-    print(f"wrote {prj_path.name} referencing root + {len(docs)} child sheets")
+    print(f"wrote {prj_path.name} (flat) referencing {len(docs)} child sheets")
     print("FAILURES: " + (str(fails) if fails else "none"))
     return 1 if fails else 0
 

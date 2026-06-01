@@ -6,36 +6,33 @@ ReleasesFolder=
 ChannelDesignatorFormatString=$Component_$RoomName
 ChannelRoomLevelSeperator=_
 OpenOutputs=1
+NetIdentifierScope=Flat
 
 [Preferences]
 PrefsVaultGUID=
 PrefsRevisionGUID=
 
 [Document1]
-DocumentPath=root.SchDoc
-DocumentUniqueId=524F19F3
+DocumentPath=eeprom.SchDoc
+DocumentUniqueId=PSQRG7W4
 
 [Document2]
-DocumentPath=eeprom.SchDoc
-DocumentUniqueId=A0FBE14E
+DocumentPath=connectors.SchDoc
+DocumentUniqueId=SNUZKA9Y
 
 [Document3]
-DocumentPath=connectors.SchDoc
-DocumentUniqueId=4C402668
+DocumentPath=power.SchDoc
+DocumentUniqueId=9GB1W9TN
 
 [Document4]
-DocumentPath=power.SchDoc
-DocumentUniqueId=57E95ED3
+DocumentPath=bias.SchDoc
+DocumentUniqueId=IMO7SV19
 
 [Document5]
-DocumentPath=bias.SchDoc
-DocumentUniqueId=5AE27D8E
+DocumentPath=fmc.SchDoc
+DocumentUniqueId=WMN30P1Q
 
 [Document6]
-DocumentPath=fmc.SchDoc
-DocumentUniqueId=576B7B7E
-
-[Document7]
 DocumentPath=bobcat.SchDoc
-DocumentUniqueId=5E90F37C
+DocumentUniqueId=T06EBS74
 

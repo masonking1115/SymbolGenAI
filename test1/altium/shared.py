@@ -580,7 +580,15 @@ class AltiumSheet:
                 dy, cand = placed
                 note.y += dy
                 note.box = cand
-                note.obj.location = SchPointMils.from_mils(note.x, note.y)
+                # MUST be a CoordPoint, not a SchPointMils — same as the power-label
+                # relocation (lines ~425/501) and the global to_coord_point pass.
+                # Assigning a raw SchPointMils here desyncs this text record on
+                # serialize, which drops the CHILD PINS of the next components
+                # written after it (e.g. bias Q41/R41 became pinless "ghosts").
+                # Altium then infinite-loops compiling connectivity to a pinless
+                # component on project open. (Root cause of the bias+connectors
+                # hang — see verify/altium_open_check.py.)
+                note.obj.location = SchPointMils.from_mils(note.x, note.y).to_coord_point()
                 changes.append((note.name, dy))
         return changes
 
