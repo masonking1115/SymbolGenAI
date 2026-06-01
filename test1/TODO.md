@@ -2,30 +2,31 @@
 
 Deferred work items (not blocking; pick up when convenient).
 
-## Investigate multiple datasheets per component (requested 2026-06-01)
+## Investigate multiple datasheets per component (requested 2026-06-01) — DONE
 
-- [ ] **Investigate why some components have MULTIPLE datasheets assigned — this
-      looks risky.** Several places associate >1 datasheet/PDF with one part (e.g.
-      `Parts Library/TPS7A8401A/` has both `tps7a84a.pdf` and `tps7a84a__2.pdf`; the
-      sim `blocks.yaml` `datasheets:` lists and the review rules' citations may point
-      at different files for the same MPN). Risk: an agent/judge could read the wrong
-      or a stale/duplicate datasheet, or two sources could disagree. Audit: for each
-      component, enumerate every datasheet referenced (Parts Library files, blocks.yaml
-      datasheets:, review source: citations, param-cache `source:`), flag any part with
-      more than one distinct PDF, determine why (legitimate multi-doc part? accidental
-      dup like `__2.pdf`? mismatched MPN?), and converge each part on a single
-      authoritative datasheet (or document why multiple are intentional).
+- [x] **Investigated + cleaned up (commit a857b97).** Audited every datasheet
+      reference (Parts Library files, blocks.yaml datasheets:, review source:
+      citations, param-cache). 11 folders had >1 PDF, two categories: (1) 6
+      accidental byte-identical `__2.pdf` dups → deleted (nothing authoritative
+      cited them; only the sources_seen registry, which was pruned); (2) 2
+      redundant/noisy second docs (24AA08 newer rev Q, kept cited rev L; HRM
+      Au-plating notice, kept the datasheet) → removed. Kept the 5 genuinely
+      different multi-doc parts (Bobcat chip+deck, CRCW base+e3, PMZ datasheet+symbol
+      preview). All cited datasheets still resolve; PDFs 32→24.
 
-## Design Resources: delete-file option (requested 2026-06-01)
+## Design Resources: delete-file option (requested 2026-06-01) — DONE
 
-- [ ] **Add an option to delete files in the Design Resources tab.** Today the
-      Design Resources area lists/serves project files (requirements, datasheets,
-      skills, etc.) but offers no delete. Add a delete affordance (with a confirm
-      step — deletion is destructive/outward-facing) wired to a backend endpoint.
-      Scope before building: which file categories are deletable (datasheets in
-      Parts Library? uploaded refs? generated artifacts?) and which must be
-      protected (the netlist sources, rules.yaml, the design docs). Confirm the
-      delete is guarded so it can't remove a tracked source the pipeline depends on.
+- [x] **Added confirm-gated delete to Design Resources.** Backend: 3 DELETE routes
+      (`/api/resources/datasheets|requirements|bom`) with a `_resolve_under`
+      containment guard (strips path components AND verifies the target stays inside
+      the category dir). Deletable = user-supplied references only: datasheet PDFs,
+      uploaded requirement docs, uploaded BOMs. PROTECTED by construction — the
+      active spec (test1/design_requirements.md) and the generated BOM
+      (test1/test1_bom.xlsx) live outside these dirs so the routes can't reach them.
+      Frontend: a shared `DeleteButton` (arms on first click, deletes on confirm) on
+      each of the 3 panels; Skills already had its own delete. Verified: round-trip
+      delete works, traversal attempt blocked (spec intact), datasheet guards reject
+      non-pdf / bad-mpn / 404 without touching real files.
 
 ## Grounding parity for generation + simulation (2026-06-01) — DEFERRED
 

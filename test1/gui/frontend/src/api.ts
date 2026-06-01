@@ -302,6 +302,25 @@ export const api = {
       method: "DELETE",
     }),
 
+  // Delete an UPLOADED resource file. The pipeline source (design_requirements.md)
+  // and the generated BOM (test1_bom.xlsx) are not under these dirs, so they
+  // cannot be reached — only user-supplied references are deletable.
+  deleteDatasheet: (mpn: string, file: string) =>
+    j<{ ok: boolean; mpn: string; file: string }>(
+      `/api/resources/datasheets?mpn=${encodeURIComponent(mpn)}&file=${encodeURIComponent(file)}`,
+      { method: "DELETE" },
+    ),
+  deleteRequirement: (name: string) =>
+    j<{ ok: boolean; name: string }>(
+      `/api/resources/requirements?name=${encodeURIComponent(name)}`,
+      { method: "DELETE" },
+    ),
+  deleteBom: (name: string) =>
+    j<{ ok: boolean; name: string }>(
+      `/api/resources/bom?name=${encodeURIComponent(name)}`,
+      { method: "DELETE" },
+    ),
+
   simBlocks: () => j<{ blocks: SimBlock[]; groups: SimGroup[] }>("/api/sim/blocks"),
   // `overrides` are ephemeral "tune before running" boundary-param edits
   // ({net: {key: value}}) applied to THIS run only — never persisted to

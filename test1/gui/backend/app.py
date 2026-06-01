@@ -1321,6 +1321,35 @@ def resources_datasheet_upload(body: DatasheetUpload) -> dict:
     return {"ok": True, "mpn": mpn, "file": fname, "size": len(raw)}
 
 
+def _resolve_under(base: Path, *parts: str) -> Path:
+    """Resolve base/parts and HARD-guard that it stays inside `base` (defense in
+    depth against path traversal: strip components AND verify containment after
+    resolution). Used by the DELETE routes — deletion is destructive, so the
+    path check is stricter than the upload/edit guards."""
+    safe = [Path(p).name for p in parts]        # strip any directory components
+    target = (base / Path(*safe)).resolve()
+    base_r = base.resolve()
+    if base_r not in target.parents and target != base_r:
+        raise HTTPException(400, "path escapes the allowed directory")
+    return target
+
+
+@app.delete("/api/resources/datasheets")
+def resources_datasheet_delete(mpn: str = Query(...), file: str = Query(...)) -> dict:
+    """Delete one datasheet PDF from Parts Library/<MPN>/. A datasheet is a
+    user-supplied reference (re-uploadable), so it's deletable — but guarded to a
+    .pdf inside the library, never a builder/symbol/footprint."""
+    if not re.fullmatch(r"[A-Za-z0-9_\-\.]+", mpn.strip()):
+        raise HTTPException(400, "bad mpn")
+    if not file.lower().endswith(".pdf"):
+        raise HTTPException(400, "only .pdf datasheets may be deleted here")
+    target = _resolve_under(LIBRARY_DIR, mpn.strip(), file)
+    if not target.exists() or not target.is_file():
+        raise HTTPException(404, "no such datasheet")
+    target.unlink()
+    return {"ok": True, "mpn": mpn.strip(), "file": Path(file).name}
+
+
 @app.get("/api/resources/requirements")
 def resources_requirements() -> dict:
     docs: list[dict] = []
@@ -1344,6 +1373,19 @@ def resources_requirement_upload(body: RequirementUpload) -> dict:
     REQ_DOCS_DIR.mkdir(parents=True, exist_ok=True)
     (REQ_DOCS_DIR / fname).write_bytes(raw)
     return {"ok": True, "file": fname, "size": len(raw)}
+
+
+@app.delete("/api/resources/requirements")
+def resources_requirement_delete(name: str = Query(...)) -> dict:
+    """Delete an UPLOADED requirements doc from resources/requirements/. Only the
+    uploaded references are deletable here — the active spec
+    (test1/design_requirements.md) is the pipeline source and is NOT under this
+    directory, so it can never be reached by this route."""
+    target = _resolve_under(REQ_DOCS_DIR, name)
+    if not target.exists() or not target.is_file():
+        raise HTTPException(404, "no such file")
+    target.unlink()
+    return {"ok": True, "name": target.name}
 
 
 @app.get("/api/resources/requirements/file")
@@ -1420,6 +1462,18 @@ def resources_bom_upload(body: BomUpload) -> dict:
     BOM_DIR.mkdir(parents=True, exist_ok=True)
     (BOM_DIR / fname).write_bytes(raw)
     return {"ok": True, "file": fname, "size": len(raw)}
+
+
+@app.delete("/api/resources/bom")
+def resources_bom_delete(name: str = Query(...)) -> dict:
+    """Delete an UPLOADED BOM from resources/bom/. The pipeline-GENERATED BOM
+    (test1/test1_bom.xlsx) lives in the project root, not this directory, so it's
+    out of reach here — only user-uploaded BOMs are deletable."""
+    target = _resolve_under(BOM_DIR, name)
+    if not target.exists() or not target.is_file():
+        raise HTTPException(404, "no such file")
+    target.unlink()
+    return {"ok": True, "name": target.name}
 
 
 @app.get("/api/resources/bom/file")

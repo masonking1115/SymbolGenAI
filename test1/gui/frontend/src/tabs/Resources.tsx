@@ -309,6 +309,13 @@ function DatasheetsPanel({ onViewPart, onOpen }: { onViewPart?: (mpn: string) =>
                       {f.mtime ? <span title={new Date(f.mtime * 1000).toLocaleString()}>{fmtTime(f.mtime)}</span> : null}
                       <span className="text-ink-300">·</span>
                       {fmtSize(f.size)}
+                      <DeleteButton
+                        label={`${f.mpn}/${f.file}`}
+                        onDelete={async () => {
+                          try { await api.deleteDatasheet(f.mpn, f.file); await refresh(); }
+                          catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
+                        }}
+                      />
                     </span>
                   </li>
                 ))}
@@ -717,6 +724,13 @@ function RequirementsPanel({ onOpen }: { onOpen: (f: OpenFile) => void }) {
                   {d.mtime ? <span title={new Date(d.mtime * 1000).toLocaleString()}>{fmtTime(d.mtime)}</span> : null}
                   <span className="text-ink-300">·</span>
                   {fmtSize(d.size)}
+                  <DeleteButton
+                    label={d.name}
+                    onDelete={async () => {
+                      try { await api.deleteRequirement(d.name); await refresh(); }
+                      catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
+                    }}
+                  />
                 </span>
               </li>
             ))}
@@ -845,6 +859,13 @@ function BomPanel({ onOpen }: { onOpen: (f: OpenFile) => void }) {
                   {f.mtime ? <span title={new Date(f.mtime * 1000).toLocaleString()}>{fmtTime(f.mtime)}</span> : null}
                   <span className="text-ink-300">·</span>
                   {fmtSize(f.size)}
+                  <DeleteButton
+                    label={f.name}
+                    onDelete={async () => {
+                      try { await api.deleteBom(f.name); await refresh(); }
+                      catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
+                    }}
+                  />
                 </span>
               </li>
             ))}
@@ -1030,5 +1051,44 @@ function Empty({ children }: { children: ReactNode }) {
     <div className="rounded-lg border border-dashed border-edge px-3 py-6 text-center text-[13px] text-ink-500">
       {children}
     </div>
+  );
+}
+
+// Confirm-gated delete affordance for an uploaded resource file. First click
+// arms ("Delete?" with a check/cancel); the check actually deletes. Deletion is
+// destructive + outward-facing, so it always requires the explicit second click
+// — no accidental one-click removal.
+function DeleteButton({ label, onDelete }: { label: string; onDelete: () => Promise<void> }) {
+  const [armed, setArmed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  if (busy) return <span className="text-[11px] text-ink-400 shrink-0">deleting…</span>;
+  if (!armed) {
+    return (
+      <button
+        onClick={() => setArmed(true)}
+        title={`Delete ${label}`}
+        className="shrink-0 text-ink-300 hover:text-err p-0.5"
+      >
+        <I.Trash size={14} />
+      </button>
+    );
+  }
+  return (
+    <span className="shrink-0 inline-flex items-center gap-1 text-[11px]">
+      <span className="text-err">Delete?</span>
+      <button
+        onClick={async () => {
+          setBusy(true);
+          try { await onDelete(); } finally { setBusy(false); setArmed(false); }
+        }}
+        title="Confirm delete"
+        className="text-err hover:bg-err/10 rounded px-1 font-medium"
+      >
+        yes
+      </button>
+      <button onClick={() => setArmed(false)} title="Cancel" className="text-ink-500 hover:text-ink-900 px-0.5">
+        <I.X size={12} />
+      </button>
+    </span>
   );
 }
