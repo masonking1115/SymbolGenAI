@@ -172,7 +172,7 @@ AGENT_KINDS: dict[str, dict] = {
     # --- Design review ---
     "rule_gen":      {"label": "Rule generator",             "group": "Design review", "default": "claude-opus-4-8"},
     # --- Chat ---
-    "chat":          {"label": "Chat / thinking-partner",    "group": "Chat",         "default": "claude-sonnet-4-6"},
+    "chat":          {"label": "Chat / thinking-partner",    "group": "Chat",         "default": "claude-opus-4-8"},
 }
 # Display order of the groups in the picker (any group not listed sorts last).
 GROUP_ORDER: list[str] = [
