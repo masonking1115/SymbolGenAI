@@ -1,12 +1,12 @@
 <?xml version="1.0"  encoding="UTF-8" standalone="no"?>
-<svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" stroke-linecap="round" stroke-linejoin="round" fill="none" width="1550" height="1110" viewBox="0 0 1550 1110" data-doc-id="0DPK0KSM" data-doc-ver="2">
+<svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" stroke-linecap="round" stroke-linejoin="round" fill="none" width="1550" height="1110" viewBox="0 0 1550 1110" data-doc-id="JF6WFRBS" data-doc-ver="2">
 <g id = "scene" >
 <g id = "DocumentMainGroup" >
 <g id = "BackgroundGroup" >
 <rect x = "0" y="0" width="1550" height="1110" fill="#E3E3E3" fill-opacity="1"/>
 </g>
-<g id = "0DPK0KSM" >
-<g id = "0DPK0KSM" >
+<g id = "JF6WFRBS" >
+<g id = "JF6WFRBS" >
 <rect x = "0" y="0" width="1550" height="1110" fill="#FFFCF8" fill-opacity="1"/>
 <rect x = "0" y="0" width="1550" height="1110" stroke="#000000" stroke-width="0.5px" vector-effect="non-scaling-stroke"/>
 <rect x = "20" y="20" width="1510" height="1070" fill="#FFFCF8" fill-opacity="1"/>
@@ -49,260 +49,135 @@
 <text x="1536.790123" y="142.779982" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">A</text>
 </g>
 <g id = "DocumentItemsGroup" >
-<g id = "AJVSPMNN" >
-<polygon points="615,415 610,410 615,405 675,405 680,410 675,415" fill="#D9EAD3" fill-opacity="1"/>
-<polygon points="615,415 610,410 615,405 675,405 680,410 675,415" fill="none" stroke="#000000" stroke-width="1px"/>
-<text x="618.760927" y="413" font-size="8.951049px" font-family="Arial" fill="#000000" xml:space="preserve">WEIGHT_EN</text>
-</g>
-<g id = "CVVJKIDI" >
-<polygon points="275,415 270,410 275,405 335,405 340,410 335,415" fill="#D9EAD3" fill-opacity="1"/>
-<polygon points="275,415 270,410 275,405 335,405 340,410 335,415" fill="none" stroke="#000000" stroke-width="1px"/>
-<text x="282.690122" y="413" font-size="8.951049px" font-family="Arial" fill="#000000" xml:space="preserve">CLK_OUT1</text>
-</g>
-<g id = "DDIZKYFQ" >
-<polygon points="275,515 270,510 275,505 335,505 340,510 335,515" fill="#D9EAD3" fill-opacity="1"/>
-<polygon points="275,515 270,510 275,505 335,505 340,510 335,515" fill="none" stroke="#000000" stroke-width="1px"/>
-<text x="282.104458" y="513" font-size="8.951049px" font-family="Arial" fill="#000000" xml:space="preserve">CLK_OUT2</text>
-</g>
-<g id = "DZBUNHOT" >
-<polygon points="1135,365 1130,360 1135,355 1195,355 1200,360 1195,365" fill="#D9EAD3" fill-opacity="1"/>
-<polygon points="1135,365 1130,360 1135,355 1195,355 1200,360 1195,365" fill="none" stroke="#000000" stroke-width="1px"/>
-<text x="1151.534091" y="363" font-size="8.951049px" font-family="Arial" fill="#000000" xml:space="preserve">GPIO0</text>
-</g>
-<g id = "FCBBUQWY" >
-<polygon points="1135,375 1130,370 1135,365 1195,365 1200,370 1195,375" fill="#D9EAD3" fill-opacity="1"/>
-<polygon points="1135,375 1130,370 1135,365 1195,365 1200,370 1195,375" fill="none" stroke="#000000" stroke-width="1px"/>
-<text x="1152.141608" y="373" font-size="8.951049px" font-family="Arial" fill="#000000" xml:space="preserve">GPIO1</text>
-</g>
-<g id = "GUTIBLUV" >
-<polygon points="1135,385 1130,380 1135,375 1195,375 1200,380 1195,385" fill="#D9EAD3" fill-opacity="1"/>
-<polygon points="1135,385 1130,380 1135,375 1195,375 1200,380 1195,385" fill="none" stroke="#000000" stroke-width="1px"/>
-<text x="1151.555944" y="383" font-size="8.951049px" font-family="Arial" fill="#000000" xml:space="preserve">GPIO2</text>
-</g>
-<g id = "LNHOLZVK" >
-<polygon points="615,315 610,310 615,305 675,305 680,310 675,315" fill="#D9EAD3" fill-opacity="1"/>
-<polygon points="615,315 610,310 615,305 675,305 680,310 675,315" fill="none" stroke="#000000" stroke-width="1px"/>
-<text x="626.962413" y="313" font-size="8.951049px" font-family="Arial" fill="#000000" xml:space="preserve">OSC_EN</text>
-</g>
-<g id = "OLRALZLD" >
-<polygon points="1135,395 1130,390 1135,385 1195,385 1200,390 1195,395" fill="#D9EAD3" fill-opacity="1"/>
-<polygon points="1135,395 1130,390 1135,385 1195,385 1200,390 1195,395" fill="none" stroke="#000000" stroke-width="1px"/>
-<text x="1151.523164" y="393" font-size="8.951049px" font-family="Arial" fill="#000000" xml:space="preserve">GPIO3</text>
-</g>
-<g id = "SWLZHTFA" >
-<polygon points="275,615 270,610 275,605 335,605 340,610 335,615" fill="#D9EAD3" fill-opacity="1"/>
-<polygon points="275,615 270,610 275,605 335,605 340,610 335,615" fill="none" stroke="#000000" stroke-width="1px"/>
-<text x="282.071678" y="613" font-size="8.951049px" font-family="Arial" fill="#000000" xml:space="preserve">CLK_OUT3</text>
-</g>
-<g id = "VELILPEI" >
+<g id = "DVLVWLOL" >
 <polygon points="615,515 610,510 615,505 675,505 680,510 675,515" fill="#D9EAD3" fill-opacity="1"/>
 <polygon points="615,515 610,510 615,505 675,505 680,510 675,515" fill="none" stroke="#000000" stroke-width="1px"/>
 <text x="613.942308" y="513" font-size="8.951049px" font-family="Arial" fill="#000000" xml:space="preserve">SAMPLE_TRIG</text>
 </g>
-<g id = "ZVZQEYON" >
+<g id = "DWVXLAYM" >
+<polygon points="275,515 270,510 275,505 335,505 340,510 335,515" fill="#D9EAD3" fill-opacity="1"/>
+<polygon points="275,515 270,510 275,505 335,505 340,510 335,515" fill="none" stroke="#000000" stroke-width="1px"/>
+<text x="282.104458" y="513" font-size="8.951049px" font-family="Arial" fill="#000000" xml:space="preserve">CLK_OUT2</text>
+</g>
+<g id = "ENVHIVIJ" >
+<polygon points="615,415 610,410 615,405 675,405 680,410 675,415" fill="#D9EAD3" fill-opacity="1"/>
+<polygon points="615,415 610,410 615,405 675,405 680,410 675,415" fill="none" stroke="#000000" stroke-width="1px"/>
+<text x="618.760927" y="413" font-size="8.951049px" font-family="Arial" fill="#000000" xml:space="preserve">WEIGHT_EN</text>
+</g>
+<g id = "QEBERSMW" >
+<polygon points="1135,385 1130,380 1135,375 1195,375 1200,380 1195,385" fill="#D9EAD3" fill-opacity="1"/>
+<polygon points="1135,385 1130,380 1135,375 1195,375 1200,380 1195,385" fill="none" stroke="#000000" stroke-width="1px"/>
+<text x="1151.555944" y="383" font-size="8.951049px" font-family="Arial" fill="#000000" xml:space="preserve">GPIO2</text>
+</g>
+<g id = "RGHIPIIA" >
 <polygon points="275,315 270,310 275,305 335,305 340,310 335,315" fill="#D9EAD3" fill-opacity="1"/>
 <polygon points="275,315 270,310 275,305 335,305 340,310 335,315" fill="none" stroke="#000000" stroke-width="1px"/>
 <text x="282.082605" y="313" font-size="8.951049px" font-family="Arial" fill="#000000" xml:space="preserve">CLK_OUT0</text>
 </g>
-<g id = "EOCOOFME" >
+<g id = "RZBNNLZN" >
+<polygon points="615,315 610,310 615,305 675,305 680,310 675,315" fill="#D9EAD3" fill-opacity="1"/>
+<polygon points="615,315 610,310 615,305 675,305 680,310 675,315" fill="none" stroke="#000000" stroke-width="1px"/>
+<text x="626.962413" y="313" font-size="8.951049px" font-family="Arial" fill="#000000" xml:space="preserve">OSC_EN</text>
+</g>
+<g id = "VBQGYGOH" >
+<polygon points="1135,395 1130,390 1135,385 1195,385 1200,390 1195,395" fill="#D9EAD3" fill-opacity="1"/>
+<polygon points="1135,395 1130,390 1135,385 1195,385 1200,390 1195,395" fill="none" stroke="#000000" stroke-width="1px"/>
+<text x="1151.523164" y="393" font-size="8.951049px" font-family="Arial" fill="#000000" xml:space="preserve">GPIO3</text>
+</g>
+<g id = "VEZUZDAV" >
+<polygon points="1135,365 1130,360 1135,355 1195,355 1200,360 1195,365" fill="#D9EAD3" fill-opacity="1"/>
+<polygon points="1135,365 1130,360 1135,355 1195,355 1200,360 1195,365" fill="none" stroke="#000000" stroke-width="1px"/>
+<text x="1151.534091" y="363" font-size="8.951049px" font-family="Arial" fill="#000000" xml:space="preserve">GPIO0</text>
+</g>
+<g id = "YERFJOBR" >
+<polygon points="275,615 270,610 275,605 335,605 340,610 335,615" fill="#D9EAD3" fill-opacity="1"/>
+<polygon points="275,615 270,610 275,605 335,605 340,610 335,615" fill="none" stroke="#000000" stroke-width="1px"/>
+<text x="282.071678" y="613" font-size="8.951049px" font-family="Arial" fill="#000000" xml:space="preserve">CLK_OUT3</text>
+</g>
+<g id = "YLRNGODA" >
+<polygon points="1135,375 1130,370 1135,365 1195,365 1200,370 1195,375" fill="#D9EAD3" fill-opacity="1"/>
+<polygon points="1135,375 1130,370 1135,365 1195,365 1200,370 1195,375" fill="none" stroke="#000000" stroke-width="1px"/>
+<text x="1152.141608" y="373" font-size="8.951049px" font-family="Arial" fill="#000000" xml:space="preserve">GPIO1</text>
+</g>
+<g id = "YWBLPKIS" >
+<polygon points="275,415 270,410 275,405 335,405 340,410 335,415" fill="#D9EAD3" fill-opacity="1"/>
+<polygon points="275,415 270,410 275,405 335,405 340,410 335,415" fill="none" stroke="#000000" stroke-width="1px"/>
+<text x="282.690122" y="413" font-size="8.951049px" font-family="Arial" fill="#000000" xml:space="preserve">CLK_OUT1</text>
+</g>
+<g id = "QNHAFQLE" >
 <line x1="210" y1="800" x2="230" y2="800" stroke="#800000" stroke-width="1px"/>
 <line x1="213" y1="803" x2="227" y2="803" stroke="#800000" stroke-width="1px"/>
 <line x1="216" y1="806" x2="224" y2="806" stroke="#800000" stroke-width="1px"/>
 <line x1="219" y1="809" x2="221" y2="809" stroke="#800000" stroke-width="1px"/>
 <line x1="220" y1="790" x2="220" y2="800" stroke="#800000" stroke-width="1px"/>
 </g>
-<g id = "MZYGZXKB" >
+<g id = "RUOGTYIH" >
 <line x1="610" y1="800" x2="630" y2="800" stroke="#800000" stroke-width="1px"/>
 <line x1="613" y1="803" x2="627" y2="803" stroke="#800000" stroke-width="1px"/>
 <line x1="616" y1="806" x2="624" y2="806" stroke="#800000" stroke-width="1px"/>
 <line x1="619" y1="809" x2="621" y2="809" stroke="#800000" stroke-width="1px"/>
 <line x1="620" y1="790" x2="620" y2="800" stroke="#800000" stroke-width="1px"/>
 </g>
-<g id = "RUHLWRUG" >
+<g id = "WOQNLVCO" >
 <line x1="410" y1="800" x2="430" y2="800" stroke="#800000" stroke-width="1px"/>
 <line x1="413" y1="803" x2="427" y2="803" stroke="#800000" stroke-width="1px"/>
 <line x1="416" y1="806" x2="424" y2="806" stroke="#800000" stroke-width="1px"/>
 <line x1="419" y1="809" x2="421" y2="809" stroke="#800000" stroke-width="1px"/>
 <line x1="420" y1="790" x2="420" y2="800" stroke="#800000" stroke-width="1px"/>
 </g>
-<g id = "ABQDXYYA" >
-<line x1="420" y1="310" x2="340" y2="310" stroke="#000080" stroke-width="1px"/>
-</g>
-<g id = "DXKUAOAO" >
-<line x1="1320" y1="380" x2="1200" y2="380" stroke="#000080" stroke-width="1px"/>
-</g>
-<g id = "ETERCQTK" >
-<line x1="920" y1="510" x2="770" y2="510" stroke="#000080" stroke-width="1px"/>
-</g>
-<g id = "FSGELXIZ" >
-<line x1="750" y1="510" x2="680" y2="510" stroke="#000080" stroke-width="1px"/>
-</g>
-<g id = "GMMQLVWK" >
-<line x1="620" y1="770" x2="620" y2="790" stroke="#000080" stroke-width="1px"/>
-</g>
-<g id = "HCGDCVXI" >
-<line x1="220" y1="770" x2="220" y2="790" stroke="#000080" stroke-width="1px"/>
-</g>
-<g id = "HRXAWBPJ" >
-<line x1="1320" y1="360" x2="1200" y2="360" stroke="#000080" stroke-width="1px"/>
-</g>
-<g id = "IVHRIFPE" >
-<line x1="920" y1="410" x2="770" y2="410" stroke="#000080" stroke-width="1px"/>
-</g>
-<g id = "JBEODKKW" >
-<line x1="420" y1="770" x2="420" y2="790" stroke="#000080" stroke-width="1px"/>
-</g>
-<g id = "JLAHZZCV" >
-<line x1="750" y1="410" x2="680" y2="410" stroke="#000080" stroke-width="1px"/>
-</g>
-<g id = "LJHNIDID" >
-<line x1="420" y1="610" x2="340" y2="610" stroke="#000080" stroke-width="1px"/>
-</g>
-<g id = "LWTCFAIZ" >
+<g id = "EGBNOMGG" >
 <line x1="420" y1="510" x2="340" y2="510" stroke="#000080" stroke-width="1px"/>
 </g>
-<g id = "NTBQVNJB" >
-<line x1="750" y1="310" x2="680" y2="310" stroke="#000080" stroke-width="1px"/>
+<g id = "FHGHREZR" >
+<line x1="420" y1="310" x2="340" y2="310" stroke="#000080" stroke-width="1px"/>
 </g>
-<g id = "SURYMXUG" >
-<line x1="920" y1="310" x2="770" y2="310" stroke="#000080" stroke-width="1px"/>
+<g id = "GSYPADIY" >
+<line x1="920" y1="410" x2="770" y2="410" stroke="#000080" stroke-width="1px"/>
 </g>
-<g id = "TQRBEYWN" >
+<g id = "IMOLCYRO" >
 <line x1="1320" y1="390" x2="1200" y2="390" stroke="#000080" stroke-width="1px"/>
 </g>
-<g id = "TWPGFKLU" >
+<g id = "LHFKUCXM" >
+<line x1="1320" y1="380" x2="1200" y2="380" stroke="#000080" stroke-width="1px"/>
+</g>
+<g id = "NQQBOCJQ" >
+<line x1="920" y1="310" x2="770" y2="310" stroke="#000080" stroke-width="1px"/>
+</g>
+<g id = "PCSTSGCS" >
+<line x1="620" y1="770" x2="620" y2="790" stroke="#000080" stroke-width="1px"/>
+</g>
+<g id = "PMCIEGFH" >
+<line x1="750" y1="310" x2="680" y2="310" stroke="#000080" stroke-width="1px"/>
+</g>
+<g id = "QVHRPFWD" >
+<line x1="750" y1="510" x2="680" y2="510" stroke="#000080" stroke-width="1px"/>
+</g>
+<g id = "SMYXKTET" >
+<line x1="220" y1="770" x2="220" y2="790" stroke="#000080" stroke-width="1px"/>
+</g>
+<g id = "TERAZCAJ" >
+<line x1="420" y1="610" x2="340" y2="610" stroke="#000080" stroke-width="1px"/>
+</g>
+<g id = "TIOFWBDH" >
+<line x1="920" y1="510" x2="770" y2="510" stroke="#000080" stroke-width="1px"/>
+</g>
+<g id = "TUTPOHAV" >
+<line x1="420" y1="770" x2="420" y2="790" stroke="#000080" stroke-width="1px"/>
+</g>
+<g id = "UYAGBSHC" >
 <line x1="420" y1="410" x2="340" y2="410" stroke="#000080" stroke-width="1px"/>
 </g>
-<g id = "WHZFZLKN" >
+<g id = "VXRHQAPV" >
+<line x1="1320" y1="360" x2="1200" y2="360" stroke="#000080" stroke-width="1px"/>
+</g>
+<g id = "WZQLWMVG" >
 <line x1="1320" y1="370" x2="1200" y2="370" stroke="#000080" stroke-width="1px"/>
 </g>
-<g id = "1Y597PNH" >
-<g id = "1LJD0DN4" >
-<line x1="460" y1="410" x2="440" y2="410" stroke="#000000" stroke-width="1px"/>
+<g id = "ZKIEPMNF" >
+<line x1="750" y1="410" x2="680" y2="410" stroke="#000080" stroke-width="1px"/>
 </g>
-<g id = "LY81UD0J" >
-<line x1="460" y1="410" x2="455" y2="406.667" stroke="#000000" stroke-width="1px"/>
-</g>
-<g id = "A5ET18XK" >
-<line x1="460" y1="410" x2="455" y2="413.333" stroke="#000000" stroke-width="1px"/>
-</g>
-<g id = "2LW6MOQH" >
-<rect x = "440" y="400" width="30" height="20" fill="#FFFFB0" fill-opacity="0.49019607843137253"/>
-<rect x = "440" y="400" width="30" height="20" stroke="#000000" stroke-width="1px"/>
-</g>
-<g id = "RCQAQCQ0" >
-<line x1="440" y1="410" x2="420" y2="410" stroke="#000000" stroke-width="1px"/>
-<text x="428.5873" y="409" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">1</text>
-</g>
-<g id = "CAYE7SYY" >
-<text x="420" y="393" font-size="8.951049px" font-family="Arial" fill="#000080" xml:space="preserve">SMA</text>
-</g>
-<g id = "EVUNB4IP" >
-<text x="420" y="399" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">J51</text>
-</g>
-</g>
-<g id = "78FXKEH3" >
-<g id = "60Z26ITK" >
-<line x1="960" y1="310" x2="940" y2="310" stroke="#000000" stroke-width="1px"/>
-</g>
-<g id = "5F3YJZ5Y" >
-<line x1="960" y1="310" x2="955" y2="306.667" stroke="#000000" stroke-width="1px"/>
-</g>
-<g id = "PNZNGXLC" >
-<line x1="960" y1="310" x2="955" y2="313.333" stroke="#000000" stroke-width="1px"/>
-</g>
-<g id = "C36U35SG" >
-<rect x = "940" y="300" width="30" height="20" fill="#FFFFB0" fill-opacity="0.49019607843137253"/>
-<rect x = "940" y="300" width="30" height="20" stroke="#000000" stroke-width="1px"/>
-</g>
-<g id = "QYOVSQCA" >
-<line x1="940" y1="310" x2="920" y2="310" stroke="#000000" stroke-width="1px"/>
-<text x="928.5873" y="309" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">1</text>
-</g>
-<g id = "1DRCI4C5" >
-<text x="920" y="293" font-size="8.951049px" font-family="Arial" fill="#000080" xml:space="preserve">SMA</text>
-</g>
-<g id = "9N5YG7YL" >
-<text x="920" y="299" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">J54</text>
-</g>
-</g>
-<g id = "9F3K04OW" >
-<g id = "VRDW511G" >
-<line x1="960" y1="410" x2="940" y2="410" stroke="#000000" stroke-width="1px"/>
-</g>
-<g id = "DVNDDEZB" >
-<line x1="960" y1="410" x2="955" y2="406.667" stroke="#000000" stroke-width="1px"/>
-</g>
-<g id = "TZPSCZM2" >
-<line x1="960" y1="410" x2="955" y2="413.333" stroke="#000000" stroke-width="1px"/>
-</g>
-<g id = "ZQOHLGJU" >
-<rect x = "940" y="400" width="30" height="20" fill="#FFFFB0" fill-opacity="0.49019607843137253"/>
-<rect x = "940" y="400" width="30" height="20" stroke="#000000" stroke-width="1px"/>
-</g>
-<g id = "3KIOKN1L" >
-<line x1="940" y1="410" x2="920" y2="410" stroke="#000000" stroke-width="1px"/>
-<text x="928.5873" y="409" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">1</text>
-</g>
-<g id = "X7ENSN9B" >
-<text x="920" y="393" font-size="8.951049px" font-family="Arial" fill="#000080" xml:space="preserve">SMA</text>
-</g>
-<g id = "71BENEVC" >
-<text x="920" y="399" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">J55</text>
-</g>
-</g>
-<g id = "9IFT4RFG" >
-<g id = "QIOHLVQ5" >
-<line x1="660" y1="770" x2="640" y2="770" stroke="#000000" stroke-width="1px"/>
-</g>
-<g id = "KN7JU6ET" >
-<line x1="660" y1="770" x2="655" y2="766.667" stroke="#000000" stroke-width="1px"/>
-</g>
-<g id = "KTANL4RQ" >
-<line x1="660" y1="770" x2="655" y2="773.333" stroke="#000000" stroke-width="1px"/>
-</g>
-<g id = "OHPP7T0P" >
-<rect x = "640" y="760" width="30" height="20" fill="#FFFFB0" fill-opacity="0.49019607843137253"/>
-<rect x = "640" y="760" width="30" height="20" stroke="#000000" stroke-width="1px"/>
-</g>
-<g id = "F44XLOKM" >
-<line x1="640" y1="770" x2="620" y2="770" stroke="#000000" stroke-width="1px"/>
-<text x="628.5873" y="769" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">1</text>
-</g>
-<g id = "1NMHTUWI" >
-<text x="620" y="753" font-size="8.951049px" font-family="Arial" fill="#000080" xml:space="preserve">GND-CLIP</text>
-</g>
-<g id = "0L460WCH" >
-<text x="620" y="759" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">TP52</text>
-</g>
-</g>
-<g id = "FGAPN9PZ" >
-<g id = "I37FQFZQ" >
-<line x1="960" y1="510" x2="940" y2="510" stroke="#000000" stroke-width="1px"/>
-</g>
-<g id = "95BFEJG0" >
-<line x1="960" y1="510" x2="955" y2="506.667" stroke="#000000" stroke-width="1px"/>
-</g>
-<g id = "F9TGA0PZ" >
-<line x1="960" y1="510" x2="955" y2="513.333" stroke="#000000" stroke-width="1px"/>
-</g>
-<g id = "7JTCEFXF" >
-<rect x = "940" y="500" width="30" height="20" fill="#FFFFB0" fill-opacity="0.49019607843137253"/>
-<rect x = "940" y="500" width="30" height="20" stroke="#000000" stroke-width="1px"/>
-</g>
-<g id = "OAKTZ707" >
-<line x1="940" y1="510" x2="920" y2="510" stroke="#000000" stroke-width="1px"/>
-<text x="928.5873" y="509" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">1</text>
-</g>
-<g id = "JKS83CQS" >
-<text x="920" y="493" font-size="8.951049px" font-family="Arial" fill="#000080" xml:space="preserve">SMA</text>
-</g>
-<g id = "LM8FVTOM" >
-<text x="920" y="499" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">J56</text>
-</g>
-</g>
-<g id = "GMDJSQ1Y" >
-<g id = "O101B6T1" >
+<g id = "4MWZFCQD" >
+<g id = "OFNLCTS5" >
 <line x1="767" y1="310" x2="764.6" y2="314.5" stroke="#000000" stroke-width="1px"/>
 <line x1="764.6" y1="314.5" x2="762.3" y2="305.5" stroke="#000000" stroke-width="1px"/>
 <line x1="762.3" y1="305.5" x2="760" y2="314.5" stroke="#000000" stroke-width="1px"/>
@@ -310,54 +185,29 @@
 <line x1="757.7" y1="305.5" x2="755.4" y2="314.5" stroke="#000000" stroke-width="1px"/>
 <line x1="755.4" y1="314.5" x2="753" y2="310" stroke="#000000" stroke-width="1px"/>
 </g>
-<g id = "52EKX2KB" >
+<g id = "9A1EEHZX" >
 <line x1="770" y1="310" x2="767" y2="310" stroke="#000000" stroke-width="1px"/>
 </g>
-<g id = "FBC69Z43" >
+<g id = "G2P9MGML" >
 <line x1="750" y1="310" x2="753" y2="310" stroke="#000000" stroke-width="1px"/>
 </g>
-<g id = "L0ONW53T" >
+<g id = "CC8N36EC" >
 <line x1="767" y1="310" x2="770" y2="310" stroke="#000000" stroke-width="1px"/>
 <text x="775" y="309" font-size="4.413793px" font-family="Courier New" fill="#000000" xml:space="preserve">1</text>
 </g>
-<g id = "5TCK5W8H" >
+<g id = "DFVQMOWR" >
 <line x1="753" y1="310" x2="750" y2="310" stroke="#000000" stroke-width="1px"/>
 <text x="742.8815" y="309" font-size="4.413793px" font-family="Courier New" fill="#000000" xml:space="preserve">2</text>
 </g>
-<g id = "BK5EZK2C" >
+<g id = "95HM9VKG" >
 <text x="760" y="299" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">R50</text>
 </g>
-<g id = "DPLCFQGH" >
+<g id = "VOVGX7WV" >
 <text x="775" y="308" font-size="8.951049px" font-family="Arial" fill="#000000" xml:space="preserve">0</text>
 </g>
 </g>
-<g id = "HVG7QAO8" >
-<g id = "Q4OL66YE" >
-<line x1="460" y1="770" x2="440" y2="770" stroke="#000000" stroke-width="1px"/>
-</g>
-<g id = "PQL6S0KV" >
-<line x1="460" y1="770" x2="455" y2="766.667" stroke="#000000" stroke-width="1px"/>
-</g>
-<g id = "T09LD130" >
-<line x1="460" y1="770" x2="455" y2="773.333" stroke="#000000" stroke-width="1px"/>
-</g>
-<g id = "5HPHNZV0" >
-<rect x = "440" y="760" width="30" height="20" fill="#FFFFB0" fill-opacity="0.49019607843137253"/>
-<rect x = "440" y="760" width="30" height="20" stroke="#000000" stroke-width="1px"/>
-</g>
-<g id = "20EZOPH8" >
-<line x1="440" y1="770" x2="420" y2="770" stroke="#000000" stroke-width="1px"/>
-<text x="428.5873" y="769" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">1</text>
-</g>
-<g id = "GI2Z84QV" >
-<text x="420" y="753" font-size="8.951049px" font-family="Arial" fill="#000080" xml:space="preserve">GND-CLIP</text>
-</g>
-<g id = "OX7NV9FJ" >
-<text x="420" y="759" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">TP51</text>
-</g>
-</g>
-<g id = "NPA2M595" >
-<g id = "US1LUBFW" >
+<g id = "5AQ861EE" >
+<g id = "R2SO26OS" >
 <line x1="767" y1="410" x2="764.6" y2="414.5" stroke="#000000" stroke-width="1px"/>
 <line x1="764.6" y1="414.5" x2="762.3" y2="405.5" stroke="#000000" stroke-width="1px"/>
 <line x1="762.3" y1="405.5" x2="760" y2="414.5" stroke="#000000" stroke-width="1px"/>
@@ -365,54 +215,268 @@
 <line x1="757.7" y1="405.5" x2="755.4" y2="414.5" stroke="#000000" stroke-width="1px"/>
 <line x1="755.4" y1="414.5" x2="753" y2="410" stroke="#000000" stroke-width="1px"/>
 </g>
-<g id = "YA2G28UR" >
+<g id = "993WRBD1" >
 <line x1="770" y1="410" x2="767" y2="410" stroke="#000000" stroke-width="1px"/>
 </g>
-<g id = "WYQGGDC0" >
+<g id = "ACD02CZJ" >
 <line x1="750" y1="410" x2="753" y2="410" stroke="#000000" stroke-width="1px"/>
 </g>
-<g id = "MAY65967" >
+<g id = "F6XFQQ9L" >
 <line x1="767" y1="410" x2="770" y2="410" stroke="#000000" stroke-width="1px"/>
 <text x="775" y="409" font-size="4.413793px" font-family="Courier New" fill="#000000" xml:space="preserve">1</text>
 </g>
-<g id = "KXOU0V7J" >
+<g id = "JNEZW9UB" >
 <line x1="753" y1="410" x2="750" y2="410" stroke="#000000" stroke-width="1px"/>
 <text x="742.8815" y="409" font-size="4.413793px" font-family="Courier New" fill="#000000" xml:space="preserve">2</text>
 </g>
-<g id = "1AQ7RST0" >
-<text x="760" y="399" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">R51</text>
-</g>
-<g id = "1TNIW7F3" >
+<g id = "ABSZVU78" >
 <text x="775" y="408" font-size="8.951049px" font-family="Arial" fill="#000000" xml:space="preserve">0</text>
 </g>
+<g id = "MW9WDZ0X" >
+<text x="760" y="399" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">R51</text>
 </g>
-<g id = "OA879NQG" >
-<g id = "YX60PKQV" >
+</g>
+<g id = "D6ULGE5B" >
+<g id = "WB91Z6TG" >
 <line x1="260" y1="770" x2="240" y2="770" stroke="#000000" stroke-width="1px"/>
 </g>
-<g id = "CBN11WDY" >
+<g id = "V7FW20SJ" >
 <line x1="260" y1="770" x2="255" y2="766.667" stroke="#000000" stroke-width="1px"/>
 </g>
-<g id = "8R557JKL" >
+<g id = "X32T0Z9W" >
 <line x1="260" y1="770" x2="255" y2="773.333" stroke="#000000" stroke-width="1px"/>
 </g>
-<g id = "EW1LHM1L" >
+<g id = "UNOG5GWU" >
 <rect x = "240" y="760" width="30" height="20" fill="#FFFFB0" fill-opacity="0.49019607843137253"/>
 <rect x = "240" y="760" width="30" height="20" stroke="#000000" stroke-width="1px"/>
 </g>
-<g id = "S3EEPVAY" >
+<g id = "32DQCUBG" >
 <line x1="240" y1="770" x2="220" y2="770" stroke="#000000" stroke-width="1px"/>
 <text x="228.5873" y="769" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">1</text>
 </g>
-<g id = "4OLLPQP4" >
+<g id = "1ID66DGP" >
 <text x="220" y="753" font-size="8.951049px" font-family="Arial" fill="#000080" xml:space="preserve">GND-CLIP</text>
 </g>
-<g id = "3G6719FR" >
+<g id = "OEA7U89N" >
 <text x="220" y="759" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">TP50</text>
 </g>
 </g>
-<g id = "OJVWYRXS" >
-<g id = "FX1BZCII" >
+<g id = "DGBQ6416" >
+<g id = "ANMBMCYR" >
+<line x1="460" y1="770" x2="440" y2="770" stroke="#000000" stroke-width="1px"/>
+</g>
+<g id = "87ATTOIB" >
+<line x1="460" y1="770" x2="455" y2="766.667" stroke="#000000" stroke-width="1px"/>
+</g>
+<g id = "1PMT8Y83" >
+<line x1="460" y1="770" x2="455" y2="773.333" stroke="#000000" stroke-width="1px"/>
+</g>
+<g id = "XXVMVDN4" >
+<rect x = "440" y="760" width="30" height="20" fill="#FFFFB0" fill-opacity="0.49019607843137253"/>
+<rect x = "440" y="760" width="30" height="20" stroke="#000000" stroke-width="1px"/>
+</g>
+<g id = "BGPC17S6" >
+<line x1="440" y1="770" x2="420" y2="770" stroke="#000000" stroke-width="1px"/>
+<text x="428.5873" y="769" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">1</text>
+</g>
+<g id = "NH27N612" >
+<text x="420" y="753" font-size="8.951049px" font-family="Arial" fill="#000080" xml:space="preserve">GND-CLIP</text>
+</g>
+<g id = "VR8PV9T6" >
+<text x="420" y="759" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">TP51</text>
+</g>
+</g>
+<g id = "G729ECCQ" >
+<g id = "IJMIUGBP" >
+<line x1="960" y1="410" x2="940" y2="410" stroke="#000000" stroke-width="1px"/>
+</g>
+<g id = "W633EPA7" >
+<line x1="960" y1="410" x2="955" y2="406.667" stroke="#000000" stroke-width="1px"/>
+</g>
+<g id = "LNX56CVE" >
+<line x1="960" y1="410" x2="955" y2="413.333" stroke="#000000" stroke-width="1px"/>
+</g>
+<g id = "G803NY6W" >
+<rect x = "940" y="400" width="30" height="20" fill="#FFFFB0" fill-opacity="0.49019607843137253"/>
+<rect x = "940" y="400" width="30" height="20" stroke="#000000" stroke-width="1px"/>
+</g>
+<g id = "DRLFWQC8" >
+<line x1="940" y1="410" x2="920" y2="410" stroke="#000000" stroke-width="1px"/>
+<text x="928.5873" y="409" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">1</text>
+</g>
+<g id = "N4UQIP9M" >
+<text x="920" y="393" font-size="8.951049px" font-family="Arial" fill="#000080" xml:space="preserve">SMA</text>
+</g>
+<g id = "MY8BMZJN" >
+<text x="920" y="399" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">J55</text>
+</g>
+</g>
+<g id = "GC5QOWCQ" >
+<g id = "JCJFE4B7" >
+<line x1="1360" y1="360" x2="1340" y2="360" stroke="#000000" stroke-width="1px"/>
+</g>
+<g id = "T1ZNJ5BY" >
+<line x1="1360" y1="370" x2="1340" y2="370" stroke="#000000" stroke-width="1px"/>
+</g>
+<g id = "TOVOYS20" >
+<line x1="1360" y1="380" x2="1340" y2="380" stroke="#000000" stroke-width="1px"/>
+</g>
+<g id = "M88009E8" >
+<line x1="1360" y1="390" x2="1340" y2="390" stroke="#000000" stroke-width="1px"/>
+</g>
+<g id = "AFCPLS1P" >
+<line x1="1360" y1="360" x2="1355" y2="356.667" stroke="#000000" stroke-width="1px"/>
+</g>
+<g id = "G7FHAYX8" >
+<line x1="1360" y1="370" x2="1355" y2="366.667" stroke="#000000" stroke-width="1px"/>
+</g>
+<g id = "5FOIE1YF" >
+<line x1="1360" y1="380" x2="1355" y2="376.667" stroke="#000000" stroke-width="1px"/>
+</g>
+<g id = "IPXS7DXO" >
+<line x1="1360" y1="390" x2="1355" y2="386.667" stroke="#000000" stroke-width="1px"/>
+</g>
+<g id = "OHCB1BW1" >
+<line x1="1360" y1="360" x2="1355" y2="363.333" stroke="#000000" stroke-width="1px"/>
+</g>
+<g id = "XXW1OZB7" >
+<line x1="1360" y1="370" x2="1355" y2="373.333" stroke="#000000" stroke-width="1px"/>
+</g>
+<g id = "JYSVJFYE" >
+<line x1="1360" y1="380" x2="1355" y2="383.333" stroke="#000000" stroke-width="1px"/>
+</g>
+<g id = "02TYM2P9" >
+<line x1="1360" y1="390" x2="1355" y2="393.333" stroke="#000000" stroke-width="1px"/>
+</g>
+<g id = "S3QLVD6R" >
+<rect x = "1340" y="350" width="30" height="50" fill="#FFFFB0" fill-opacity="0.49019607843137253"/>
+<rect x = "1340" y="350" width="30" height="50" stroke="#000000" stroke-width="1px"/>
+</g>
+<g id = "XDZKYZQG" >
+<line x1="1340" y1="360" x2="1320" y2="360" stroke="#000000" stroke-width="1px"/>
+<text x="1328.5873" y="359" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">1</text>
+</g>
+<g id = "LJWA4IZD" >
+<line x1="1340" y1="370" x2="1320" y2="370" stroke="#000000" stroke-width="1px"/>
+<text x="1327.8598" y="369" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">2</text>
+</g>
+<g id = "CO73JSTJ" >
+<line x1="1340" y1="380" x2="1320" y2="380" stroke="#000000" stroke-width="1px"/>
+<text x="1328.2346" y="379" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">3</text>
+</g>
+<g id = "ZJGMDS56" >
+<line x1="1340" y1="390" x2="1320" y2="390" stroke="#000000" stroke-width="1px"/>
+<text x="1327.7981" y="389" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">4</text>
+</g>
+<g id = "DOHUGVHU" >
+<text x="1320" y="343" font-size="8.951049px" font-family="Arial" fill="#000080" xml:space="preserve">1x4 100mil</text>
+</g>
+<g id = "NZ4610CT" >
+<text x="1320" y="349" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">J57</text>
+</g>
+</g>
+<g id = "M9JNA02H" >
+<g id = "Q5F0R8V5" >
+<line x1="460" y1="610" x2="440" y2="610" stroke="#000000" stroke-width="1px"/>
+</g>
+<g id = "BVW7FM6I" >
+<line x1="460" y1="610" x2="455" y2="606.667" stroke="#000000" stroke-width="1px"/>
+</g>
+<g id = "QHZ7YUB6" >
+<line x1="460" y1="610" x2="455" y2="613.333" stroke="#000000" stroke-width="1px"/>
+</g>
+<g id = "HJTRMHF2" >
+<rect x = "440" y="600" width="30" height="20" fill="#FFFFB0" fill-opacity="0.49019607843137253"/>
+<rect x = "440" y="600" width="30" height="20" stroke="#000000" stroke-width="1px"/>
+</g>
+<g id = "7CZEZFCP" >
+<line x1="440" y1="610" x2="420" y2="610" stroke="#000000" stroke-width="1px"/>
+<text x="428.5873" y="609" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">1</text>
+</g>
+<g id = "IL7CK9JR" >
+<text x="420" y="593" font-size="8.951049px" font-family="Arial" fill="#000080" xml:space="preserve">SMA</text>
+</g>
+<g id = "7NHNOK08" >
+<text x="420" y="599" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">J53</text>
+</g>
+</g>
+<g id = "P2QGUYQ4" >
+<g id = "SZBO6GDX" >
+<line x1="960" y1="510" x2="940" y2="510" stroke="#000000" stroke-width="1px"/>
+</g>
+<g id = "QO65YOYR" >
+<line x1="960" y1="510" x2="955" y2="506.667" stroke="#000000" stroke-width="1px"/>
+</g>
+<g id = "GILHMXNC" >
+<line x1="960" y1="510" x2="955" y2="513.333" stroke="#000000" stroke-width="1px"/>
+</g>
+<g id = "97O1RMAO" >
+<rect x = "940" y="500" width="30" height="20" fill="#FFFFB0" fill-opacity="0.49019607843137253"/>
+<rect x = "940" y="500" width="30" height="20" stroke="#000000" stroke-width="1px"/>
+</g>
+<g id = "7FCPJ80V" >
+<line x1="940" y1="510" x2="920" y2="510" stroke="#000000" stroke-width="1px"/>
+<text x="928.5873" y="509" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">1</text>
+</g>
+<g id = "STJ0V9DH" >
+<text x="920" y="493" font-size="8.951049px" font-family="Arial" fill="#000080" xml:space="preserve">SMA</text>
+</g>
+<g id = "H1EUTSJ5" >
+<text x="920" y="499" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">J56</text>
+</g>
+</g>
+<g id = "S7RA2F13" >
+<g id = "8CQRLU57" >
+<line x1="460" y1="310" x2="440" y2="310" stroke="#000000" stroke-width="1px"/>
+</g>
+<g id = "FMFV3A7K" >
+<line x1="460" y1="310" x2="455" y2="306.667" stroke="#000000" stroke-width="1px"/>
+</g>
+<g id = "3PQBMDIJ" >
+<line x1="460" y1="310" x2="455" y2="313.333" stroke="#000000" stroke-width="1px"/>
+</g>
+<g id = "8RDC6US7" >
+<rect x = "440" y="300" width="30" height="20" fill="#FFFFB0" fill-opacity="0.49019607843137253"/>
+<rect x = "440" y="300" width="30" height="20" stroke="#000000" stroke-width="1px"/>
+</g>
+<g id = "8DLL220T" >
+<line x1="440" y1="310" x2="420" y2="310" stroke="#000000" stroke-width="1px"/>
+<text x="428.5873" y="309" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">1</text>
+</g>
+<g id = "F6870LV9" >
+<text x="420" y="293" font-size="8.951049px" font-family="Arial" fill="#000080" xml:space="preserve">SMA</text>
+</g>
+<g id = "5A260CJA" >
+<text x="420" y="299" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">J50</text>
+</g>
+</g>
+<g id = "TU3AWV0L" >
+<g id = "KUWYYTIO" >
+<line x1="460" y1="510" x2="440" y2="510" stroke="#000000" stroke-width="1px"/>
+</g>
+<g id = "P1QY7EK4" >
+<line x1="460" y1="510" x2="455" y2="506.667" stroke="#000000" stroke-width="1px"/>
+</g>
+<g id = "WA0UNFA6" >
+<line x1="460" y1="510" x2="455" y2="513.333" stroke="#000000" stroke-width="1px"/>
+</g>
+<g id = "8U9G3SXM" >
+<rect x = "440" y="500" width="30" height="20" fill="#FFFFB0" fill-opacity="0.49019607843137253"/>
+<rect x = "440" y="500" width="30" height="20" stroke="#000000" stroke-width="1px"/>
+</g>
+<g id = "234L8H08" >
+<line x1="440" y1="510" x2="420" y2="510" stroke="#000000" stroke-width="1px"/>
+<text x="428.5873" y="509" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">1</text>
+</g>
+<g id = "BTPUD7JC" >
+<text x="420" y="493" font-size="8.951049px" font-family="Arial" fill="#000080" xml:space="preserve">SMA</text>
+</g>
+<g id = "QKA6NPAW" >
+<text x="420" y="499" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">J52</text>
+</g>
+</g>
+<g id = "VNKLU1EE" >
+<g id = "S4APRDB4" >
 <line x1="767" y1="510" x2="764.6" y2="514.5" stroke="#000000" stroke-width="1px"/>
 <line x1="764.6" y1="514.5" x2="762.3" y2="505.5" stroke="#000000" stroke-width="1px"/>
 <line x1="762.3" y1="505.5" x2="760" y2="514.5" stroke="#000000" stroke-width="1px"/>
@@ -420,164 +484,100 @@
 <line x1="757.7" y1="505.5" x2="755.4" y2="514.5" stroke="#000000" stroke-width="1px"/>
 <line x1="755.4" y1="514.5" x2="753" y2="510" stroke="#000000" stroke-width="1px"/>
 </g>
-<g id = "CVFB4TYL" >
+<g id = "MISBR5BG" >
 <line x1="770" y1="510" x2="767" y2="510" stroke="#000000" stroke-width="1px"/>
 </g>
-<g id = "J5ZRE11P" >
+<g id = "QT8ACXBU" >
 <line x1="750" y1="510" x2="753" y2="510" stroke="#000000" stroke-width="1px"/>
 </g>
-<g id = "MR01P2S9" >
+<g id = "VJ0TBPM7" >
 <line x1="767" y1="510" x2="770" y2="510" stroke="#000000" stroke-width="1px"/>
 <text x="775" y="509" font-size="4.413793px" font-family="Courier New" fill="#000000" xml:space="preserve">1</text>
 </g>
-<g id = "XH8TRKRS" >
+<g id = "9M53DT72" >
 <line x1="753" y1="510" x2="750" y2="510" stroke="#000000" stroke-width="1px"/>
 <text x="742.8815" y="509" font-size="4.413793px" font-family="Courier New" fill="#000000" xml:space="preserve">2</text>
 </g>
-<g id = "855HUMWM" >
+<g id = "2DE80NNW" >
 <text x="760" y="499" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">R52</text>
 </g>
-<g id = "Q9TEJVHC" >
+<g id = "39HNGFZI" >
 <text x="775" y="508" font-size="8.951049px" font-family="Arial" fill="#000000" xml:space="preserve">0</text>
 </g>
 </g>
-<g id = "Q62EHXCO" >
-<g id = "MV7EK3KI" >
-<line x1="1360" y1="360" x2="1340" y2="360" stroke="#000000" stroke-width="1px"/>
+<g id = "WRAQPGER" >
+<g id = "0VTIMWHX" >
+<line x1="960" y1="310" x2="940" y2="310" stroke="#000000" stroke-width="1px"/>
 </g>
-<g id = "XTPW4NOQ" >
-<line x1="1360" y1="370" x2="1340" y2="370" stroke="#000000" stroke-width="1px"/>
+<g id = "PER1R1UH" >
+<line x1="960" y1="310" x2="955" y2="306.667" stroke="#000000" stroke-width="1px"/>
 </g>
-<g id = "1CW47XUI" >
-<line x1="1360" y1="380" x2="1340" y2="380" stroke="#000000" stroke-width="1px"/>
+<g id = "PYZ4ITTV" >
+<line x1="960" y1="310" x2="955" y2="313.333" stroke="#000000" stroke-width="1px"/>
 </g>
-<g id = "7N5WO4W8" >
-<line x1="1360" y1="390" x2="1340" y2="390" stroke="#000000" stroke-width="1px"/>
+<g id = "JILWM1AK" >
+<rect x = "940" y="300" width="30" height="20" fill="#FFFFB0" fill-opacity="0.49019607843137253"/>
+<rect x = "940" y="300" width="30" height="20" stroke="#000000" stroke-width="1px"/>
 </g>
-<g id = "20RNDVF0" >
-<line x1="1360" y1="360" x2="1355" y2="356.667" stroke="#000000" stroke-width="1px"/>
+<g id = "QBN8ZNFN" >
+<line x1="940" y1="310" x2="920" y2="310" stroke="#000000" stroke-width="1px"/>
+<text x="928.5873" y="309" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">1</text>
 </g>
-<g id = "CTALEHX1" >
-<line x1="1360" y1="370" x2="1355" y2="366.667" stroke="#000000" stroke-width="1px"/>
+<g id = "5OYICH80" >
+<text x="920" y="293" font-size="8.951049px" font-family="Arial" fill="#000080" xml:space="preserve">SMA</text>
 </g>
-<g id = "SBHQH845" >
-<line x1="1360" y1="380" x2="1355" y2="376.667" stroke="#000000" stroke-width="1px"/>
-</g>
-<g id = "YQ6JKAZ0" >
-<line x1="1360" y1="390" x2="1355" y2="386.667" stroke="#000000" stroke-width="1px"/>
-</g>
-<g id = "TRRY6LWG" >
-<line x1="1360" y1="360" x2="1355" y2="363.333" stroke="#000000" stroke-width="1px"/>
-</g>
-<g id = "6DRZOQPD" >
-<line x1="1360" y1="370" x2="1355" y2="373.333" stroke="#000000" stroke-width="1px"/>
-</g>
-<g id = "I7PQMYL9" >
-<line x1="1360" y1="380" x2="1355" y2="383.333" stroke="#000000" stroke-width="1px"/>
-</g>
-<g id = "Y12X5PUK" >
-<line x1="1360" y1="390" x2="1355" y2="393.333" stroke="#000000" stroke-width="1px"/>
-</g>
-<g id = "478SMUIG" >
-<rect x = "1340" y="350" width="30" height="50" fill="#FFFFB0" fill-opacity="0.49019607843137253"/>
-<rect x = "1340" y="350" width="30" height="50" stroke="#000000" stroke-width="1px"/>
-</g>
-<g id = "8R3LY00E" >
-<line x1="1340" y1="360" x2="1320" y2="360" stroke="#000000" stroke-width="1px"/>
-<text x="1328.5873" y="359" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">1</text>
-</g>
-<g id = "7PXQKS4E" >
-<line x1="1340" y1="370" x2="1320" y2="370" stroke="#000000" stroke-width="1px"/>
-<text x="1327.8598" y="369" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">2</text>
-</g>
-<g id = "7GJRGTD0" >
-<line x1="1340" y1="380" x2="1320" y2="380" stroke="#000000" stroke-width="1px"/>
-<text x="1328.2346" y="379" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">3</text>
-</g>
-<g id = "4GWTAEBS" >
-<line x1="1340" y1="390" x2="1320" y2="390" stroke="#000000" stroke-width="1px"/>
-<text x="1327.7981" y="389" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">4</text>
-</g>
-<g id = "6JFOKXEU" >
-<text x="1320" y="343" font-size="8.951049px" font-family="Arial" fill="#000080" xml:space="preserve">1x4 100mil</text>
-</g>
-<g id = "NJC6RAKA" >
-<text x="1320" y="349" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">J57</text>
+<g id = "VZMU2Z6Z" >
+<text x="920" y="299" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">J54</text>
 </g>
 </g>
-<g id = "SIS2QLC5" >
-<g id = "BMX9I20I" >
-<line x1="460" y1="610" x2="440" y2="610" stroke="#000000" stroke-width="1px"/>
+<g id = "WTUU5E5S" >
+<g id = "BC4VDHQN" >
+<line x1="660" y1="770" x2="640" y2="770" stroke="#000000" stroke-width="1px"/>
 </g>
-<g id = "JJZ1U8JL" >
-<line x1="460" y1="610" x2="455" y2="606.667" stroke="#000000" stroke-width="1px"/>
+<g id = "1XW0KMDC" >
+<line x1="660" y1="770" x2="655" y2="766.667" stroke="#000000" stroke-width="1px"/>
 </g>
-<g id = "A0M6G1EM" >
-<line x1="460" y1="610" x2="455" y2="613.333" stroke="#000000" stroke-width="1px"/>
+<g id = "YXB054IE" >
+<line x1="660" y1="770" x2="655" y2="773.333" stroke="#000000" stroke-width="1px"/>
 </g>
-<g id = "XDIZ6B0V" >
-<rect x = "440" y="600" width="30" height="20" fill="#FFFFB0" fill-opacity="0.49019607843137253"/>
-<rect x = "440" y="600" width="30" height="20" stroke="#000000" stroke-width="1px"/>
+<g id = "42KZI78K" >
+<rect x = "640" y="760" width="30" height="20" fill="#FFFFB0" fill-opacity="0.49019607843137253"/>
+<rect x = "640" y="760" width="30" height="20" stroke="#000000" stroke-width="1px"/>
 </g>
-<g id = "OUPV5UMD" >
-<line x1="440" y1="610" x2="420" y2="610" stroke="#000000" stroke-width="1px"/>
-<text x="428.5873" y="609" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">1</text>
+<g id = "7KWHHBUS" >
+<line x1="640" y1="770" x2="620" y2="770" stroke="#000000" stroke-width="1px"/>
+<text x="628.5873" y="769" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">1</text>
 </g>
-<g id = "03VQ0RXM" >
-<text x="420" y="593" font-size="8.951049px" font-family="Arial" fill="#000080" xml:space="preserve">SMA</text>
+<g id = "91RHAGTC" >
+<text x="620" y="753" font-size="8.951049px" font-family="Arial" fill="#000080" xml:space="preserve">GND-CLIP</text>
 </g>
-<g id = "F5YE4H3B" >
-<text x="420" y="599" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">J53</text>
-</g>
-</g>
-<g id = "SLWTUA7X" >
-<g id = "BZPZ8RKJ" >
-<line x1="460" y1="510" x2="440" y2="510" stroke="#000000" stroke-width="1px"/>
-</g>
-<g id = "I1RIG1CZ" >
-<line x1="460" y1="510" x2="455" y2="506.667" stroke="#000000" stroke-width="1px"/>
-</g>
-<g id = "J27BUT4I" >
-<line x1="460" y1="510" x2="455" y2="513.333" stroke="#000000" stroke-width="1px"/>
-</g>
-<g id = "846WN7AD" >
-<rect x = "440" y="500" width="30" height="20" fill="#FFFFB0" fill-opacity="0.49019607843137253"/>
-<rect x = "440" y="500" width="30" height="20" stroke="#000000" stroke-width="1px"/>
-</g>
-<g id = "AYW182L5" >
-<line x1="440" y1="510" x2="420" y2="510" stroke="#000000" stroke-width="1px"/>
-<text x="428.5873" y="509" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">1</text>
-</g>
-<g id = "UKL7XUC1" >
-<text x="420" y="493" font-size="8.951049px" font-family="Arial" fill="#000080" xml:space="preserve">SMA</text>
-</g>
-<g id = "ML9KM04H" >
-<text x="420" y="499" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">J52</text>
+<g id = "CJBJNFSL" >
+<text x="620" y="759" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">TP52</text>
 </g>
 </g>
-<g id = "UGWY0IQK" >
-<g id = "ARIDFJMR" >
-<line x1="460" y1="310" x2="440" y2="310" stroke="#000000" stroke-width="1px"/>
+<g id = "ZU52AO71" >
+<g id = "Z19FBW9F" >
+<line x1="460" y1="410" x2="440" y2="410" stroke="#000000" stroke-width="1px"/>
 </g>
-<g id = "TVTJTZFW" >
-<line x1="460" y1="310" x2="455" y2="306.667" stroke="#000000" stroke-width="1px"/>
+<g id = "8JJ1KXYM" >
+<line x1="460" y1="410" x2="455" y2="406.667" stroke="#000000" stroke-width="1px"/>
 </g>
-<g id = "E9BRMWU4" >
-<line x1="460" y1="310" x2="455" y2="313.333" stroke="#000000" stroke-width="1px"/>
+<g id = "20R6G9ER" >
+<line x1="460" y1="410" x2="455" y2="413.333" stroke="#000000" stroke-width="1px"/>
 </g>
-<g id = "T1MCTL4D" >
-<rect x = "440" y="300" width="30" height="20" fill="#FFFFB0" fill-opacity="0.49019607843137253"/>
-<rect x = "440" y="300" width="30" height="20" stroke="#000000" stroke-width="1px"/>
+<g id = "JNMIY322" >
+<rect x = "440" y="400" width="30" height="20" fill="#FFFFB0" fill-opacity="0.49019607843137253"/>
+<rect x = "440" y="400" width="30" height="20" stroke="#000000" stroke-width="1px"/>
 </g>
-<g id = "UE7ASZX1" >
-<line x1="440" y1="310" x2="420" y2="310" stroke="#000000" stroke-width="1px"/>
-<text x="428.5873" y="309" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">1</text>
+<g id = "8A8T4CMY" >
+<line x1="440" y1="410" x2="420" y2="410" stroke="#000000" stroke-width="1px"/>
+<text x="428.5873" y="409" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">1</text>
 </g>
-<g id = "WIMZ7BCV" >
-<text x="420" y="293" font-size="8.951049px" font-family="Arial" fill="#000080" xml:space="preserve">SMA</text>
+<g id = "1YKFXUVO" >
+<text x="420" y="393" font-size="8.951049px" font-family="Arial" fill="#000080" xml:space="preserve">SMA</text>
 </g>
-<g id = "WT0NF9UH" >
-<text x="420" y="299" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">J50</text>
+<g id = "QLU0XV9Q" >
+<text x="420" y="399" font-size="9.029982px" font-family="Times New Roman" fill="#000000" xml:space="preserve">J51</text>
 </g>
 </g>
 </g>

@@ -82,12 +82,12 @@ nets:
   VADJ:   { type: hier, direction: input,  members: [U11.A2, C15.1] }
 
   # ===== Global-label nets (ANY-OUT setpoints → FMC LA bank) =====
-  LDO_SET_50mV:  { type: global, direction: input, members: [U10.5]  }
-  LDO_SET_100mV: { type: global, direction: input, members: [U10.6]  }
-  LDO_SET_200mV: { type: global, direction: input, members: [U10.7]  }
-  LDO_SET_400mV: { type: global, direction: input, members: [U10.9]  }
-  LDO_SET_800mV: { type: global, direction: input, members: [U10.10] }
-  LDO_SET_1V6:   { type: global, direction: input, members: [U10.11] }
+  LDO_SET_25mV:  { type: global, direction: input, members: [U10.5]  }
+  LDO_SET_50mV: { type: global, direction: input, members: [U10.6]  }
+  LDO_SET_100mV: { type: global, direction: input, members: [U10.7]  }
+  LDO_SET_200mV: { type: global, direction: input, members: [U10.9]  }
+  LDO_SET_400mV: { type: global, direction: input, members: [U10.10] }
+  LDO_SET_800mV:   { type: global, direction: input, members: [U10.11] }
 
   # ===== Internal nets — unlabeled local connectivity =====
   internal_LDO_OUT_bus:

@@ -153,14 +153,14 @@ def build_power() -> tuple[AltiumSheet, object]:
     # jog_x=None → straight west at the pin's own row.
     # =========================================================================
     SETPOINTS = [
-        ("11", "LDO_SET_1V6",   4100, 4800),
-        ("10", "LDO_SET_800mV", 4000, 4600),
-        ("9",  "LDO_SET_400mV", None, 4400),
+        ("11", "LDO_SET_800mV",   4100, 4800),
+        ("10", "LDO_SET_400mV", 4000, 4600),
+        ("9",  "LDO_SET_200mV", None, 4400),
         # pin7's jog must sit WEST of pin6's: pin7's port row (4200) equals pin6's
         # own pin row, so their horizontal legs would otherwise overlap (short).
-        ("7",  "LDO_SET_200mV", 3700, 4200),
-        ("6",  "LDO_SET_100mV", 3900, 4000),
-        ("5",  "LDO_SET_50mV",  3500, 3800),
+        ("7",  "LDO_SET_100mV", 3700, 4200),
+        ("6",  "LDO_SET_50mV", 3900, 4000),
+        ("5",  "LDO_SET_25mV",  3500, 3800),
     ]
     for pn, net, jog_x, row_y in SETPOINTS:
         px, py = U10[pn]

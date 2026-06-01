@@ -592,7 +592,8 @@ def _netlist_context_for(rule: SemanticRule, view: NetlistView) -> str:
         if p:
             sheet, part = p
             lines.append(f"SUBJECT {at.refdes} ({sheet}): value={part.value} "
-                         f"lib_id={part.lib_id} dnp={getattr(part, 'dnp', False)}")
+                         f"lib_id={part.lib_id} footprint={getattr(part, 'footprint', '') or '(none)'} "
+                         f"dnp={getattr(part, 'dnp', False)}")
         lines.append(f"{at.refdes} pin -> net:")
         for m in view.nets_with_member(at.refdes):
             lines.append(f"  {at.refdes}.{m.pin} -> '{m.net}'")
@@ -622,7 +623,9 @@ def _netlist_context_for(rule: SemanticRule, view: NetlistView) -> str:
         lines.append(f"\nAll parts on sheet '{at.sheet}':")
         for ref, part in nl.parts.items():
             dnp = " DNP" if getattr(part, "dnp", False) else ""
-            lines.append(f"  {ref}: {part.value} ({part.lib_id}){dnp}")
+            fp = getattr(part, "footprint", "") or ""
+            fp_s = f" footprint={fp}" if fp else ""
+            lines.append(f"  {ref}: {part.value} ({part.lib_id}){fp_s}{dnp}")
 
     # Deterministic value↔MPN decode (Murata/Vishay codes the judge can't read
     # from memory). Scope it to the parts in view: the named sheet, else — for a

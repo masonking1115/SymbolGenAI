@@ -17,8 +17,8 @@ parts:
   U40:
     lib_id: Lib:MCP4728
     value: MCP4728
-    footprint: Package_DFN_QFN:VQFN-10-1EP_3x3mm_P0.5mm_EP1.6x1.6mm
-    notes: External VREF=VDD; EEPROM default code 0xFFF → bias OFF at POR
+    footprint: Package_SO:MSOP-10_3x3mm_P0.5mm
+    notes: External VREF=VDD; EEPROM default code 0xFFF → bias OFF at POR. Footprint = MSOP-10 (MCP4728T-E/UN, "/UN" suffix; no EP) per DS22187E — was wrongly VQFN-10-EP.
   C40:
     lib_id: Lib:GRM155R71C104KA88D
     value: 0.1uF
@@ -29,16 +29,16 @@ parts:
   U41:
     lib_id: Lib:OPA2388
     value: OPA2388
-    footprint: Package_SO:SOIC-8_3.9x4.9mm_P1.27mm
+    footprint: Package_SO:VSSOP-8_3.0x3.0mm_P0.65mm
     units: [1]
-    notes: Single 8-pin symbol. Amp A (1/2/3)=ch0, amp B (5/6/7)=ch1, V+/V- (8/4) shared.
+    notes: Single 8-pin symbol. Amp A (1/2/3)=ch0, amp B (5/6/7)=ch1, V+/V- (8/4) shared. Footprint = VSSOP-8 (OPA2388IDGK, "DGK" suffix; no EP) per TI — was wrongly SOIC-8 (1.27mm pitch).
 
   # ===== Channel 0 (BIAS0) =====
   Q40:
     lib_id: Lib:PMZ1200UPEYL
     value: PMZ1200UPEYL
-    footprint: Package_DFN_QFN:DFN-3-1EP_1.0x1.0mm_P0.65mm_EP0.5x0.5mm
-    notes: PMOS pass element for channel 0
+    footprint: Package_TO_SOT_SMD:Nexperia_SOT883
+    notes: PMOS pass element for channel 0. Footprint = SOT883 / DFN1006-3 (1.0×0.6mm, 3-lead, no EP) per Nexperia PMZ1200UPE — was wrongly DFN-3 1.0×1.0mm-EP; BOM "SOT-666" is also wrong.
   R40:
     lib_id: Lib:TNPW06033K65BEEA
     value: 3.65k 0.1%
@@ -70,7 +70,8 @@ parts:
   Q41:
     lib_id: Lib:PMZ1200UPEYL
     value: PMZ1200UPEYL
-    footprint: Package_DFN_QFN:DFN-3-1EP_1.0x1.0mm_P0.65mm_EP0.5x0.5mm
+    footprint: Package_TO_SOT_SMD:Nexperia_SOT883
+    notes: PMOS pass element for channel 1. Footprint = SOT883 / DFN1006-3 (1.0×0.6mm, 3-lead, no EP) per Nexperia — was wrongly DFN-3 1.0×1.0mm-EP.
   R41:
     lib_id: Lib:TNPW06033K65BEEA
     value: 3.65k 0.1%

@@ -54,12 +54,12 @@ parts:
   R119: { lib_id: Lib:CRCW04020000Z0ED, value: "0", footprint: Resistor_SMD:R_0402_1005Metric, notes: "LSW_EN  LA19_P @ H22" }
   R120: { lib_id: Lib:CRCW04020000Z0ED, value: "0", footprint: Resistor_SMD:R_0402_1005Metric, notes: "BIAS_ISO0  LA20_P @ G21" }
   R121: { lib_id: Lib:CRCW04020000Z0ED, value: "0", footprint: Resistor_SMD:R_0402_1005Metric, notes: "BIAS_ISO1  LA21_P @ H25" }
-  R122: { lib_id: Lib:CRCW04020000Z0ED, value: "0", footprint: Resistor_SMD:R_0402_1005Metric, notes: "LDO_SET_50mV  LA22_P @ G24" }
-  R123: { lib_id: Lib:CRCW04020000Z0ED, value: "0", footprint: Resistor_SMD:R_0402_1005Metric, notes: "LDO_SET_100mV  LA23_P @ D23" }
-  R124: { lib_id: Lib:CRCW04020000Z0ED, value: "0", footprint: Resistor_SMD:R_0402_1005Metric, notes: "LDO_SET_200mV  LA24_P @ H28" }
-  R125: { lib_id: Lib:CRCW04020000Z0ED, value: "0", footprint: Resistor_SMD:R_0402_1005Metric, notes: "LDO_SET_400mV  LA25_P @ G27" }
-  R126: { lib_id: Lib:CRCW04020000Z0ED, value: "0", footprint: Resistor_SMD:R_0402_1005Metric, notes: "LDO_SET_800mV  LA26_P @ D26" }
-  R127: { lib_id: Lib:CRCW04020000Z0ED, value: "0", footprint: Resistor_SMD:R_0402_1005Metric, notes: "LDO_SET_1V6  LA27_P @ C26" }
+  R122: { lib_id: Lib:CRCW04020000Z0ED, value: "0", footprint: Resistor_SMD:R_0402_1005Metric, notes: "LDO_SET_25mV  LA22_P @ G24" }
+  R123: { lib_id: Lib:CRCW04020000Z0ED, value: "0", footprint: Resistor_SMD:R_0402_1005Metric, notes: "LDO_SET_50mV  LA23_P @ D23" }
+  R124: { lib_id: Lib:CRCW04020000Z0ED, value: "0", footprint: Resistor_SMD:R_0402_1005Metric, notes: "LDO_SET_100mV  LA24_P @ H28" }
+  R125: { lib_id: Lib:CRCW04020000Z0ED, value: "0", footprint: Resistor_SMD:R_0402_1005Metric, notes: "LDO_SET_200mV  LA25_P @ G27" }
+  R126: { lib_id: Lib:CRCW04020000Z0ED, value: "0", footprint: Resistor_SMD:R_0402_1005Metric, notes: "LDO_SET_400mV  LA26_P @ D26" }
+  R127: { lib_id: Lib:CRCW04020000Z0ED, value: "0", footprint: Resistor_SMD:R_0402_1005Metric, notes: "LDO_SET_800mV  LA27_P @ C26" }
 
 nets:
   # ===== Power & strapping =====
@@ -107,12 +107,12 @@ nets:
   SAMPLE_TRIG: { type: global, direction: output, members: [R117.1] }
   BIAS_ISO0:   { type: global, direction: output, members: [R120.1] }
   BIAS_ISO1:   { type: global, direction: output, members: [R121.1] }
-  LDO_SET_50mV:  { type: global, direction: output, members: [R122.1] }
-  LDO_SET_100mV: { type: global, direction: output, members: [R123.1] }
-  LDO_SET_200mV: { type: global, direction: output, members: [R124.1] }
-  LDO_SET_400mV: { type: global, direction: output, members: [R125.1] }
-  LDO_SET_800mV: { type: global, direction: output, members: [R126.1] }
-  LDO_SET_1V6:   { type: global, direction: output, members: [R127.1] }
+  LDO_SET_25mV:  { type: global, direction: output, members: [R122.1] }
+  LDO_SET_50mV: { type: global, direction: output, members: [R123.1] }
+  LDO_SET_100mV: { type: global, direction: output, members: [R124.1] }
+  LDO_SET_200mV: { type: global, direction: output, members: [R125.1] }
+  LDO_SET_400mV: { type: global, direction: output, members: [R126.1] }
+  LDO_SET_800mV:   { type: global, direction: output, members: [R127.1] }
 
   # ===== Internal stubs (FMC pin → R<n>.2) — one per LA-routed signal =====
   # FMC pins are the VITA 57.1 LPC LA_P positions (see R<n> notes above).

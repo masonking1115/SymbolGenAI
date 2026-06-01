@@ -76,6 +76,25 @@ The mezzanine signals below route from Bobcat (or its bias/control circuitry) to
 **FMC LA → Bobcat (via 0Ω, also SMA-routable):** OSC_EN, WEIGHT_EN, SAMPLE_TRIG (3 nets).
 **FMC LA → control:** LDO EN, ANY-OUT setpoints (LDO_SET_*), Load-switch EN, Bias-isolation enables.
 
+**ANY-OUT setpoint bit weights (TPS7A8401A, low-range — base 0.5 V, 25 mV/LSB).**
+Net names match the TRUE 8401A weight of each pin (corrected 2026-05-31 — they
+previously used the 8400A high-range labels, i.e. 2× these values, which would
+have mis-mapped FPGA firmware). Grounding a SET pin ADDS its weight to the 0.5 V
+base; an open pin contributes nothing.
+
+| U10 pin | Net name      | Weight | FMC LA pin |
+|---------|---------------|--------|------------|
+| 5       | LDO_SET_25mV  | 25 mV  | LA22_P G24 |
+| 6       | LDO_SET_50mV  | 50 mV  | LA23_P D23 |
+| 7       | LDO_SET_100mV | 100 mV | LA24_P H28 |
+| 9       | LDO_SET_200mV | 200 mV | LA25_P G27 |
+| 10      | LDO_SET_400mV | 400 mV | LA26_P D26 |
+| 11      | LDO_SET_800mV | 800 mV | LA27_P C26 |
+
+Examples: VOUT 0.6 V = 0.5 + 0.1 → ground LDO_SET_100mV (pin 7). VOUT 1.0 V =
+0.5 + 0.4 + 0.1 → ground LDO_SET_400mV + LDO_SET_100mV (pins 10, 7). The Bobcat
+0.6–1.0 V window is fully addressable in 25 mV steps.
+
 LA-pair locations P/N (CC = clock-capable), per VITA 57.1 LPC:
 - Row C: C10/C11 LA06, C14/C15 LA10, C18/C19 LA14, C22/C23 LA18_CC, C26/C27 LA27
 - Row D: D8/D9 LA01_CC, D11/D12 LA05, D14/D15 LA09, D17/D18 LA13, D20/D21 LA17_CC, D23/D24 LA23, D26/D27 LA26
@@ -83,6 +102,26 @@ LA-pair locations P/N (CC = clock-capable), per VITA 57.1 LPC:
 - Row H: H7/H8 LA02, H10/H11 LA04, H13/H14 LA07, H16/H17 LA11, H19/H20 LA15, H22/H23 LA19, H25/H26 LA21, H28/H29 LA24, H31/H32 LA28, H34/H35 LA30, H37/H38 LA32
 
 All other unlabeled pins on rows C/D/G/H are **GND** per the standard.
+
+**Authoritative pinout reference:** `Parts Library/ASP-134606-01/VITA57.1_FMC_HPC_LPC_SIGNALS_AND_PINOUT.xlsx`
+(the ANSI/VITA 57.1 FMC signals-and-pinout spreadsheet from FMCHUB; the "Low-pin
+count (LPC) connector" sheet is the per-pin C/D/G/H table). Verified 2026-05-31
+against our `LA_ASSIGN` (all 28 LA P-pins match) and the wired power/special pins
+(3P3V/VADJ/SCL/SDA/PRSNT/VREF/12P0V/3P3VAUX all match). Per that sheet the LPC has
+**61 GND pins**:
+C1,C4,C5,C8,C9,C12,C13,C16,C17,C20,C21,C24,C25,C28,C29,C32,C33,C36,C38,C40,
+D2,D3,D6,D7,D10,D13,D16,D19,D22,D25,D28,D37,D39,
+G1,G4,G5,G8,G11,G14,G17,G20,G23,G26,G29,G32,G35,G38,G40,
+H3,H6,H9,H12,H15,H18,H21,H24,H27,H30,H33,H36,H39.
+
+> ⚠️ **F-1a (GND pins floating):** the generator does NOT wire those GND pins to the
+> GND net — `build_fmc.py` No-ERCs every unwired pin, so the 61 LPC GND positions are
+> isolated pads (GND net = 3 strap pins only). Fix before PCB layout.
+>
+> ⚠️ **F-1b (LDO_PG on the wrong pin — found 2026-05-31 via the pinout cross-check):**
+> the design wires **LDO_PG to C1**, but per VITA 57.1 LPC **C1 is GND** and the
+> power-good signal **PG_C2M is on D1**. LDO_PG must move from C1 → **D1**, and C1
+> must join the GND net. (Mirrors the earlier C↔D pinout-error class.)
 
 ## Topology / block diagram
 FMC (bottom) supplies 3.3V and VADJ. 3.3V feeds EEPROM, LDO, and Bias block. VADJ passes through the load switch to Bobcat VDDIO. The LDO generates 0.6–1.0V for Bobcat VDDD/VDDA1/VDDA2. Bobcat SPI, RESET_N, and SAMPLE_OUT signals route to the FMC through series 0Ω resistors (specifically: SAMPLE_OUTV, SAMPLE_OUT0–7, CS_L, SCLK, MOSI, MISO, SPI_DMODE, RESET_N on LA/HA pairs). CLK_OUT0–3 route directly to SMAs. OSC_EN, WEIGHT_EN, SAMPLE_TRIG route to SMAs with 0Ω options back to the FMC. GPIO0–3 route to a 1×4 header. I²C SCL/SDA from the FMC fans out to the EEPROM and Bias DAC.
@@ -108,3 +147,48 @@ From the Bobcat design document ("Additional Requirements"). These are **PCB-lay
 - **MCP4728 EEPROM (W8):** Virgin MCP4728 ships with VREF = internal 2.048 V and DAC code = 0x000 — without intervention, V_DAC = 0 V at POR would drive the PMOS fully on (~646 µA full-scale bias). This is mitigated **at the schematic level** by the Q42/Q43 isolation NMOSes (populated default, default-OFF — see Bias circuit topology above), so an unprogrammed MCP4728 cannot reach Bobcat. The FPGA boot sequence is expected to: (1) read MCP4728 EEPROM, (2) program VREF = VDD and codes = 0xFFF if not already set, (3) drive DAC to the desired bias values, and (4) only then assert `BIAS_ISO0/1` HIGH. The Q42/Q43 isolation makes the EEPROM-provisioning step recoverable rather than DUT-fatal, but provisioning is still required for the bias circuit to behave correctly once enabled.
 - **I²C pull-ups (W4):** R60 and R61 (2.2 kΩ to +3V3 on EEPROM sheet) provide local SCL/SDA pull-ups. If the Genesys 2 carrier provides FMC-side I²C pull-ups, R60/R61 may need to be DNP'd to avoid over-current on bus low — verify carrier pull-up scheme at bring-up and depopulate R60/R61 if the parallel value drops below the IOL spec of any device on the bus.
 - **Bias isolation FETs Q42/Q43 (E7, revised 2026-05-25):** POPULATED by default. R42/R43 (parallel 0 Ω override jumpers) are DNP by default. This makes the bias circuit fail-safe at POR — BIAS_ISO0/1 default LOW via R44/R45 pull-downs, so the NMOSes are OFF and no current reaches Bobcat until the FPGA explicitly enables. The FPGA must drive BIAS_ISO0/1 HIGH (after the DAC is configured) to deliver bias. If a board needs to run without FPGA isolation control (e.g. benchtop debug with a USB-I²C dongle driving the DAC), populate R42/R43 and the bias path becomes always-closed — at that point the W8 EEPROM-provisioning concern returns in full force.
+
+## External design review (2026-05-31) — findings + status
+An external review was independently re-verified against the netlist, datasheets,
+and BOM. Full working notes: `test1/review/EXTERNAL_REVIEW_2026-05-31.md`.
+
+**Fixed in this pass (deterministic source corrections):**
+- **F-2 — LDO ANY-OUT setpoint names corrected.** The `LDO_SET_*` nets used the
+  TPS7A8400A high-range labels (2× the real weight) on a TPS7A8401A part, which
+  would mis-map FPGA firmware. Renamed to the true 8401A weights (25/50/100/200/
+  400/800 mV) across power.yaml, fmc.yaml, gen/config.py (LA_ASSIGN), and both
+  builders. See the ANY-OUT setpoint bit-weight table above.
+- **F-6 — footprint strings corrected** to the datasheet packages: U40 MCP4728T-E/UN
+  → MSOP-10 (was VQFN-10-EP); U41 OPA2388IDGK → VSSOP-8 (was SOIC-8); Q40/Q41
+  PMZ1200UPEYL → SOT883/DFN1006-3 (was DFN-3 1×1-EP). The per-part UL PcbLib holds
+  the real land pattern; the yaml string is now accurate metadata.
+- **F-4 — BOM regenerated** (R40/R41 now 3.65k/TNPW06033K65BEEA; the generator's
+  stale LIB_DESC/template entries for 5.11k + SOT-666 were corrected).
+
+**OPEN — needs a hardware/firmware decision (NOT changed by the generator):**
+- **F-1 (CRITICAL) — FMC GND pins not wired.** ~60 LPC GND pins are No-ERC'd, not
+  on the GND net. Fix requires the AUTHORITATIVE VITA 57.1 LPC GND pin list (web
+  sources were inconsistent — a fetched list collided with 14 of our validated
+  signal pins, i.e. it was wrong; do NOT use it). Safe fix: get the GND list from
+  the VITA 57.1 spec PDF / Samtec ASP-134606-01 datasheet, cross-check that NONE
+  of the 44 known non-GND pins appear in it, then either (a) add the positions to
+  fmc.yaml's GND net + wire them in build_fmc.py (replace the blanket No-ERC), or
+  (b) re-author the symbol's GND pins as Electrical=Power/Name=GND. MUST fix before
+  layout.
+- **F-3 (HIGH) — bias NMOS gate drive marginal at low VADJ.** Q42/Q43 are 2N7002
+  (Vth 1.0–2.5 V, standard, not logic-level), gates driven from FMC LA pins whose
+  VOH = VADJ, sources at ~0.5 V ⇒ V_GS = VADJ−0.5. At VADJ ≤ ~1.8 V (incl. the
+  Genesys 2 default 1.2 V) the FETs don't conduct → no bias to Bobcat. **DECISION
+  NEEDED:** (a) document the constraint "bias requires VADJ ≥ 2.5 V"; or (b) swap
+  the 2N7002 for a low-Vth logic-level NMOS (e.g. Si2302 / BSS138 / AO3400, Vth ≈
+  0.6–1.0 V); or (c) drive BIAS_ISO from a +3V3-domain GPIO instead of the VADJ
+  LA bank. Option (b) is the cleanest if low-VADJ operation is required.
+- **F-5 (MEDIUM) — no gate-stop resistor** between OPA2388 output and the PMOS
+  gate (nets are direct U41↔Q40/Q41). Bias is slow (I²C-rate) so steady-state
+  oscillation is unlikely, but code-write transients can ring/overshoot. **Suggest**
+  a 100 Ω–1 kΩ series gate resistor (+ optional small −IN→OUT comp cap) and an AC /
+  step-response sim before fab (the sim suite covers DC + PDN only, not loop AC).
+- **F-7 (MEDIUM) — no post-jumper bulk decap on Bobcat rails.** Bulk (10 µF/22 µF)
+  sits on the LDO output bus, before the J10/J11/J12 jumpers; the Bobcat side has
+  only 0.1 µF/1 µF. **Suggest** adding a 10 µF at each of +VDDD/+VDDA1/+VDDA2 on the
+  Bobcat side of the jumper (matches the original BOM decap-bank template).

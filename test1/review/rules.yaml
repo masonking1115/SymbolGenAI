@@ -1722,6 +1722,424 @@ rules:
   prompt: Verify the bias topology sources current INTO the Bobcat BIASx pins via
     the high-side PMOS drain (confirmed against Bobcat PDF page 7), rather than sinking
     current.
+- id: ROUTE_SAMPLE_OUTV
+  family: schematic
+  severity: ERROR
+  title: "SAMPLE_OUTV must route to the FMC through its series 0\u03A9 (R100)"
+  applies_to:
+    refdes: U20
+    pins: []
+    net: SAMPLE_OUTV
+    sheet: bobcat
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: FMC LPC pinout / LA bank
+    quote: "Bobcat \u2192 FMC LA bank (via 0\u03A9): SAMPLE_OUTV, SAMPLE_OUT0\u2013\
+      7, CS_L, SCLK, MOSI, MISO, SPI_DMODE, RESET_N"
+  fix_hint: "Route U20.2 (SAMPLE_OUTV) to the FMC LA pin through R100 (series 0\u03A9\
+    )."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: net_routing
+    from_pin: U20.2
+    to_pin: R100.2
+    via: series_R
+- id: ROUTE_SAMPLE_OUT0
+  family: schematic
+  severity: ERROR
+  title: "SAMPLE_OUT0 must route to the FMC through its series 0\u03A9 (R101)"
+  applies_to:
+    refdes: U20
+    pins: []
+    net: SAMPLE_OUT0
+    sheet: bobcat
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: FMC LPC pinout / LA bank
+    quote: "Bobcat \u2192 FMC LA bank (via 0\u03A9): SAMPLE_OUTV, SAMPLE_OUT0\u2013\
+      7, CS_L, SCLK, MOSI, MISO, SPI_DMODE, RESET_N"
+  fix_hint: "Route U20.3 (SAMPLE_OUT0) to the FMC LA pin through R101 (series 0\u03A9\
+    )."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: net_routing
+    from_pin: U20.3
+    to_pin: R101.2
+    via: series_R
+- id: ROUTE_SAMPLE_OUT1
+  family: schematic
+  severity: ERROR
+  title: "SAMPLE_OUT1 must route to the FMC through its series 0\u03A9 (R102)"
+  applies_to:
+    refdes: U20
+    pins: []
+    net: SAMPLE_OUT1
+    sheet: bobcat
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: FMC LPC pinout / LA bank
+    quote: "Bobcat \u2192 FMC LA bank (via 0\u03A9): SAMPLE_OUTV, SAMPLE_OUT0\u2013\
+      7, CS_L, SCLK, MOSI, MISO, SPI_DMODE, RESET_N"
+  fix_hint: "Route U20.4 (SAMPLE_OUT1) to the FMC LA pin through R102 (series 0\u03A9\
+    )."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: net_routing
+    from_pin: U20.4
+    to_pin: R102.2
+    via: series_R
+- id: ROUTE_SAMPLE_OUT2
+  family: schematic
+  severity: ERROR
+  title: "SAMPLE_OUT2 must route to the FMC through its series 0\u03A9 (R103)"
+  applies_to:
+    refdes: U20
+    pins: []
+    net: SAMPLE_OUT2
+    sheet: bobcat
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: FMC LPC pinout / LA bank
+    quote: "Bobcat \u2192 FMC LA bank (via 0\u03A9): SAMPLE_OUTV, SAMPLE_OUT0\u2013\
+      7, CS_L, SCLK, MOSI, MISO, SPI_DMODE, RESET_N"
+  fix_hint: "Route U20.5 (SAMPLE_OUT2) to the FMC LA pin through R103 (series 0\u03A9\
+    )."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: net_routing
+    from_pin: U20.5
+    to_pin: R103.2
+    via: series_R
+- id: ROUTE_SAMPLE_OUT3
+  family: schematic
+  severity: ERROR
+  title: "SAMPLE_OUT3 must route to the FMC through its series 0\u03A9 (R104)"
+  applies_to:
+    refdes: U20
+    pins: []
+    net: SAMPLE_OUT3
+    sheet: bobcat
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: FMC LPC pinout / LA bank
+    quote: "Bobcat \u2192 FMC LA bank (via 0\u03A9): SAMPLE_OUTV, SAMPLE_OUT0\u2013\
+      7, CS_L, SCLK, MOSI, MISO, SPI_DMODE, RESET_N"
+  fix_hint: "Route U20.6 (SAMPLE_OUT3) to the FMC LA pin through R104 (series 0\u03A9\
+    )."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: net_routing
+    from_pin: U20.6
+    to_pin: R104.2
+    via: series_R
+- id: ROUTE_SAMPLE_OUT4
+  family: schematic
+  severity: ERROR
+  title: "SAMPLE_OUT4 must route to the FMC through its series 0\u03A9 (R105)"
+  applies_to:
+    refdes: U20
+    pins: []
+    net: SAMPLE_OUT4
+    sheet: bobcat
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: FMC LPC pinout / LA bank
+    quote: "Bobcat \u2192 FMC LA bank (via 0\u03A9): SAMPLE_OUTV, SAMPLE_OUT0\u2013\
+      7, CS_L, SCLK, MOSI, MISO, SPI_DMODE, RESET_N"
+  fix_hint: "Route U20.8 (SAMPLE_OUT4) to the FMC LA pin through R105 (series 0\u03A9\
+    )."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: net_routing
+    from_pin: U20.8
+    to_pin: R105.2
+    via: series_R
+- id: ROUTE_SAMPLE_OUT5
+  family: schematic
+  severity: ERROR
+  title: "SAMPLE_OUT5 must route to the FMC through its series 0\u03A9 (R106)"
+  applies_to:
+    refdes: U20
+    pins: []
+    net: SAMPLE_OUT5
+    sheet: bobcat
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: FMC LPC pinout / LA bank
+    quote: "Bobcat \u2192 FMC LA bank (via 0\u03A9): SAMPLE_OUTV, SAMPLE_OUT0\u2013\
+      7, CS_L, SCLK, MOSI, MISO, SPI_DMODE, RESET_N"
+  fix_hint: "Route U20.9 (SAMPLE_OUT5) to the FMC LA pin through R106 (series 0\u03A9\
+    )."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: net_routing
+    from_pin: U20.9
+    to_pin: R106.2
+    via: series_R
+- id: ROUTE_SAMPLE_OUT6
+  family: schematic
+  severity: ERROR
+  title: "SAMPLE_OUT6 must route to the FMC through its series 0\u03A9 (R107)"
+  applies_to:
+    refdes: U20
+    pins: []
+    net: SAMPLE_OUT6
+    sheet: bobcat
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: FMC LPC pinout / LA bank
+    quote: "Bobcat \u2192 FMC LA bank (via 0\u03A9): SAMPLE_OUTV, SAMPLE_OUT0\u2013\
+      7, CS_L, SCLK, MOSI, MISO, SPI_DMODE, RESET_N"
+  fix_hint: "Route U20.10 (SAMPLE_OUT6) to the FMC LA pin through R107 (series 0\u03A9\
+    )."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: net_routing
+    from_pin: U20.10
+    to_pin: R107.2
+    via: series_R
+- id: ROUTE_SAMPLE_OUT7
+  family: schematic
+  severity: ERROR
+  title: "SAMPLE_OUT7 must route to the FMC through its series 0\u03A9 (R108)"
+  applies_to:
+    refdes: U20
+    pins: []
+    net: SAMPLE_OUT7
+    sheet: bobcat
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: FMC LPC pinout / LA bank
+    quote: "Bobcat \u2192 FMC LA bank (via 0\u03A9): SAMPLE_OUTV, SAMPLE_OUT0\u2013\
+      7, CS_L, SCLK, MOSI, MISO, SPI_DMODE, RESET_N"
+  fix_hint: "Route U20.11 (SAMPLE_OUT7) to the FMC LA pin through R108 (series 0\u03A9\
+    )."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: net_routing
+    from_pin: U20.11
+    to_pin: R108.2
+    via: series_R
+- id: ROUTE_MISO
+  family: schematic
+  severity: ERROR
+  title: "MISO must route to the FMC through its series 0\u03A9 (R112)"
+  applies_to:
+    refdes: U20
+    pins: []
+    net: MISO
+    sheet: bobcat
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: FMC LPC pinout / LA bank
+    quote: "Bobcat \u2192 FMC LA bank (via 0\u03A9): SAMPLE_OUTV, SAMPLE_OUT0\u2013\
+      7, CS_L, SCLK, MOSI, MISO, SPI_DMODE, RESET_N"
+  fix_hint: "Route U20.15 (MISO) to the FMC LA pin through R112 (series 0\u03A9)."
+  enabled: true
+  origin: generated
+  evaluation: structural
+  predicate:
+    kind: net_routing
+    from_pin: U20.15
+    to_pin: R112.2
+    via: series_R
+- id: CHK_PARTS_HAVE_MPN
+  family: schematic
+  severity: WARNING
+  title: Every component should have a Manufacturer Part Number / library part
+  applies_to:
+    pins: []
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement
+    quote: 'Parts to implement: Bobcat, TPS7A8401A, Load switch, EEPROM, Bias circuit,
+      SMAs, header.'
+  fix_hint: Assign an MPN / library part to every component (connectors, headers,
+    and mechanical parts included).
+  enabled: true
+  origin: generated
+  evaluation: semantic
+  prompt: Check that every placed component carries a real Manufacturer Part Number
+    (the lib_id / value is an MPN or a defined library part, not a placeholder). Connectors,
+    SMAs, headers, and mechanical parts all count. PASS if all parts are MPN-associated;
+    FAIL listing any with a missing/placeholder MPN.
+- id: CHK_PASSIVES_HAVE_VALUE
+  family: schematic
+  severity: WARNING
+  title: Every R/C/L/crystal/fuse must have a value
+  applies_to:
+    pins: []
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement
+    quote: "Decoupling caps \u2026 10k\u03A9 pull-downs \u2026 5.11 k\u03A9 \u2026\
+      \ series 0\u03A9 \u2026"
+  fix_hint: "Give every passive a value (a 0\u03A9 jumper is '0', not blank)."
+  enabled: true
+  origin: generated
+  evaluation: semantic
+  prompt: "Check that every resistor, capacitor, inductor, crystal, and fuse has a\
+    \ defined value (e.g. '10k', '0.1uF', '0'); a 0\u03A9 jumper counts as a value.\
+    \ PASS if all passives are valued; FAIL listing any with an empty/missing value."
+- id: CHK_SIGNAL_NET_MIN_TWO_PINS
+  family: schematic
+  severity: WARNING
+  title: Every signal net should connect to at least two pins (no single-pin/floating
+    nets)
+  applies_to:
+    pins: []
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Topology / block diagram
+    quote: "Bobcat SPI, RESET_N, and SAMPLE_OUT signals route to the FMC through series\
+      \ 0\u03A9 resistors"
+  fix_hint: Terminate every signal net at >=2 pins (route the output to its destination).
+  enabled: true
+  origin: generated
+  evaluation: semantic
+  prompt: "Check that each non-power signal net connects to at least two pins (a source\
+    \ and a destination). A net with only ONE pin is floating/unterminated \u2014\
+    \ e.g. a signal that reaches a series resistor but whose far side never connects\
+    \ onward to its destination. Ignore intentional single-pin test points / NC. PASS\
+    \ if all signal nets have >=2 pins; FAIL listing any single-pin signal net."
+- id: CHK_NO_MULTI_DRIVER
+  family: schematic
+  severity: ERROR
+  title: No signal net may have multiple output drivers (contention)
+  applies_to:
+    pins: []
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Interfaces
+    quote: "SPI (CS_L, SCLK, MOSI, MISO, SPI_DMODE, RESET_N), I\xB2C (EEPROM + Bias),\
+      \ GPIO0\u20133"
+  fix_hint: Ensure each signal net has a single push-pull driver (or open-drain +
+    pull-up for shared buses).
+  enabled: true
+  origin: generated
+  evaluation: semantic
+  prompt: "Check that no signal net is driven by two or more push-pull OUTPUT pins\
+    \ simultaneously (driver contention). Open-drain/I\xB2C buses with multiple devices\
+    \ + a pull-up are fine. PASS if no net has \u22652 conflicting push-pull drivers;\
+    \ FAIL listing the contended net(s)."
+- id: CHK_POWER_NOT_SHORTED_GND
+  family: schematic
+  severity: ERROR
+  title: Power rails must not be shorted to GND
+  applies_to:
+    pins: []
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Specs
+    quote: "Power in (from FMC): 3P3V; VADJ 1.2\u20133.3V; Bobcat rails VDDD/VDDA1/VDDA2\
+      \ = 0.6\u20131.0V; VDDIO = VADJ"
+  fix_hint: "Remove any direct rail-to-GND connection (decoupling caps are fine; a\
+    \ 0\u03A9/wire short is not)."
+  enabled: true
+  origin: generated
+  evaluation: semantic
+  prompt: "Check that no power/supply rail is directly connected to GND (a dead short).\
+    \ Treat any net acting as a supply rail (a power-symbol net, or a net feeding\
+    \ device power pins) as a rail. A decoupling/bypass cap from rail to GND is expected\
+    \ and fine; a direct wire or 0\u03A9 jumper from a rail to GND is not. PASS if\
+    \ no rail is shorted to GND; FAIL listing each shorted rail."
+- id: CHK_VALUE_MATCHES_MPN
+  family: schematic
+  severity: INFO
+  title: Component schematic value should match the manufacturer part value
+  applies_to:
+    pins: []
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Parts to implement
+    quote: "5.11 k\u03A9 0.1% thin-film sense resistor \u2026 10k\u03A9 pull-downs\
+      \ \u2026 2.2 k\u03A9 I\xB2C pull-ups"
+  fix_hint: Reconcile each component's displayed value with the value implied by its
+    MPN / library part (a value-vs-MPN mismatch means the wrong part is selected).
+  enabled: true
+  origin: generated
+  evaluation: semantic
+  prompt: Spot-check that each component's displayed schematic value is consistent
+    with the value implied by its MPN / library part id (e.g. a part labeled '10k'
+    should use a 10k-valued resistor MPN; a '0.1uF' cap should use a 0.1uF MPN). A
+    resistor/cap whose displayed value disagrees with its part number means the wrong
+    part is selected. PASS if every value matches its MPN; FAIL listing each mismatch
+    (refdes, displayed value, and the value the MPN implies).
+- id: CHK_CAP_VOLTAGE_DERATING
+  family: schematic
+  severity: INFO
+  title: Capacitors on power rails must have adequate voltage derating
+  applies_to:
+    pins: []
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Specs
+    quote: "Power in (from FMC): 3P3V \u2026 VADJ 1.2\u20133.3V"
+  fix_hint: "Confirm rail-cap voltage ratings give \u22652\xD7 margin over the rail\
+    \ (check at BOM if not in the netlist)."
+  enabled: true
+  origin: generated
+  evaluation: semantic
+  prompt: "Check that capacitors on power rails are rated comfortably above the rail\
+    \ voltage (a common rule is \u22652\xD7 derating, e.g. a 3.3 V rail wants \u2265\
+    6.3 V caps; MLCC capacitance also derates with DC bias). The netlist may not carry\
+    \ voltage ratings \u2014 if absent, PASS with a note that ratings should be confirmed\
+    \ at BOM. FAIL only if a cap's rating is present and clearly too low for its rail."
+- id: CHK_CLOCK_PINS_CLOCK_NETS
+  family: schematic
+  severity: INFO
+  title: Clock pins should connect to clock-named nets
+  applies_to:
+    pins: []
+    role_spec: {}
+  source:
+  - doc: design_requirements.md
+    loc: Signal outputs
+    quote: "Signal outputs: CLK_OUT0\u20133, SAMPLE_OUTV, SAMPLE_OUT0\u20137, OSC_EN,\
+      \ WEIGHT_EN, SAMPLE_TRIG"
+  fix_hint: Name clock nets CLK_OUT* and route the clock pins to them.
+  enabled: true
+  origin: generated
+  evaluation: semantic
+  prompt: Check that clock pins (oscillator outputs, CLK/clock-function pins) connect
+    to nets whose names identify them as clocks (e.g. a CLK*/*_CLK/OSC* naming convention),
+    so clock routing is unambiguous on the schematic. PASS if every clock pin lands
+    on a clock-named net; FAIL listing any clock pin on a mis-named or non-clock net.
 - id: BLK_BIAS_FS_CEILING
   family: block
   severity: ERROR
@@ -2434,422 +2852,144 @@ rules:
     , R60/R61). The bus is shared by the EEPROM and the MCP4728 bias DAC. Examine\
     \ each net's membership \u2014 PASS if a pull-up to +3V3 is present on both SCL\
     \ and SDA; FAIL if either lacks one."
-- id: ROUTE_SAMPLE_OUTV
-  family: schematic
+- id: BLK_LDO_SETPOINT_NAMING
+  family: block
   severity: ERROR
-  title: "SAMPLE_OUTV must route to the FMC through its series 0\u03A9 (R100)"
+  title: LDO_SET_* net names must reflect the TPS7A8401A (low-range) bit weights,
+    not the 8400A
   applies_to:
-    refdes: U20
+    refdes: U10
     pins: []
-    net: SAMPLE_OUTV
-    sheet: bobcat
+    sheet: power
     role_spec: {}
-  source:
-  - doc: design_requirements.md
-    loc: FMC LPC pinout / LA bank
-    quote: "Bobcat \u2192 FMC LA bank (via 0\u03A9): SAMPLE_OUTV, SAMPLE_OUT0\u2013\
-      7, CS_L, SCLK, MOSI, MISO, SPI_DMODE, RESET_N"
-  fix_hint: "Route U20.2 (SAMPLE_OUTV) to the FMC LA pin through R100 (series 0\u03A9\
-    )."
-  enabled: true
-  origin: generated
-  evaluation: structural
-  predicate:
-    kind: net_routing
-    from_pin: U20.2
-    to_pin: R100.2
-    via: series_R
-- id: ROUTE_SAMPLE_OUT0
-  family: schematic
-  severity: ERROR
-  title: "SAMPLE_OUT0 must route to the FMC through its series 0\u03A9 (R101)"
-  applies_to:
-    refdes: U20
-    pins: []
-    net: SAMPLE_OUT0
-    sheet: bobcat
-    role_spec: {}
-  source:
-  - doc: design_requirements.md
-    loc: FMC LPC pinout / LA bank
-    quote: "Bobcat \u2192 FMC LA bank (via 0\u03A9): SAMPLE_OUTV, SAMPLE_OUT0\u2013\
-      7, CS_L, SCLK, MOSI, MISO, SPI_DMODE, RESET_N"
-  fix_hint: "Route U20.3 (SAMPLE_OUT0) to the FMC LA pin through R101 (series 0\u03A9\
-    )."
-  enabled: true
-  origin: generated
-  evaluation: structural
-  predicate:
-    kind: net_routing
-    from_pin: U20.3
-    to_pin: R101.2
-    via: series_R
-- id: ROUTE_SAMPLE_OUT1
-  family: schematic
-  severity: ERROR
-  title: "SAMPLE_OUT1 must route to the FMC through its series 0\u03A9 (R102)"
-  applies_to:
-    refdes: U20
-    pins: []
-    net: SAMPLE_OUT1
-    sheet: bobcat
-    role_spec: {}
-  source:
-  - doc: design_requirements.md
-    loc: FMC LPC pinout / LA bank
-    quote: "Bobcat \u2192 FMC LA bank (via 0\u03A9): SAMPLE_OUTV, SAMPLE_OUT0\u2013\
-      7, CS_L, SCLK, MOSI, MISO, SPI_DMODE, RESET_N"
-  fix_hint: "Route U20.4 (SAMPLE_OUT1) to the FMC LA pin through R102 (series 0\u03A9\
-    )."
-  enabled: true
-  origin: generated
-  evaluation: structural
-  predicate:
-    kind: net_routing
-    from_pin: U20.4
-    to_pin: R102.2
-    via: series_R
-- id: ROUTE_SAMPLE_OUT2
-  family: schematic
-  severity: ERROR
-  title: "SAMPLE_OUT2 must route to the FMC through its series 0\u03A9 (R103)"
-  applies_to:
-    refdes: U20
-    pins: []
-    net: SAMPLE_OUT2
-    sheet: bobcat
-    role_spec: {}
-  source:
-  - doc: design_requirements.md
-    loc: FMC LPC pinout / LA bank
-    quote: "Bobcat \u2192 FMC LA bank (via 0\u03A9): SAMPLE_OUTV, SAMPLE_OUT0\u2013\
-      7, CS_L, SCLK, MOSI, MISO, SPI_DMODE, RESET_N"
-  fix_hint: "Route U20.5 (SAMPLE_OUT2) to the FMC LA pin through R103 (series 0\u03A9\
-    )."
-  enabled: true
-  origin: generated
-  evaluation: structural
-  predicate:
-    kind: net_routing
-    from_pin: U20.5
-    to_pin: R103.2
-    via: series_R
-- id: ROUTE_SAMPLE_OUT3
-  family: schematic
-  severity: ERROR
-  title: "SAMPLE_OUT3 must route to the FMC through its series 0\u03A9 (R104)"
-  applies_to:
-    refdes: U20
-    pins: []
-    net: SAMPLE_OUT3
-    sheet: bobcat
-    role_spec: {}
-  source:
-  - doc: design_requirements.md
-    loc: FMC LPC pinout / LA bank
-    quote: "Bobcat \u2192 FMC LA bank (via 0\u03A9): SAMPLE_OUTV, SAMPLE_OUT0\u2013\
-      7, CS_L, SCLK, MOSI, MISO, SPI_DMODE, RESET_N"
-  fix_hint: "Route U20.6 (SAMPLE_OUT3) to the FMC LA pin through R104 (series 0\u03A9\
-    )."
-  enabled: true
-  origin: generated
-  evaluation: structural
-  predicate:
-    kind: net_routing
-    from_pin: U20.6
-    to_pin: R104.2
-    via: series_R
-- id: ROUTE_SAMPLE_OUT4
-  family: schematic
-  severity: ERROR
-  title: "SAMPLE_OUT4 must route to the FMC through its series 0\u03A9 (R105)"
-  applies_to:
-    refdes: U20
-    pins: []
-    net: SAMPLE_OUT4
-    sheet: bobcat
-    role_spec: {}
-  source:
-  - doc: design_requirements.md
-    loc: FMC LPC pinout / LA bank
-    quote: "Bobcat \u2192 FMC LA bank (via 0\u03A9): SAMPLE_OUTV, SAMPLE_OUT0\u2013\
-      7, CS_L, SCLK, MOSI, MISO, SPI_DMODE, RESET_N"
-  fix_hint: "Route U20.8 (SAMPLE_OUT4) to the FMC LA pin through R105 (series 0\u03A9\
-    )."
-  enabled: true
-  origin: generated
-  evaluation: structural
-  predicate:
-    kind: net_routing
-    from_pin: U20.8
-    to_pin: R105.2
-    via: series_R
-- id: ROUTE_SAMPLE_OUT5
-  family: schematic
-  severity: ERROR
-  title: "SAMPLE_OUT5 must route to the FMC through its series 0\u03A9 (R106)"
-  applies_to:
-    refdes: U20
-    pins: []
-    net: SAMPLE_OUT5
-    sheet: bobcat
-    role_spec: {}
-  source:
-  - doc: design_requirements.md
-    loc: FMC LPC pinout / LA bank
-    quote: "Bobcat \u2192 FMC LA bank (via 0\u03A9): SAMPLE_OUTV, SAMPLE_OUT0\u2013\
-      7, CS_L, SCLK, MOSI, MISO, SPI_DMODE, RESET_N"
-  fix_hint: "Route U20.9 (SAMPLE_OUT5) to the FMC LA pin through R106 (series 0\u03A9\
-    )."
-  enabled: true
-  origin: generated
-  evaluation: structural
-  predicate:
-    kind: net_routing
-    from_pin: U20.9
-    to_pin: R106.2
-    via: series_R
-- id: ROUTE_SAMPLE_OUT6
-  family: schematic
-  severity: ERROR
-  title: "SAMPLE_OUT6 must route to the FMC through its series 0\u03A9 (R107)"
-  applies_to:
-    refdes: U20
-    pins: []
-    net: SAMPLE_OUT6
-    sheet: bobcat
-    role_spec: {}
-  source:
-  - doc: design_requirements.md
-    loc: FMC LPC pinout / LA bank
-    quote: "Bobcat \u2192 FMC LA bank (via 0\u03A9): SAMPLE_OUTV, SAMPLE_OUT0\u2013\
-      7, CS_L, SCLK, MOSI, MISO, SPI_DMODE, RESET_N"
-  fix_hint: "Route U20.10 (SAMPLE_OUT6) to the FMC LA pin through R107 (series 0\u03A9\
-    )."
-  enabled: true
-  origin: generated
-  evaluation: structural
-  predicate:
-    kind: net_routing
-    from_pin: U20.10
-    to_pin: R107.2
-    via: series_R
-- id: ROUTE_SAMPLE_OUT7
-  family: schematic
-  severity: ERROR
-  title: "SAMPLE_OUT7 must route to the FMC through its series 0\u03A9 (R108)"
-  applies_to:
-    refdes: U20
-    pins: []
-    net: SAMPLE_OUT7
-    sheet: bobcat
-    role_spec: {}
-  source:
-  - doc: design_requirements.md
-    loc: FMC LPC pinout / LA bank
-    quote: "Bobcat \u2192 FMC LA bank (via 0\u03A9): SAMPLE_OUTV, SAMPLE_OUT0\u2013\
-      7, CS_L, SCLK, MOSI, MISO, SPI_DMODE, RESET_N"
-  fix_hint: "Route U20.11 (SAMPLE_OUT7) to the FMC LA pin through R108 (series 0\u03A9\
-    )."
-  enabled: true
-  origin: generated
-  evaluation: structural
-  predicate:
-    kind: net_routing
-    from_pin: U20.11
-    to_pin: R108.2
-    via: series_R
-- id: ROUTE_MISO
-  family: schematic
-  severity: ERROR
-  title: "MISO must route to the FMC through its series 0\u03A9 (R112)"
-  applies_to:
-    refdes: U20
-    pins: []
-    net: MISO
-    sheet: bobcat
-    role_spec: {}
-  source:
-  - doc: design_requirements.md
-    loc: FMC LPC pinout / LA bank
-    quote: "Bobcat \u2192 FMC LA bank (via 0\u03A9): SAMPLE_OUTV, SAMPLE_OUT0\u2013\
-      7, CS_L, SCLK, MOSI, MISO, SPI_DMODE, RESET_N"
-  fix_hint: "Route U20.15 (MISO) to the FMC LA pin through R112 (series 0\u03A9)."
-  enabled: true
-  origin: generated
-  evaluation: structural
-  predicate:
-    kind: net_routing
-    from_pin: U20.15
-    to_pin: R112.2
-    via: series_R
-- id: CHK_PARTS_HAVE_MPN
-  family: schematic
-  severity: WARNING
-  title: Every component should have a Manufacturer Part Number / library part
-  applies_to:
-    pins: []
-    role_spec: {}
-  source:
-  - doc: design_requirements.md
-    loc: Parts to implement
-    quote: 'Parts to implement: Bobcat, TPS7A8401A, Load switch, EEPROM, Bias circuit,
-      SMAs, header.'
-  fix_hint: "Assign an MPN / library part to every component (connectors, headers,
-    and mechanical parts included)."
-  enabled: true
-  origin: generated
-  evaluation: semantic
-  prompt: Check that every placed component carries a real Manufacturer Part Number
-    (the lib_id / value is an MPN or a defined library part, not a placeholder). Connectors,
-    SMAs, headers, and mechanical parts all count. PASS if all parts are MPN-associated;
-    FAIL listing any with a missing/placeholder MPN.
-- id: CHK_PASSIVES_HAVE_VALUE
-  family: schematic
-  severity: WARNING
-  title: Every R/C/L/crystal/fuse must have a value
-  applies_to:
-    pins: []
-    role_spec: {}
-  source:
-  - doc: design_requirements.md
-    loc: Parts to implement
-    quote: "Decoupling caps \u2026 10k\u03A9 pull-downs \u2026 5.11 k\u03A9 \u2026\
-      \ series 0\u03A9 \u2026"
-  fix_hint: "Give every passive a value (a 0\u03A9 jumper is '0', not blank)."
-  enabled: true
-  origin: generated
-  evaluation: semantic
-  prompt: "Check that every resistor, capacitor, inductor, crystal, and fuse has a\
-    \ defined value (e.g. '10k', '0.1uF', '0'); a 0\u03A9 jumper counts as a value.\
-    \ PASS if all passives are valued; FAIL listing any with an empty/missing value."
-- id: CHK_SIGNAL_NET_MIN_TWO_PINS
-  family: schematic
-  severity: WARNING
-  title: Every signal net should connect to at least two pins (no single-pin/floating
-    nets)
-  applies_to:
-    pins: []
-    role_spec: {}
-  source:
-  - doc: design_requirements.md
-    loc: Topology / block diagram
-    quote: "Bobcat SPI, RESET_N, and SAMPLE_OUT signals route to the FMC through series\
-      \ 0\u03A9 resistors"
-  fix_hint: Terminate every signal net at >=2 pins (route the output to its destination).
-  enabled: true
-  origin: generated
-  evaluation: semantic
-  prompt: "Check that each non-power signal net connects to at least two pins (a source\
-    \ and a destination). A net with only ONE pin is floating/unterminated \u2014 e.g.\
-    \ a signal that reaches a series resistor but whose far side never connects\
-    \ onward to its destination. Ignore intentional single-pin test points / NC.\
-    \ PASS if all signal nets have >=2 pins; FAIL listing any single-pin signal net."
-- id: CHK_NO_MULTI_DRIVER
-  family: schematic
-  severity: ERROR
-  title: No signal net may have multiple output drivers (contention)
-  applies_to:
-    pins: []
-    role_spec: {}
-  source:
-  - doc: design_requirements.md
-    loc: Interfaces
-    quote: "SPI (CS_L, SCLK, MOSI, MISO, SPI_DMODE, RESET_N), I\xB2C (EEPROM + Bias),\
-      \ GPIO0\u20133"
-  fix_hint: Ensure each signal net has a single push-pull driver (or open-drain +
-    pull-up for shared buses).
-  enabled: true
-  origin: generated
-  evaluation: semantic
-  prompt: "Check that no signal net is driven by two or more push-pull OUTPUT pins\
-    \ simultaneously (driver contention). Open-drain/I\xB2C buses with multiple devices\
-    \ + a pull-up are fine. PASS if no net has \u22652 conflicting push-pull drivers;\
-    \ FAIL listing the contended net(s)."
-- id: CHK_POWER_NOT_SHORTED_GND
-  family: schematic
-  severity: ERROR
-  title: Power rails must not be shorted to GND
-  applies_to:
-    pins: []
-    role_spec: {}
+    block: ldo_rail
   source:
   - doc: design_requirements.md
     loc: Specs
-    quote: "Power in (from FMC): 3P3V; VADJ 1.2\u20133.3V; Bobcat rails VDDD/VDDA1/VDDA2\
-      \ = 0.6\u20131.0V; VDDIO = VADJ"
-  fix_hint: "Remove any direct rail-to-GND connection (decoupling caps are fine; a\
-    \ 0\u03A9/wire short is not)."
+    quote: "TPS7A8401A \u2026 ANY-OUT pin-programmable output 0.5\u20132.075 V at\
+      \ 25 mV resolution (covers Bobcat 0.6\u20131.0 V rails)"
+  - doc: tps7a84a.pdf
+    loc: ANY-OUT pin table / VOUT range
+    quote: "TPS7A8400(01)A setpoint pins: 50 mV (25 mV), 100 mV (50 mV), 200 mV (100\
+      \ mV), 400 mV (200 mV), 800 mV (400 mV), 1.6 V (0.8 V); 8401A ANY-OUT 0.5\u2013\
+      2.075 V"
+  fix_hint: "Rename the LDO_SET_* nets to the 8401A weights (pin5\u219225mV \u2026\
+    \ pin11\u2192800mV) across power.yaml, fmc.yaml, gen/config.py LA_ASSIGN, and\
+    \ the builders; or use weight-agnostic LDO_SET_B0..B5."
   enabled: true
   origin: generated
   evaluation: semantic
-  prompt: "Check that no power/supply rail is directly connected to GND (a dead\
-    \ short). Treat any net acting as a supply rail (a power-symbol net, or a net\
-    \ feeding device power pins) as a rail. A decoupling/bypass cap from rail to GND\
-    \ is expected and fine; a direct wire or 0\u03A9 jumper from a rail to GND is\
-    \ not. PASS if no rail is shorted to GND; FAIL listing each shorted rail."
-- id: CHK_VALUE_MATCHES_MPN
-  family: schematic
-  severity: INFO
-  title: Component schematic value should match the manufacturer part value
+  prompt: "The LDO is a TPS7A8401A (confirm via U10's lib_id/value). Per its datasheet\
+    \ the ANY-OUT setpoint PINS carry DIFFERENT weights on the two variants: the datasheet\
+    \ pin table lists each pin as '<8400A weight> (<8401A weight>)' = 50 mV(25 mV),\
+    \ 100 mV(50 mV), 200 mV(100 mV), 400 mV(200 mV), 800 mV(400 mV), 1.6 V(0.8 V);\
+    \ the 8401A is the LOW range (base 0.5 V, 25 mV/LSB). The schematic names the\
+    \ setpoint nets on U10 pins 5/6/7/9/10/11 as LDO_SET_<weight>. Verify each net\
+    \ name equals the 8401A (parenthesised, low-range) weight of THAT pin \u2014 i.e.\
+    \ pin5=25mV, pin6=50mV, pin7=100mV, pin9=200mV, pin10=400mV, pin11=800mV. FAIL\
+    \ if the names instead use the 8400A high-range labels (50/100/200/400/800mV/1V6),\
+    \ because firmware that grounds a bit by its NAME would then set the wrong voltage.\
+    \ PASS only if every LDO_SET_* name matches its pin's 8401A weight."
+- id: BLK_BIAS_ISO_GATE_DRIVE
+  family: block
+  severity: WARNING
+  title: Bias isolation NMOS (2N7002) must actually turn on across the FULL VADJ range
+  applies_to:
+    refdes: Q42
+    pins: []
+    sheet: bias
+    role_spec: {}
+    block: opa_bias
+  source:
+  - doc: design_requirements.md
+    loc: Power in (from FMC) / Bias circuit
+    quote: "VADJ 1.2\u20133.3V \u2026 Series NMOS isolation FETs (POPULATED default,\
+      \ 2N7002) \u2026 gated by BIAS_ISO0/1 from the FPGA"
+  - doc: 2n7002.pdf
+    loc: Gate-Source threshold voltage
+    quote: "VGS(th): min 1 V, max 2.5 V (at VGS=VDS, ID=250 \xB5A); RDS(on) only specified\
+      \ at VGS=5 V and 10 V"
+  fix_hint: "Either document a min VADJ (\u22482.5 V) for bias delivery, OR use a\
+    \ logic-level low-Vth NMOS (e.g. Si2302 / AO3400, VGS(th) < ~1 V), OR drive BIAS_ISO\
+    \ from a +3V3-domain GPIO instead of the VADJ-referenced LA bank."
+  enabled: true
+  origin: generated
+  evaluation: semantic
+  prompt: "Q42/Q43 are 2N7002 NMOS isolators between the PMOS drain and the BIASx\
+    \ output. Per the datasheet the 2N7002 gate threshold VGS(th) is 1.0 V (min) to\
+    \ 2.5 V (max) \u2014 a STANDARD-threshold part, with RDS(on) only specified at\
+    \ VGS = 5 V / 10 V (none below). The gate (BIAS_ISO0/1) is driven by an FPGA output\
+    \ on an FMC LA-bank pin whose high level equals VADJ; the NMOS SOURCE sits at\
+    \ the BIASx node (~0.5 V DUT compliance). So the effective gate overdrive is V_GS\
+    \ \u2248 VADJ \u2212 0.5 V. The requirements allow VADJ anywhere in 1.2\u2013\
+    3.3 V. Check whether the NMOS is reliably ON across that WHOLE range: compute\
+    \ V_GS at the VADJ extremes and compare to VGS(th) max (2.5 V). FAIL if at the\
+    \ low end of the stated VADJ range V_GS falls below VGS(th) max (e.g. VADJ=1.2\
+    \ V \u21D2 V_GS=0.7 V \u226A 1 V min \u21D2 the FET is OFF and no bias reaches\
+    \ Bobcat). PASS only if the FET is guaranteed on across the full VADJ range, or\
+    \ if the design explicitly documents a minimum VADJ for bias operation."
+- id: BLK_FOOTPRINT_MATCHES_DATASHEET
+  family: block
+  severity: WARNING
+  title: Component footprint must match the orderable part's datasheet package
   applies_to:
     pins: []
+    sheet: bias
     role_spec: {}
+    block: opa_bias
   source:
   - doc: design_requirements.md
     loc: Parts to implement
-    quote: "5.11 k\u03A9 0.1% thin-film sense resistor \u2026 10k\u03A9 pull-downs\
-      \ \u2026 2.2 k\u03A9 I\xB2C pull-ups"
-  fix_hint: 'Reconcile each component''s displayed value with the value implied by
-    its MPN / library part (a value-vs-MPN mismatch means the wrong part is selected).'
+    quote: MCP4728 (MSOP-10); OPA2388 dual (VSSOP-8); PMZ1200UPEYL (SOT883/DFN1006-3)
+  - doc: (per-part datasheets in Parts Library/)
+    loc: Package
+    quote: 'MCP4728 22187E: ''10-Lead MSOP Package''; OPA2388: ''Dual in SOIC-8 and
+      VSSOP-8''; PMZ1200UPE: ''leadless ultra small DFN1006-3 (SOT883)'', no exposed
+      pad'
+  fix_hint: Set each `footprint` to the datasheet package land pattern (MSOP-10 /
+    VSSOP-8 / SOT883), no spurious EP.
   enabled: true
   origin: generated
   evaluation: semantic
-  prompt: "Spot-check that each component's displayed schematic value is consistent\
-    \ with the value implied by its MPN / library part id (e.g. a part labeled '10k'\
-    \ should use a 10k-valued resistor MPN; a '0.1uF' cap should use a 0.1uF MPN).\
-    \ A resistor/cap whose displayed value disagrees with its part number means the\
-    \ wrong part is selected. PASS if every value matches its MPN; FAIL listing each\
-    \ mismatch (refdes, displayed value, and the value the MPN implies)."
-- id: CHK_CAP_VOLTAGE_DERATING
-  family: schematic
-  severity: INFO
-  title: Capacitors on power rails must have adequate voltage derating
+  prompt: "For each active part on the bias sheet, check that the schematic `footprint`\
+    \ string names the SAME package family the part's datasheet specifies (the orderable\
+    \ MPN's package). Known datasheet packages: MCP4728 (U40) = MSOP-10 (10-lead MSOP,\
+    \ no exposed pad); OPA2388 dual (U41) = VSSOP-8 (a.k.a. MSOP-8, no EP); PMZ1200UPEYL\
+    \ (Q40/Q41) = SOT883 / DFN1006-3 (1.0\xD70.6 mm, 3-lead leadless, NO exposed pad).\
+    \ FAIL if a footprint names a different package family or wrongly adds/omits an\
+    \ exposed pad (e.g. a QFN/DFN-with-EP string for an MSOP part, or SOIC for a VSSOP\
+    \ part, or a 1.0\xD71.0-EP DFN for the SOT883). PASS only if each footprint matches\
+    \ its datasheet package."
+- id: BLK_FMC_GND_PINS_TIED
+  family: block
+  severity: ERROR
+  title: FMC connector GND pins must connect to the GND net (not be left unconnected)
   applies_to:
+    refdes: J1
     pins: []
+    sheet: fmc
     role_spec: {}
+    block: ldo_rail
   source:
   - doc: design_requirements.md
-    loc: Specs
-    quote: "Power in (from FMC): 3P3V \u2026 VADJ 1.2\u20133.3V"
-  fix_hint: "Confirm rail-cap voltage ratings give \u22652\xD7 margin over the rail\
-    \ (check at BOM if not in the netlist)."
+    loc: FMC LA-pair locations / pinout
+    quote: All other unlabeled pins on rows C/D/G/H are GND per the standard.
+  - doc: ASP-134606-01.pdf
+    loc: VITA 57.1 LPC pinout
+    quote: VITA 57.1 LPC has ~60 GND pins across rows C/D/G/H; all must tie to the
+      board ground return
+  fix_hint: 'Wire the VITA 57.1 LPC GND pins to the GND net: add their positions to
+    fmc.yaml''s GND net (and wire them in build_fmc.py instead of No-ERC), or make
+    the symbol''s GND pins Electrical=Power Name=GND. Use the authoritative VITA 57.1
+    LPC GND list, cross-checked against the assigned signal pins.'
   enabled: true
   origin: generated
   evaluation: semantic
-  prompt: "Check that capacitors on power rails are rated comfortably above the rail\
-    \ voltage (a common rule is \u22652\xD7 derating, e.g. a 3.3 V rail wants \u2265\
-    6.3 V caps; MLCC capacitance also derates with DC bias). The netlist may not carry\
-    \ voltage ratings \u2014 if absent, PASS with a note that ratings should be confirmed\
-    \ at BOM. FAIL only if a cap's rating is present and clearly too low for its rail."
-- id: CHK_CLOCK_PINS_CLOCK_NETS
-  family: schematic
-  severity: INFO
-  title: Clock pins should connect to clock-named nets
-  applies_to:
-    pins: []
-    role_spec: {}
-  source:
-  - doc: design_requirements.md
-    loc: Signal outputs
-    quote: "Signal outputs: CLK_OUT0\u20133, SAMPLE_OUTV, SAMPLE_OUT0\u20137, OSC_EN,\
-      \ WEIGHT_EN, SAMPLE_TRIG"
-  fix_hint: Name clock nets CLK_OUT* and route the clock pins to them.
-  enabled: true
-  origin: generated
-  evaluation: semantic
-  prompt: "Check that clock pins (oscillator outputs, CLK/clock-function pins) connect\
-    \ to nets whose names identify them as clocks (e.g. a CLK*/*_CLK/OSC* naming\
-    \ convention), so clock routing is unambiguous on the schematic. PASS if every\
-    \ clock pin lands on a clock-named net; FAIL listing any clock pin on a mis-named\
-    \ or non-clock net."
+  prompt: "The FMC connector (J1\u2013J4 = the 4 rows of an ASP-134606-01 VITA 57.1\
+    \ LPC, 160 pins total) has a large number of GND pins by the standard \u2014 the\
+    \ requirements say every unlabeled C/D/G/H pin is GND (\u224860 pins). Examine\
+    \ the GND net membership: how many of the connector's pins are actually on the\
+    \ GND net? FAIL if only a handful (e.g. just the strapping pins H2/C34/D35) are\
+    \ on GND while the bulk of the standard's GND pins are left unconnected / No-ERC'd\
+    \ \u2014 that leaves the connector with no signal/supply return path. PASS only\
+    \ if the connector's GND pins (the dozens of them) are tied to the GND net."

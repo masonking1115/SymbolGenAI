@@ -306,6 +306,106 @@ def build_block_rules():
              fix="Add 2.2 kΩ pull-ups to +3V3 on SCL and SDA (R60/R61)."),
     ]
 
+    # ========================================================================
+    # CROSS-CUTTING design-correctness rules (added 2026-05-31 from the external
+    # design review F-1/F-2/F-3/F-6). Each is GROUNDED in a requirement quote AND
+    # the part datasheet (in Parts Library/<MPN>/) — the rule states the check; the
+    # threshold/expected value lives in the cited source, NOT in the prompt text.
+    # ========================================================================
+    R += [
+        # --- F-2: LDO ANY-OUT setpoint net names must match the 8401A variant ---
+        # GROUNDING: tps7a84a.pdf labels each setpoint pin "<8400A> (<8401A>)" —
+        # the pin diagram literally reads "50 mV (25 mV) | 100 mV (50 mV) | 200 mV
+        # (100 mV) | 400 mV (200 mV) | 800 mV (400 mV) | 1.6 V (0.8 V)". The 8401A
+        # ANY-OUT range is 0.5–2.075 V at 25 mV (vs 8400A 0.8–3.95 V at 50 mV).
+        _sem("BLK_LDO_SETPOINT_NAMING", block="ldo_rail", sev="ERROR", sheet="power", refdes="U10",
+             title="LDO_SET_* net names must reflect the TPS7A8401A (low-range) bit weights, not the 8400A",
+             source="Specs",
+             quote="TPS7A8401A … ANY-OUT pin-programmable output 0.5–2.075 V at 25 mV resolution (covers Bobcat 0.6–1.0 V rails)",
+             datasheet=("tps7a84a.pdf", "ANY-OUT pin table / VOUT range",
+                        "TPS7A8400(01)A setpoint pins: 50 mV (25 mV), 100 mV (50 mV), 200 mV (100 mV), "
+                        "400 mV (200 mV), 800 mV (400 mV), 1.6 V (0.8 V); 8401A ANY-OUT 0.5–2.075 V"),
+             prompt=(
+                 "The LDO is a TPS7A8401A (confirm via U10's lib_id/value). Per its datasheet the ANY-OUT "
+                 "setpoint PINS carry DIFFERENT weights on the two variants: the datasheet pin table lists each "
+                 "pin as '<8400A weight> (<8401A weight>)' = 50 mV(25 mV), 100 mV(50 mV), 200 mV(100 mV), "
+                 "400 mV(200 mV), 800 mV(400 mV), 1.6 V(0.8 V); the 8401A is the LOW range (base 0.5 V, 25 mV/LSB). "
+                 "The schematic names the setpoint nets on U10 pins 5/6/7/9/10/11 as LDO_SET_<weight>. Verify each "
+                 "net name equals the 8401A (parenthesised, low-range) weight of THAT pin — i.e. pin5=25mV, pin6=50mV, "
+                 "pin7=100mV, pin9=200mV, pin10=400mV, pin11=800mV. FAIL if the names instead use the 8400A high-range "
+                 "labels (50/100/200/400/800mV/1V6), because firmware that grounds a bit by its NAME would then set the "
+                 "wrong voltage. PASS only if every LDO_SET_* name matches its pin's 8401A weight."),
+             fix=("Rename the LDO_SET_* nets to the 8401A weights (pin5→25mV … pin11→800mV) across power.yaml, "
+                  "fmc.yaml, gen/config.py LA_ASSIGN, and the builders; or use weight-agnostic LDO_SET_B0..B5.")),
+
+        # --- F-3: bias isolation NMOS gate drive vs Vth across the VADJ range ---
+        # GROUNDING: 2n7002.pdf VGS(th) = 1 V min / 2.5 V max (at VGS=VDS, ID=250µA);
+        # design_requirements VADJ = 1.2–3.3 V and BIAS_ISO0/1 are FMC LA-bank pins
+        # (VCCO = VADJ on the carrier), source at the ~0.5 V DUT compliance.
+        _sem("BLK_BIAS_ISO_GATE_DRIVE", block="opa_bias", sev="WARNING", sheet="bias", refdes="Q42",
+             title="Bias isolation NMOS (2N7002) must actually turn on across the FULL VADJ range",
+             source="Power in (from FMC) / Bias circuit",
+             quote="VADJ 1.2–3.3V … Series NMOS isolation FETs (POPULATED default, 2N7002) … gated by BIAS_ISO0/1 from the FPGA",
+             datasheet=("2n7002.pdf", "Gate-Source threshold voltage",
+                        "VGS(th): min 1 V, max 2.5 V (at VGS=VDS, ID=250 µA); RDS(on) only specified at VGS=5 V and 10 V"),
+             prompt=(
+                 "Q42/Q43 are 2N7002 NMOS isolators between the PMOS drain and the BIASx output. Per the datasheet "
+                 "the 2N7002 gate threshold VGS(th) is 1.0 V (min) to 2.5 V (max) — a STANDARD-threshold part, with "
+                 "RDS(on) only specified at VGS = 5 V / 10 V (none below). The gate (BIAS_ISO0/1) is driven by an FPGA "
+                 "output on an FMC LA-bank pin whose high level equals VADJ; the NMOS SOURCE sits at the BIASx node "
+                 "(~0.5 V DUT compliance). So the effective gate overdrive is V_GS ≈ VADJ − 0.5 V. The requirements "
+                 "allow VADJ anywhere in 1.2–3.3 V. Check whether the NMOS is reliably ON across that WHOLE range: "
+                 "compute V_GS at the VADJ extremes and compare to VGS(th) max (2.5 V). FAIL if at the low end of the "
+                 "stated VADJ range V_GS falls below VGS(th) max (e.g. VADJ=1.2 V ⇒ V_GS=0.7 V ≪ 1 V min ⇒ the FET is "
+                 "OFF and no bias reaches Bobcat). PASS only if the FET is guaranteed on across the full VADJ range, or "
+                 "if the design explicitly documents a minimum VADJ for bias operation."),
+             fix=("Either document a min VADJ (≈2.5 V) for bias delivery, OR use a logic-level low-Vth NMOS "
+                  "(e.g. Si2302 / AO3400, VGS(th) < ~1 V), OR drive BIAS_ISO from a +3V3-domain GPIO instead of "
+                  "the VADJ-referenced LA bank.")),
+
+        # --- F-6: footprint string must match the part's datasheet package ---
+        # GROUNDING: each part's own datasheet states its package: MCP4728 = 10-Lead
+        # MSOP (22187E); OPA2388 dual = VSSOP-8 (opa2388); PMZ1200UPE = DFN1006-3
+        # (SOT883), leadless, no exposed pad (PMZ1200UPE).
+        _sem("BLK_FOOTPRINT_MATCHES_DATASHEET", block="opa_bias", sev="WARNING", sheet="bias",
+             title="Component footprint must match the orderable part's datasheet package",
+             source="Parts to implement",
+             quote="MCP4728 (MSOP-10); OPA2388 dual (VSSOP-8); PMZ1200UPEYL (SOT883/DFN1006-3)",
+             datasheet=("(per-part datasheets in Parts Library/)", "Package",
+                        "MCP4728 22187E: '10-Lead MSOP Package'; OPA2388: 'Dual in SOIC-8 and VSSOP-8'; "
+                        "PMZ1200UPE: 'leadless ultra small DFN1006-3 (SOT883)', no exposed pad"),
+             prompt=(
+                 "For each active part on the bias sheet, check that the schematic `footprint` string names the SAME "
+                 "package family the part's datasheet specifies (the orderable MPN's package). Known datasheet packages: "
+                 "MCP4728 (U40) = MSOP-10 (10-lead MSOP, no exposed pad); OPA2388 dual (U41) = VSSOP-8 (a.k.a. MSOP-8, "
+                 "no EP); PMZ1200UPEYL (Q40/Q41) = SOT883 / DFN1006-3 (1.0×0.6 mm, 3-lead leadless, NO exposed pad). "
+                 "FAIL if a footprint names a different package family or wrongly adds/omits an exposed pad (e.g. a "
+                 "QFN/DFN-with-EP string for an MSOP part, or SOIC for a VSSOP part, or a 1.0×1.0-EP DFN for the SOT883). "
+                 "PASS only if each footprint matches its datasheet package."),
+             fix="Set each `footprint` to the datasheet package land pattern (MSOP-10 / VSSOP-8 / SOT883), no spurious EP."),
+
+        # --- F-1: FMC connector GND pins must be tied to the GND net ---
+        # GROUNDING: design_requirements "All other unlabeled pins on rows C/D/G/H
+        # are GND per the standard"; ASP-134606-01 is a VITA 57.1 LPC connector whose
+        # ~60 GND pins MUST return to the board GND, not float.
+        _sem("BLK_FMC_GND_PINS_TIED", block="ldo_rail", sev="ERROR", sheet="fmc", refdes="J1",
+             title="FMC connector GND pins must connect to the GND net (not be left unconnected)",
+             source="FMC LA-pair locations / pinout",
+             quote="All other unlabeled pins on rows C/D/G/H are GND per the standard.",
+             datasheet=("ASP-134606-01.pdf", "VITA 57.1 LPC pinout",
+                        "VITA 57.1 LPC has ~60 GND pins across rows C/D/G/H; all must tie to the board ground return"),
+             prompt=(
+                 "The FMC connector (J1–J4 = the 4 rows of an ASP-134606-01 VITA 57.1 LPC, 160 pins total) has a large "
+                 "number of GND pins by the standard — the requirements say every unlabeled C/D/G/H pin is GND (≈60 pins). "
+                 "Examine the GND net membership: how many of the connector's pins are actually on the GND net? FAIL if "
+                 "only a handful (e.g. just the strapping pins H2/C34/D35) are on GND while the bulk of the standard's GND "
+                 "pins are left unconnected / No-ERC'd — that leaves the connector with no signal/supply return path. PASS "
+                 "only if the connector's GND pins (the dozens of them) are tied to the GND net."),
+             fix=("Wire the VITA 57.1 LPC GND pins to the GND net: add their positions to fmc.yaml's GND net (and wire "
+                  "them in build_fmc.py instead of No-ERC), or make the symbol's GND pins Electrical=Power Name=GND. "
+                  "Use the authoritative VITA 57.1 LPC GND list, cross-checked against the assigned signal pins.")),
+    ]
+
     return R
 
 

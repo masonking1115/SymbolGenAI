@@ -110,12 +110,12 @@ LA_ASSIGN: dict[str, tuple[str, int]] = {
     "BIAS_ISO0":     ("G", 21),   # LA20_P
     "BIAS_ISO1":     ("H", 25),   # LA21_P
     # E5 — TPS7A8401A ANY-OUT setpoint pins
-    "LDO_SET_50mV":  ("G", 24),   # LA22_P
-    "LDO_SET_100mV": ("D", 23),   # LA23_P
-    "LDO_SET_200mV": ("H", 28),   # LA24_P
-    "LDO_SET_400mV": ("G", 27),   # LA25_P
-    "LDO_SET_800mV": ("D", 26),   # LA26_P
-    "LDO_SET_1V6":   ("C", 26),   # LA27_P
+    "LDO_SET_25mV":  ("G", 24),   # LA22_P
+    "LDO_SET_50mV": ("D", 23),   # LA23_P
+    "LDO_SET_100mV": ("H", 28),   # LA24_P
+    "LDO_SET_200mV": ("G", 27),   # LA25_P
+    "LDO_SET_400mV": ("D", 26),   # LA26_P
+    "LDO_SET_800mV":   ("C", 26),   # LA27_P
 }
 
 

@@ -28,8 +28,8 @@ LIB_DESC = {
     "TPS22916CNYFPR":        "Load switch, 1-channel, 5.5 V / 2 A, WCSP",
     "24AA08-I-SN":           "EEPROM, 8 Kbit I²C, SOIC-8",
     "MCP4728":               "DAC, quad 12-bit voltage-output, I²C, MSOP-10",
-    "OPA2388":               "Op-amp, dual precision RRIO, zero-drift, MSOP-8",
-    "PMZ1200UPEYL":          "MOSFET, P-channel, 20 V, SOT-666",
+    "OPA2388":               "Op-amp, dual precision RRIO, zero-drift, VSSOP-8 (DGK)",
+    "PMZ1200UPEYL":          "MOSFET, P-channel, 20 V, SOT883 (DFN1006-3)",
     "2N7002":                "MOSFET, N-channel, 60 V, SOT-23",
     "ASP-134606-01":         "Connector, VITA 57.1 FMC LPC mezzanine, 160-pos SMT",
     "HRM-G-300-467B-1":      "Connector, SMA jack, 50 Ω, edge-launch",
@@ -42,7 +42,7 @@ LIB_DESC = {
     "GRM155R71C104KA88D":    "MLCC, 100 nF, X7R, 16 V, 0402",
     "CRCW04020000Z0ED":      "Resistor, 0 Ω jumper, 0402",
     "CR0402-FX-1002GLF":     "Resistor, 10 kΩ, 1%, 1/16 W, 0402",
-    "TNPW06035K11BEEA":      "Resistor, 5.11 kΩ, 0.1%, 25 ppm/°C, thin-film, 0603",
+    "TNPW06033K65BEEA":      "Resistor, 3.65 kΩ, 0.1%, 25 ppm/°C, thin-film, 0603",
     "GRM155R71H103KA88D":    "MLCC, 10 nF, X7R, 50 V, 0402",
     "GRM21BR61A226ME44L":    "MLCC, 22 µF, X5R, 10 V, 0805",
     "CR0402-FX-1001GLF":     "Resistor, 1 kΩ, 1%, 1/16 W, 0402",
@@ -212,14 +212,14 @@ PROMPT_PMOS = (
 PROMPT_RSENSE = (
     "Select a precision thin-film chip resistor used as a V-to-I sense element in a high-side PMOS transconductance bias loop.\n"
     "Requirements:\n"
-    " - Value: 5.11 kOhm exact (E96 series).\n"
+    " - Value: 3.65 kOhm exact (E96 series). (Lowered from 5.11 kOhm on 2026-05-30: at 5.11 kOhm the regulated full-scale capped at ~484 uA, failing the >=640 uA spec because I*R left no headroom over the 0.5 V DUT compliance.)\n"
     " - Tolerance: 0.1% maximum.\n"
     " - Temperature coefficient: <=25 ppm/C.\n"
     " - Construction: thin-film (not thick-film).\n"
-    " - Power rating: >=1/10 W (typical 0603); max dissipation = 3.3V * 646uA = 2.1 mW.\n"
+    " - Power rating: >=1/10 W (typical 0603); max dissipation = 3.3V * ~900uA ~= 3 mW.\n"
     " - Package: 0603 preferred; 0402 acceptable if 0.1% / 25 ppm available.\n"
     " - Operating temperature: -40 C to +85 C minimum.\n"
-    "Context: programs full-scale bias current at I_FS = V_supply / R_sense = 3.3 V / 5.11 kOhm ~= 646 uA over a 0-3.3V V_DAC range."
+    "Context: programs full-scale bias current at I_FS = (V_supply - V_DUT) / R_sense; with 3.65 kOhm the regulated full-scale clears the >=640 uA target inside the 0.5 V compliance window."
 )
 
 PROMPT_SMA = (
@@ -354,11 +354,11 @@ ROWS = [
         "", PROMPT_OP_AMP),
     ("Q1, Q2",   2,  "PMOS (bias V-to-I)",
         "Small-signal logic-level P-channel MOSFET pass element; high-side current source into BIASx",
-        "|Vgs(th)| <= 2 V, Vds >= 6 V", "SOT-23 or SOT-666",
+        "|Vgs(th)| <= 2 V, Vds >= 6 V", "SOT883 / SOT-23 or smaller",
         "", PROMPT_PMOS),
-    ("Rsense1, Rsense2", 2, "Resistor 5.11 kOhm precision",
+    ("Rsense1, Rsense2", 2, "Resistor 3.65 kOhm precision",
         "V-to-I sense resistor; sets I_FS = (3.3V - V_DAC) / R_sense",
-        "5.11 kOhm, 0.1%, 25 ppm/C, thin-film", "0603",
+        "3.65 kOhm, 0.1%, 25 ppm/C, thin-film", "0603",
         "", PROMPT_RSENSE),
     ("Qen1, Qen2 (DNP)", 2, "NMOS enable FET (DNP)",
         "Optional series enable FET between PMOS drain and BIASx jumper; hard isolation",
