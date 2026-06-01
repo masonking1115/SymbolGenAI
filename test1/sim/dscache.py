@@ -31,8 +31,8 @@ def load() -> dict:
     if not CACHE_FILE.exists():
         return {}
     try:
-        return json.loads(CACHE_FILE.read_text())
-    except (json.JSONDecodeError, OSError):
+        return json.loads(CACHE_FILE.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError):
         return {}
 
 

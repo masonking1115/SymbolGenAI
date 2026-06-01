@@ -962,7 +962,7 @@ async def _spawn_claude(
     *,
     prompt: str,
     system_suffix: str,
-    permission_mode: str = "acceptEdits",
+    permission_mode: str = "dontAsk",
     allowed_tools: list[str] | None = None,
     add_dir: Path | None = None,
     model: str | None = None,
@@ -989,13 +989,39 @@ async def _spawn_claude(
         "--include-partial-messages",
         "--verbose",                # stream-json requires verbose
         "--model", model or MODEL,
+        # dontAsk (default): a tool call matching the merged allow-list below runs;
+        # ANYTHING else is auto-DENIED rather than prompted. This is the correct
+        # mode for a headless `claude -p` child — acceptEdits would still PROMPT on
+        # a non-whitelisted Bash command, and with stdin=/dev/null that prompt hangs
+        # forever (the original sim-setup stall). Edits keep working because Edit/
+        # Write are in _BASELINE_TOOLS (dontAsk drops acceptEdits' implicit edit
+        # auto-approval, so they must be listed — they are).
         "--permission-mode", permission_mode,
         "--append-system-prompt", _BASE_CONTEXT + "\n" + system_suffix,
         "--no-session-persistence",
+        # Boot ZERO MCP servers. We pass no --mcp-config, so --strict-mcp-config
+        # means "ignore every other MCP source" — i.e. the user-level plugin
+        # servers in ~/.claude/settings.json (e.g. context7's `npx -y
+        # @upstash/context7-mcp`) are NOT launched. Those servers re-resolve
+        # against the npm registry at startup and were stalling every agent for
+        # minutes at ~0% CPU before it produced any output (and leaking orphaned
+        # node processes). None of our agents use MCP tools, so opting out keeps
+        # startup instant and immune to whatever the user enables globally.
+        "--strict-mcp-config",
     ]
-    if allowed_tools:
-        cmd.append("--allowedTools")
-        cmd.extend(allowed_tools)
+    # Merge the universal floor with this site's extra tools (order-stable dedup).
+    # Under dontAsk EVERYTHING must be explicitly allowed or it's denied — so the
+    # baseline (edits + the venv interpreter, incl. its absolute-path forms) is
+    # ALWAYS present, even for sites that passed no allowed_tools (chat/compact/
+    # symbol_gen previously leaned on acceptEdits auto-approving edits). Any
+    # non-matching Bash call now deny-fails fast instead of hanging the headless
+    # child on a prompt no one can answer.
+    _merged: list[str] = []
+    for t in [*_BASELINE_TOOLS, *(allowed_tools or [])]:
+        if t not in _merged:
+            _merged.append(t)
+    cmd.append("--allowedTools")
+    cmd.extend(_merged)
     if add_dir:
         cmd.extend(["--add-dir", str(add_dir)])
     env = os.environ.copy()
@@ -1231,7 +1257,7 @@ async def start_chat_turn(session_id: str, user_msg: str) -> AgentRun:
     proc, _cmd = await _spawn_claude(
         prompt=prompt,
         system_suffix=_CHAT_INSTRUCTIONS,
-        permission_mode="acceptEdits",  # allows write to changelog.json
+        permission_mode="dontAsk",  # edits (changelog.json) allowed via _BASELINE_TOOLS
         model=model_for("chat"),
         thinking_tokens=thinking_for("chat"),
         kind="chat",
@@ -1260,7 +1286,7 @@ async def start_compact(session_id: str) -> AgentRun | None:
     proc, _cmd = await _spawn_claude(
         prompt=prompt,
         system_suffix=_COMPACT_INSTRUCTIONS,
-        permission_mode="acceptEdits",
+        permission_mode="dontAsk",
     )
     run = _register("compact")
 
@@ -1286,7 +1312,7 @@ async def start_compact(session_id: str) -> AgentRun | None:
 # behavior from its datasheet (e.g. confirm an LDO's adjustable-mode pin state)
 # instead of stalling on a permission-gated PDF read — the exact gap that made
 # the CFF/adjustable-mode decision unverifiable. read_pdf.py is text-only and
-# read-only; acceptEdits still governs all file writes.
+# read-only; file writes are governed by the Edit/Write entries in _BASELINE_TOOLS.
 # The apply/symbol-gen agents must run the SAME interpreter as this backend
 # (sys.executable) — it's the venv that has altium_monkey (a bare `python` on
 # PATH may be system Python without it). The spawned `claude -p`'s allowed_tools
@@ -1295,7 +1321,18 @@ async def start_compact(session_id: str) -> AgentRun | None:
 # agents). Without this, author_symbol invocations hit an approval gate the
 # headless loop can't satisfy and stall.
 _VENV_PY = sys.executable.replace("\\", "/")
-_DESIGN_AGENT_TOOLS = [
+
+# The universal permission FLOOR, merged into every agent's allow-list by
+# _spawn_claude (see there). Under --permission-mode dontAsk a tool call that
+# matches NOTHING is auto-denied (not prompted) — which in a headless `claude -p`
+# child aborts the agent instead of hanging. So every form the agents actually use
+# to (a) edit the files they own and (b) invoke the backend interpreter must be
+# present here, or the agent gets blocked and thrashes (the failure where a gated
+# sim-setup agent fell back to PowerShell + recalled/web datasheet numbers).
+# CRITICAL: include the venv python by ABSOLUTE PATH (bare + quoted) — the agents
+# routinely call `C:\…\.venv\Scripts\python.exe sim/read_pdf.py …`, whose first
+# token is the path, NOT `python`, so `Bash(python:*)` alone never matches it.
+_BASELINE_TOOLS = [
     "Read", "Edit", "Write", "Glob", "Grep",
     "Bash(python:*)", "Bash(python3:*)", "Bash(pdftotext:*)",
     "Bash(cd:*)", "Bash(ls:*)", "Bash(cat:*)",
@@ -1304,12 +1341,16 @@ _DESIGN_AGENT_TOOLS = [
     # call from hitting the permission gate, which — now that the headless child's
     # stdin is /dev/null — would abort the agent (rc -1) instead of just prompting.
     "Bash(git:*)",
-    # The backend's own interpreter, by full path (and a glob), so
-    # `"<venv>/python.exe" -m test1.altium.author_symbol …` runs without a prompt.
+    # The backend's own interpreter, by full path (bare + quoted + a loose glob),
+    # so `"<venv>/python.exe" sim/read_pdf.py …` / `… -m test1.altium.author_symbol`
+    # runs without a prompt regardless of how the agent quotes/slashes the path.
     f'Bash({_VENV_PY}:*)',
     f'Bash("{_VENV_PY}":*)',
     "Bash(*altium_spike/.venv/Scripts/python.exe*)",
 ]
+# Back-compat alias: the design agents referenced this name; it now equals the
+# shared floor (the design set was already the superset everything converged on).
+_DESIGN_AGENT_TOOLS = _BASELINE_TOOLS
 
 
 async def start_apply_pass() -> AgentRun:
@@ -1319,7 +1360,7 @@ async def start_apply_pass() -> AgentRun:
     proc, _cmd = await _spawn_claude(
         prompt=prompt,
         system_suffix=_APPLY_INSTRUCTIONS,
-        permission_mode="acceptEdits",
+        permission_mode="dontAsk",
         allowed_tools=_DESIGN_AGENT_TOOLS,
         model=model_for("apply"),
         thinking_tokens=thinking_for("apply"),
@@ -1486,7 +1527,7 @@ async def start_lint_fix_pass(failures: dict, round_no: int, max_rounds: int,
     proc, _cmd = await _spawn_claude(
         prompt=prompt,
         system_suffix=_LINT_FIX_INSTRUCTIONS,
-        permission_mode="acceptEdits",
+        permission_mode="dontAsk",
         allowed_tools=_DESIGN_AGENT_TOOLS,
         model=model_for("lint_fix"),
         kind="lint_fix",
@@ -1529,7 +1570,7 @@ async def start_topology_adapt(rule_id: str, candidate_mpn: str,
     proc, _cmd = await _spawn_claude(
         prompt=prompt,
         system_suffix="",
-        permission_mode="acceptEdits",
+        permission_mode="dontAsk",
         allowed_tools=_DESIGN_AGENT_TOOLS,
         model=model_for("topology_adapt"),
         thinking_tokens=thinking_for("topology_adapt"),
@@ -1610,7 +1651,7 @@ pin/unit count matches the datasheet, then print a one-line summary.
     proc, _cmd = await _spawn_claude(
         prompt=instructions,
         system_suffix="",  # symbol gen doesn't need the chat instructions
-        permission_mode="acceptEdits",
+        permission_mode="dontAsk",
         add_dir=repo_root,  # let the agent write under Parts Library + run the build
         model=model_for("symbol_gen"),
         thinking_tokens=thinking_for("symbol_gen"),
@@ -1636,12 +1677,10 @@ async def start_rule_gen(doc_bundle_path: Path, predicate_spec_path: Path,
     proc, _cmd = await _spawn_claude(
         prompt=prompt,
         system_suffix="",
-        permission_mode="acceptEdits",   # writes output_path
-        allowed_tools=[
-            "Read", "Write", "Edit", "Glob", "Grep", "WebFetch", "WebSearch",
-            "Bash(python:*)", "Bash(python3:*)", "Bash(pdftotext:*)",
-            "Bash(cd:*)", "Bash(ls:*)", "Bash(cat:*)",
-        ],
+        # Baseline floor (edits + interpreter) is merged in by _spawn_claude; this
+        # agent additionally needs web access to research parts/standards while
+        # authoring rules, so it adds WebFetch/WebSearch on top.
+        allowed_tools=["WebFetch", "WebSearch"],
         add_dir=REPO_ROOT,
         model=model_for("rule_gen"),
         thinking_tokens=thinking_for("rule_gen"),
@@ -1748,14 +1787,26 @@ Sim-scenario cache:          {_SIM_CONFIG}
 
 READING DATASHEET PDFs — the Read tool CANNOT rasterize these PDFs (no poppler),
 so do NOT Read the .pdf directly and do NOT write your own pdf script. Use the
-provided helper via BASH (not PowerShell). You are ALREADY in the test1/
-directory — do NOT cd; do NOT write your own pdf script.
+provided helper via BASH (not PowerShell).
 
-STEP 1 — TEXT FIRST (fast, reliable). Get the text layer of the EC-table pages:
+RUN IT EXACTLY LIKE THIS — these forms are pre-approved; nothing else is:
     python sim/read_pdf.py "<pdf path>" --pages 4-9 --text-only
-This prints the page text — most electrical specs (VOS, GBW, AOL, dropout, RON,
-tON with their conditions) are readable straight from the text. Extract what you
-can from text.
+Use the bare command `python …` (the correct interpreter is already first on your
+PATH). Do NOT prefix it with `cd …`, do NOT spell out an absolute path to
+python.exe, do NOT switch to PowerShell, do NOT write your own pdf script — each
+of those makes the call NOT match the allow-list, and a non-matching command is
+DENIED (it will not run and cannot be approved — this is a headless run).
+
+IF A COMMAND IS DENIED: stop and report what you needed and which command was
+blocked. DO NOT improvise around it — do NOT substitute values from memory/recall
+and do NOT fetch a datasheet from the web. Every cached number MUST come from the
+LOCAL datasheet via this helper; an un-cited or recalled value is worse than a
+missing one. (If the value genuinely is not in the datasheet, record that as a
+needs_clarification note rather than inventing a number — see below.)
+
+STEP 1 — TEXT FIRST (fast, reliable): the `--text-only` form above prints the page
+text — most electrical specs (VOS, GBW, AOL, dropout, RON, tON with their
+conditions) are readable straight from the text. Extract what you can from text.
 STEP 2 — IMAGES ONLY IF NEEDED (slower). If a value lives in a table whose layout
 is garbled in the text, or in a graph, render JUST those 1-2 pages and Read the
 PNGs:
@@ -1801,19 +1852,11 @@ Your job — gain context, then establish ALL parameters before the sim runs:
     proc, _cmd = await _spawn_claude(
         prompt=instructions,
         system_suffix="",
-        permission_mode="acceptEdits",   # writes the two cache files
-        # Allow python (the venv is first on PATH → has fitz) + pdftotext so the
-        # agent can run the PDF-render helper to read datasheet diagrams. A
-        # narrowly-pinned prefix proved brittle — the agent quotes the path and
-        # prepends `cd … &&`, which a `Bash(python sim/read_pdf.py:*)` matcher
-        # rejects, making it thrash into PowerShell + ad-hoc pdf scripts. These
-        # agents have tightly-scoped prompts, so allowing `python`/bash plumbing
-        # is the pragmatic, non-thrashing choice (acceptEdits still governs writes).
-        allowed_tools=[
-            "Read", "Edit", "Write", "Glob", "Grep",
-            "Bash(python:*)", "Bash(python3:*)", "Bash(pdftotext:*)",
-            "Bash(cd:*)", "Bash(ls:*)", "Bash(cat:*)",
-        ],
+        # dontAsk + the merged _BASELINE_TOOLS floor (set in _spawn_claude) cover
+        # everything this agent needs: Edit/Write for the two cache files, and the
+        # PDF helper via `python sim/read_pdf.py` (bare AND absolute-path forms).
+        # No site-specific tools needed; non-matching Bash deny-fails (no hang).
+        allowed_tools=None,
         model=model_for("sim_setup"),
         thinking_tokens=thinking_for("sim_setup"),
         kind="sim_setup",
@@ -1842,8 +1885,8 @@ async def start_sim_interpret(
     # the slow path that was timing the pass out. Only the block's own MPNs.
     block_mpns = {d.get("mpn") for d in datasheets}
     try:
-        _all = json.loads(_SIM_PARAM_CACHE.read_text())
-    except (json.JSONDecodeError, OSError, FileNotFoundError):
+        _all = json.loads(_SIM_PARAM_CACHE.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError, FileNotFoundError, UnicodeDecodeError):
         _all = {}
     _cached = {m: e for m, e in _all.items() if m in block_mpns} if isinstance(_all, dict) else {}
     cached_params_block = (
@@ -1943,16 +1986,11 @@ circuit edits, one per line; "- none" if no circuit change is warranted):
     proc, _cmd = await _spawn_claude(
         prompt=instructions,
         system_suffix="",
-        permission_mode="acceptEdits",   # auto-approves cache/scenario edits
-        # Allow python (venv first on PATH → fitz) + pdftotext + plumbing so the
-        # agent can run the bounded iterate CLI and the PDF-render helper without
-        # a brittle pinned prefix (it quotes paths / prepends `cd &&`). Tightly-
-        # scoped prompt; acceptEdits still governs writes.
-        allowed_tools=[
-            "Read", "Edit", "Write", "Glob", "Grep",
-            "Bash(python:*)", "Bash(python3:*)", "Bash(pdftotext:*)",
-            "Bash(cd:*)", "Bash(ls:*)", "Bash(cat:*)",
-        ],
+        permission_mode="dontAsk",   # cache/scenario edits allowed via _BASELINE_TOOLS
+        # dontAsk + the merged _BASELINE_TOOLS floor cover the bounded iterate CLI
+        # and the PDF helper (`python …`, bare + absolute-path). No site-specific
+        # tools; non-matching Bash deny-fails instead of hanging.
+        allowed_tools=None,
         model=model_for("sim_interpret"),
         thinking_tokens=thinking_for("sim_interpret"),
         kind="sim_interpret",
@@ -1968,13 +2006,12 @@ circuit edits, one per line; "- none" if no circuit change is warranted):
 # ---------------------------------------------------------------------------
 # These write CODE (a deck builder under sim/decks/) and edit the catalog, so
 # they get a wider — but still sim-scoped — tool allowance than the
-# extraction/verdict agents. acceptEdits governs writes; the prompts pin them to
-# the sim layer and forbid touching the generator/linter/netlist.
-_SIM_BUILD_TOOLS = [
-    "Read", "Edit", "Write", "Glob", "Grep",
-    "Bash(python:*)", "Bash(python3:*)", "Bash(pdftotext:*)",
-    "Bash(cd:*)", "Bash(ls:*)", "Bash(cat:*)",
-]
+# extraction/verdict agents. Edits are governed by _BASELINE_TOOLS; the prompts
+# pin them to the sim layer and forbid touching the generator/linter/netlist.
+# Was a hand-rolled subset of the floor (and crucially MISSING the absolute-path
+# venv-python forms — the gap that hung the gated sim agents). _spawn_claude now
+# merges _BASELINE_TOOLS into every call, so this just aliases the floor.
+_SIM_BUILD_TOOLS = _BASELINE_TOOLS
 
 # The deck-builder contract, shared by generate + update so both author decks the
 # pipeline can actually dispatch + parse. Kept in one place so it can't drift.
@@ -2071,7 +2108,7 @@ Steps:
     proc, _cmd = await _spawn_claude(
         prompt=instructions,
         system_suffix="",
-        permission_mode="acceptEdits",
+        permission_mode="dontAsk",
         allowed_tools=_SIM_BUILD_TOOLS,
         model=model_for("sim_generate"),
         thinking_tokens=thinking_for("sim_generate"),
@@ -2129,7 +2166,7 @@ Steps:
     proc, _cmd = await _spawn_claude(
         prompt=instructions,
         system_suffix="",
-        permission_mode="acceptEdits",
+        permission_mode="dontAsk",
         allowed_tools=_SIM_BUILD_TOOLS,
         model=model_for("sim_update"),
         thinking_tokens=thinking_for("sim_update"),
@@ -2185,7 +2222,7 @@ Behaviour:
     proc, _cmd = await _spawn_claude(
         prompt=instructions,
         system_suffix="",
-        permission_mode="acceptEdits",
+        permission_mode="dontAsk",
         allowed_tools=_SIM_BUILD_TOOLS,
         model=model_for("sim_chat_edit"),
         thinking_tokens=thinking_for("sim_chat_edit"),
@@ -2197,12 +2234,20 @@ Behaviour:
 
 
 def dscache_cached_mpns() -> list[str]:
-    """MPNs already present in the param cache without a pending clarification."""
+    """MPNs present in the param cache whose clarification (if any) does not block
+    — either no open clarification, or one marked `clarification_acknowledged`
+    (reviewed and accepted as a documented assumption; see simconfig
+    `_clarification_blocks`). Kept in sync with that predicate so the setup agent's
+    'already cached' list matches the freshness gate."""
     try:
-        data = json.loads(_SIM_PARAM_CACHE.read_text())
-    except (json.JSONDecodeError, OSError, FileNotFoundError):
+        data = json.loads(_SIM_PARAM_CACHE.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError, FileNotFoundError, UnicodeDecodeError):
         return []
-    return [m for m, e in data.items() if isinstance(e, dict) and not e.get("needs_clarification")]
+    return [
+        m for m, e in data.items()
+        if isinstance(e, dict)
+        and not (e.get("needs_clarification") and not e.get("clarification_acknowledged"))
+    ]
 
 
 async def stream_run(run_id: str) -> AsyncIterator[bytes]:

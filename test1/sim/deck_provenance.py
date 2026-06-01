@@ -71,8 +71,8 @@ def fingerprint(block: dict) -> str | None:
 
 def _load() -> dict:
     try:
-        return json.loads(PROV_FILE.read_text())
-    except (OSError, json.JSONDecodeError):
+        return json.loads(PROV_FILE.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
         return {}
 
 
@@ -86,7 +86,7 @@ def stamp(block: dict) -> str | None:
     data = _load()
     data[block.get("id")] = {"fingerprint": fp, "sheets": _sheets_for(block)}
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    PROV_FILE.write_text(json.dumps(data, indent=2))
+    PROV_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
     return fp
 
 

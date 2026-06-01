@@ -45,8 +45,8 @@ def load() -> dict:
     if not CONFIG_FILE.exists():
         return {}
     try:
-        return json.loads(CONFIG_FILE.read_text())
-    except (json.JSONDecodeError, OSError):
+        return json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError):
         return {}
 
 
@@ -66,21 +66,40 @@ def operating_points(block_id: str, default: list[float] | None = None) -> list[
     return [float(x) for x in pts] if isinstance(pts, list) and pts else (default or [])
 
 
+def _clarification_blocks(entry: dict) -> bool:
+    """True iff this part's clarification should force setup to re-run.
+
+    A `needs_clarification` note blocks freshness — EXCEPT when it has been
+    acknowledged (`clarification_acknowledged: true`). Acknowledgement means the
+    open question has been reviewed and the cached value accepted as a documented
+    assumption — typically because the answer is NOT obtainable from any available
+    source (e.g. the Bobcat deck states no per-rail load current, so the LDO/load-
+    switch params keep their estimate-based note rather than a cited number).
+    Without this escape hatch an unresolvable clarification loops forever: the
+    block is never fresh → setup re-runs every time → the agent sees params are
+    already present and writes nothing → the flag never clears. The note itself is
+    PRESERVED (the assumption stays visible); only its freshness-gating drops."""
+    if not entry.get("needs_clarification"):
+        return False
+    return not entry.get("clarification_acknowledged")
+
+
 def _cached_param_mpns() -> set[str]:
-    """MPNs present in the device-param cache without a pending clarification.
+    """MPNs present in the device-param cache whose clarification (if any) does
+    not block — i.e. either no open clarification, or an acknowledged one.
 
     Setup OWNS datasheet → param extraction (the interpret pass no longer reads
     datasheets), so a block isn't fully set up until every one of its parts has
     params here. Mirror agent.dscache_cached_mpns without importing the GUI."""
     try:
-        data = json.loads(PARAM_FILE.read_text())
-    except (json.JSONDecodeError, OSError):
+        data = json.loads(PARAM_FILE.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError):
         return set()
     if not isinstance(data, dict):
         return set()
     return {
         m for m, e in data.items()
-        if isinstance(e, dict) and not e.get("needs_clarification")
+        if isinstance(e, dict) and not _clarification_blocks(e)
     }
 
 
@@ -140,7 +159,11 @@ def is_fresh(block: dict) -> bool:
 
 def _write_json(path: Path, data: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2))
+    # UTF-8 + ensure_ascii=False: the setup agent writes Unicode into the cache
+    # (µ, ±, ≈, smart quotes from datasheet prose). Pin the encoding so the file
+    # round-trips and the readers above (which now also read UTF-8) never hit the
+    # Windows-default cp1252 codec, which can't decode those bytes.
+    path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def clear_scenario(block_id: str) -> bool:
@@ -159,8 +182,8 @@ def clear_params(mpns: list[str]) -> list[str]:
     Next Run re-extracts them from the datasheets (setup agent). Returns the
     MPNs actually removed."""
     try:
-        data = json.loads(PARAM_FILE.read_text())
-    except (json.JSONDecodeError, OSError, FileNotFoundError):
+        data = json.loads(PARAM_FILE.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError, FileNotFoundError, UnicodeDecodeError):
         return []
     removed = [m for m in mpns if m in data]
     for m in removed:
