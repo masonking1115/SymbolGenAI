@@ -342,7 +342,18 @@ def eval_sim_review(p: "SimReview", sim_results: dict) -> bool:
     sim-setup pass if stale), then hand the result + analysis to claude -p to
     judge against the rule's criterion. Returns True (pass) on any infra failure
     — fail-safe, never fabricates a finding. sim_results may pre-seed a result
-    (so the loop runs each block once and reuses it across rules)."""
+    (so the loop runs each block once and reuses it across rules).
+
+    Deck-pass is authoritative. The deck analyzer already computes a deterministic
+    PASS/FAIL against the SAME criterion this rule cites — res["ok"] IS
+    `analysis.overall == "OK"` (see sim/service.py). So when the deck says ok, the
+    judge cannot overturn it: a judge FAIL on a numerically-passing result is, by
+    construction, a false positive (the judge adds no threshold the deck didn't
+    already apply — only LLM variance). We still run the judge to capture its
+    one-line `observed` text, but its verdict only governs when the deck could NOT
+    decide (ok False / absent). This kills the sim_review judge-variance false-FAIL
+    seen in loop 1887feea (both bias rules failed in the loop yet pass on every
+    re-run) without weakening any check the deck deterministically owns."""
     res = sim_results.get((p.sim_block, p.sim_type))
     if res is None:
         res = _run_block_for_review(p.sim_block, p.sim_type)
@@ -350,7 +361,9 @@ def eval_sim_review(p: "SimReview", sim_results: dict) -> bool:
             sim_results[(p.sim_block, p.sim_type)] = res  # cache for sibling rules
     if not res or res.get("status") not in ("ran", None):
         return True  # couldn't run the sim → defer (no false finding)
-    verdict = _judge_sim_result(p, res)
+    verdict = _judge_sim_result(p, res)          # also stashes res["_review_observed"]
+    if res.get("ok") is True:
+        return True  # deck's deterministic check (same criterion) passed — authoritative
     return verdict != "FAIL"
 
 
