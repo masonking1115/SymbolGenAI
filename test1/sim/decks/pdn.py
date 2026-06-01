@@ -147,6 +147,9 @@ wrdata pdn_impedance.dat vdb({node.lower()})
 # Analyzers
 
 
+# droop_limit_V = engineering estimate: the per-rail PDN droop budget (30mV digital
+# default; callers pass 50mV for VDDD/analog). Requirement = "decoupling caps on
+# VDDD/VDDIO/VDDA1/VDDA2"; the mV budget is a chosen target. See blocks.yaml *_pdn.
 def analyze_load_step(trace, node: str, *, droop_limit_V: float = 0.030) -> dict:
     import numpy as np
     t = trace.col("time")

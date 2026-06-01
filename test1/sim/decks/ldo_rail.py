@@ -269,6 +269,8 @@ def analyze_op_point(op: dict[str, float], *, vout_set: float = 1.8) -> dict:
             "overall": "OK" if all(f.get("status") == "OK" for f in findings) else "FAIL"}
 
 
+# droop_limit_V / recovery_limit_s = engineering estimates (chosen +VDDIO load-step
+# tolerances, no cited ripple spec); see blocks.yaml ldo_rail/transient_load_step.
 def analyze_load_step(trace, *, vout_set: float = 1.8,
                        droop_limit_V: float = 0.05,
                        recovery_limit_s: float = 100e-6) -> dict:
@@ -309,6 +311,8 @@ def analyze_load_step(trace, *, vout_set: float = 1.8,
     }
 
 
+# inrush_limit_A=1A = engineering estimate (chosen inrush safety bound); the
+# bring-up SEQUENCE it checks follows the deck block diagram. See blocks.yaml.
 def analyze_powerup(trace, *, vout_set: float = 1.8,
                     inrush_limit_A: float = 1.0) -> dict:
     """Check rails sequence (VOUT before VDDIO) and inrush stays bounded."""

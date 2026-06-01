@@ -21,9 +21,22 @@
 #     change flows straight into the sim. (Caps were always extracted; the sense
 #     R moved from a hardcoded constant to extraction.)
 #
-# Reviewer notes (Mason): the numbers in `pass` and the BOUNDARY `params` are the
-# curation to check — first-pass estimates from datasheets + the YAML notes; flag
-# any to tighten. Stubs reference shapes in stubs.py; models in models.py.
+# GROUNDING — every `pass:` criterion on an IMPLEMENTED sim_type carries a
+# `pass_source:` list classifying where each number comes from (mirrors the
+# review rules' `source:`). Three kinds, so a reviewer knows what to trust vs.
+# challenge:
+#   requirement          — a customer spec value (doc + loc + verbatim quote from
+#                          design_requirements.md / the deck).
+#   datasheet            — a device limit (file + the quoted value).
+#   engineering_estimate — a CHOSEN target/tolerance with no cited spec (e.g. a
+#                          PDN droop budget, an assumed load di-dt). Labeled as
+#                          such ON PURPOSE: the honest grounding for a judgment
+#                          call is "this is our pick, verify it" — not a fake cite.
+#   engineering_principle— a textbook criterion (e.g. 3dB peaking ~= 45° PM).
+# The actual numeric gate lives in the deck analyzer defaults (decks/*.py); the
+# `pass:` text + pass_source are the human-facing spec. Keep them in sync.
+# BOUNDARY `params` are tagged inline (# boundary: …) as off-sheet estimates.
+# Stubs reference shapes in stubs.py; models in models.py.
 #
 # status values:
 #   implemented      — deck builder exists and runs today
@@ -74,30 +87,76 @@ blocks:
       - type: dc_op_point
         rationale: Confirm every rail settles where it should and the LDO isn't in dropout.
         pass: "|V_measured - V_expected| <= 50mV on +3V3/LDO_OUT/VADJ; <= 100mV on +VDDIO (Rdson drop)."
+        pass_source:
+          # Setpoint target = customer rail spec; the 50/100mV bands + dropout test are
+          # engineering tolerances (the LDO's own 0.75% accuracy is far tighter, so these
+          # bands are a generous "is it regulating, not in dropout" gate).
+          - kind: requirement
+            doc: design_requirements.md
+            loc: Power
+            quote: "Bobcat rails: VDDD, VDDA1, VDDA2 = 0.6–1.0 V"
+          - kind: datasheet
+            doc: tps7a84a.pdf
+            loc: Accuracy
+            value: "0.75% (max) over line/load/temp — actual regulation is tighter than the 50mV gate"
+          - kind: engineering_estimate
+            note: "50mV core / 100mV +VDDIO bands are chosen pass tolerances (100mV on +VDDIO allows the load-switch Rdson drop), not a cited spec."
         # Uses base boundaries unchanged (static EN, steady 10mA load).
       - type: transient_powerup
         rationale: >
           With the enables driven in the intended order (LDO before load switch),
           confirm the rails ramp up in sequence and inrush current stays bounded.
         pass: "LDO_OUT crosses 90% before +VDDIO; peak inrush <= 1A."
+        pass_source:
+          - kind: requirement
+            doc: design_requirements.md
+            loc: System block diagram (from the deck)
+            quote: "VADJ passes through a switch to Bobcat VDDIO. The LDO generates Bobcat's low rails."
+          - kind: engineering_estimate
+            note: "Sequence (LDO before switch) follows the block diagram; the 1A inrush ceiling is a chosen safety bound, not a cited spec."
         boundary_overrides:
-          LDO_EN:   { t_on: 100e-6 }       # ASSUMED FPGA timing: LDO enable at 100us
-          LSW_EN:   { t_on: 600e-6 }       # ASSUMED FPGA timing: switch enable at 600us
-          "+VDDIO": { R_load: 36 }          # resistive load (tracks rising rail)
+          LDO_EN:   { t_on: 100e-6 }       # boundary: ASSUMED FPGA enable timing (off-schematic firmware)
+          LSW_EN:   { t_on: 600e-6 }       # boundary: ASSUMED FPGA enable timing (off-schematic firmware)
+          "+VDDIO": { R_load: 36 }          # boundary: resistive load estimate (tracks rising rail)
       - type: transient_load_step
         rationale: The decoupling must hold +VDDIO steady when Bobcat's load current jumps.
         pass: "Droop on +VDDIO <= 50mV and recovery to within 25mV <= 100us for a 10->100mA step."
+        pass_source:
+          - kind: engineering_estimate
+            note: "50mV droop / 25mV recovery / 100us are chosen PDN tolerances for the +VDDIO rail; not a Bobcat datasheet ripple spec (none provided). The 10->100mA step is an assumed DUT load profile."
         boundary_overrides:
-          "+VDDIO": { I_step: 0.090, t_step: 8e-3 }   # 10 -> 100mA step, after the 3ms switch turn-on settles
+          "+VDDIO": { I_step: 0.090, t_step: 8e-3 }   # boundary: 10 -> 100mA load step (assumed DUT profile), after switch turn-on settles
       - type: line_regulation
         rationale: Output must hold regulation as the FMC +3V3 rail varies across tolerance.
         pass: "Vout span <= 10mV across +3V3 = 3.0..3.6V, and mean Vout within 50mV of setpoint."
+        pass_source:
+          - kind: requirement
+            doc: design_requirements.md
+            loc: Power
+            quote: "From the FMC: 3.3 V (3P3V)"
+          - kind: datasheet
+            doc: tps7a84a.pdf
+            loc: Accuracy
+            value: "0.75% (maximum) accuracy over line, load, and temperature"
+          - kind: engineering_estimate
+            note: "+/-10% (3.0–3.6V) is the assumed FMC 3P3V tolerance window; the 10mV span gate derives from the datasheet line accuracy applied across it."
         # Uses base boundaries (static EN, steady load); the deck sweeps the +3V3 source.
       - type: setpoint_coverage
         rationale: >
           The ANY-OUT LDO exposes several selectable rails (LDO_SET_*). Every
           selectable output must regulate with dropout headroom, not just one.
         pass: "Each setpoint (0.8/1.0/1.2/1.5/1.8V) regulates within 50mV with >=0.3V headroom."
+        pass_source:
+          - kind: requirement
+            doc: design_requirements.md
+            loc: LDO
+            quote: "0.6–1.0 V output, set via ANY-OUT inputs connected to the FPGA."
+          - kind: datasheet
+            doc: tps7a84a.pdf
+            loc: ANY-OUT
+            value: "ANY-OUT operation: 0.5 V to 2.075 V, 25-mV resolution"
+          - kind: engineering_estimate
+            note: "Swept setpoints (0.8–1.8V) bracket the required 0.6–1.0V; 50mV regulation band + 0.3V dropout-headroom margin are chosen pass tolerances."
         # Runs a DC op-point per setpoint internally (no single deck / boundary set).
       - type: output_noise
         status: planned
@@ -141,20 +200,40 @@ blocks:
           The headline accuracy spec: sweep the DAC across its range and check the
           delivered bias current tracks the ideal (3V3 - V_DAC) / 3.65k.
         pass: "I_BIAS error vs ideal <= 1% from 10% to 100% of the required 640uA range."
+        pass_source:
+          - kind: requirement
+            doc: design_requirements.md
+            loc: Bias
+            quote: "Programmable range 0–640 µA, step size ~1 µA"
+          - kind: engineering_estimate
+            note: "1% V-to-I accuracy is a chosen acceptance target (the 0.1% sense-R + sub-µV op-amp offset make the budget comfortably tighter); the customer states range + step, not an accuracy %."
       - type: dc_compliance
         rationale: >
           Bobcat draws its bias with the BIASx pin near 0.5V, nominally 320uA.
           Holding BIAS0 at 0.5V, confirm the loop still delivers the ideal current
           across the range (and ~320uA at the nominal point) with enough headroom.
         pass: "I_BIAS error vs ideal <= 1% (and within 1% of 320uA at nominal) with BIAS0 held at 0.5V; PMOS drain >= 0.5V."
+        pass_source:
+          - kind: requirement
+            doc: design_requirements.md
+            loc: Bias
+            quote: "nominally 320 µA at 0.5 V"
+          - kind: engineering_estimate
+            note: "0.5V compliance point + 320uA nominal are the customer spec; the 1% accuracy band and the PMOS-drain >= 0.5V headroom check are chosen targets verifying the loop sources the spec'd current into a real DUT node."
       - type: ac_stability
         rationale: >
           The op-amp, the PMOS gate's capacitance, and the sense resistor form a
           feedback loop that can ring. Closed-loop peaking stands in for phase margin.
         pass: "Closed-loop peaking <= 3 dB (≈ phase margin >= 45 degrees)."
+        pass_source:
+          - kind: engineering_principle
+            note: "Control-theory standard: ~3 dB closed-loop peaking corresponds to ~45° phase margin (a second-order Q≈1 response). Not a customer/datasheet number — a textbook stability criterion."
       - type: transient_settling
         rationale: After a new DAC code is written, the bias current must settle cleanly without ringing.
         pass: "Bias current settles within 1% <= 50us, no sustained oscillation, for a mid-scale step."
+        pass_source:
+          - kind: engineering_estimate
+            note: "Bias updates at I2C rates (kHz), so a 50us settle target is comfortably fast; not a cited spec. The 1% settle band matches the dc_sweep accuracy target."
       - type: por_failsafe
         rationale: >
           Safety gate: at power-on the MCP4728 wakes at its full-scale code
@@ -163,6 +242,13 @@ blocks:
           With no isolation FET, the DAC POR code is the sole off-by-default
           mechanism (matches the deck) — this confirms it holds on the DAC alone.
         pass: "Bias current into Bobcat at power-on <= 1uA."
+        pass_source:
+          - kind: requirement
+            doc: design_requirements.md
+            loc: Bias
+            quote: "Off by default."
+          - kind: engineering_estimate
+            note: "<=1uA leak ceiling is a chosen 'effectively off' threshold (sim measures ~3pA on the DAC POR code alone); the customer states off-by-default, not a numeric leak limit."
       - type: monte_carlo_accuracy
         status: planned
         rationale: >
@@ -207,6 +293,13 @@ blocks:
           The core decoupling check: a fast load step shows whether the capacitor
           bank can supply the sudden charge demand and hold the rail.
         pass: "Droop <= 30mV for a 50->250mA step (100ns edge)."
+        pass_source:
+          - kind: requirement
+            doc: design_requirements.md
+            loc: Bobcat (DUT) — pinout & connections
+            quote: "Decoupling capacitors on VDDD, VDDIO, VDDA1, VDDA2."
+          - kind: engineering_estimate
+            note: "30mV droop / 50->250mA step / 100ns edge are a chosen digital-rail PDN budget (no Bobcat ripple/di-dt spec was provided); ~1.7% of a ~1.8V VDDIO is a conventional decoupling target."
       - type: ac_pdn_impedance
         status: planned
         rationale: >
@@ -240,6 +333,13 @@ blocks:
       - type: transient_load_step
         rationale: Confirm the two-capacitor +VDDD bank holds the rail under a load step.
         pass: "Droop <= 50mV for a 50->250mA step (100ns edge)."
+        pass_source:
+          - kind: requirement
+            doc: design_requirements.md
+            loc: Bobcat (DUT) — pinout & connections
+            quote: "Decoupling capacitors on VDDD, VDDIO, VDDA1, VDDA2."
+          - kind: engineering_estimate
+            note: "50mV droop budget (looser than VDDIO's 30mV — only two caps, C20/C21); 50->250mA/100ns is the assumed digital di-dt. No cited Bobcat ripple spec."
       - type: ac_pdn_impedance
         status: planned
         rationale: The impedance-vs-frequency profile; its peak is dominated by layout supply inductance.
@@ -272,6 +372,13 @@ blocks:
           Confirm the single 0.1uF capacitor holds the analog rail under a modest
           load step. With only one small cap, this checks the decoupling is adequate.
         pass: "Droop <= 50mV for a 5->25mA step (100ns edge)."
+        pass_source:
+          - kind: requirement
+            doc: design_requirements.md
+            loc: Bobcat (DUT) — pinout & connections
+            quote: "Decoupling capacitors on VDDD, VDDIO, VDDA1, VDDA2."
+          - kind: engineering_estimate
+            note: "Analog rail draws far less transient current, so the step is scaled to 5->25mA; 50mV droop on a 1.0V analog rail is a chosen budget. No cited Bobcat analog-ripple spec."
       - type: ac_pdn_impedance
         status: planned
         rationale: The impedance-vs-frequency profile; its peak is dominated by layout supply inductance.
@@ -302,6 +409,13 @@ blocks:
       - type: transient_load_step
         rationale: Confirm the single 0.1uF capacitor holds the analog rail under a modest load step.
         pass: "Droop <= 50mV for a 5->25mA step (100ns edge)."
+        pass_source:
+          - kind: requirement
+            doc: design_requirements.md
+            loc: Bobcat (DUT) — pinout & connections
+            quote: "Decoupling capacitors on VDDD, VDDIO, VDDA1, VDDA2."
+          - kind: engineering_estimate
+            note: "Same analog-scale budget as VDDA1: 5->25mA step, 50mV droop on the 1.0V rail. No cited Bobcat analog-ripple spec."
       - type: ac_pdn_impedance
         status: planned
         rationale: The impedance-vs-frequency profile; its peak is dominated by layout supply inductance.

@@ -2,6 +2,54 @@
 
 Deferred work items (not blocking; pick up when convenient).
 
+## Grounding parity for generation + simulation (2026-06-01) — DEFERRED
+
+Context: the REVIEW rules are now fully grounded (every threshold cites a
+datasheet, every requirement a doc that contains it, verified verbatim — commit
+4dda482). An audit of the other two subsystems found they are NOT at parity. We
+did the one high-value slice now (sim `pass_source` — see below, DONE) and
+deferred the rest. Necessity assessment: low-to-moderate — the single source of
+truth (netlist) and the structural validator + review layer already backstop the
+catastrophic + electrical errors; this is traceability/build-time-feedback
+hardening. The payoff rises sharply when the tool generates a SECOND board whose
+inputs aren't hand-verified. Pick up then, or if a customer asks for
+build-to-spec traceability as a deliverable.
+
+- [x] **Sim slice (DONE 2026-06-01): cite every sim pass/fail threshold.** Added
+      `pass_source:` to every implemented sim_type in `test1/sim/blocks.yaml`
+      (6 blocks) classifying each number as requirement (doc+loc+quote) /
+      datasheet (file+value) / engineering_estimate (labeled as a chosen target,
+      not a fake cite) / engineering_principle (e.g. 3dB peaking ≈ 45° PM). Tagged
+      the matching deck-analyzer defaults (decks/opa_bias.py, ldo_rail.py, pdn.py)
+      with one-line source comments so the code that gates and the YAML spec agree.
+      Header in blocks.yaml documents the convention. Verified: parses, 14/14 sims
+      still PASS (metadata only, no behavior change).
+- [ ] **Generation: add a `source:`/`sources:` field to the netlist YAML schema**
+      (parallel to review rules' `source:`). Today `notes:` is free-text and
+      inconsistently cited — some excellent (`bias.yaml` "per 22187E Figure 2-1"),
+      many bare ("MOSI pull-down" with no link to the 10kΩ requirement). Formalize
+      so each part/value traces to requirement / datasheet / design decision.
+- [ ] **Generation: add semantic build-time validators** (mirror the review
+      predicates, run in `gen/validator.py` alongside the existing structural
+      checks). Highest-value three: (a) footprint string vs the part datasheet
+      package; (b) value-vs-requirement (e.g. the bias sense-R headroom check —
+      already DRAWN on the sheet as prose: "640µA×R must fit 3V3−0.5V"); (c) the
+      VITA 57.1 LA_ASSIGN cross-check against the authoritative pinout xlsx already
+      in `Parts Library/ASP-134606-01/`. Today the builder trusts the YAML blindly
+      (validator checks connectivity, not electrical correctness) — a wrong value
+      builds clean and is only caught downstream by review.
+- [ ] **Sim: extend the staleness fingerprint to also hash the cited requirement/
+      datasheet text** (`deck_provenance.py` currently hashes only the netlist
+      sheet). Consequence of the gap: a block goes "stale → update" when the
+      SCHEMATIC changes, but NOT when its governing REQUIREMENT changes (e.g.
+      640µA → 800µA wouldn't flag the bias sims, because the requirement isn't a
+      hashed input). Now that thresholds carry `pass_source`, hash the cited
+      source text too so a spec change triggers the agentic re-check.
+- [ ] **Sim: promote the datasheet-param cache to verified.** `param_map` reads
+      `sim/cache/datasheet_params.json`; some entries are flagged
+      "training_data_cross_referenced … PDF verification pending". Verify those
+      against the local PDFs (same discipline as the review datasheet audit).
+
 ## Commit + push once TODO is current (2026-05-31) — DONE
 
 - [x] **Bring TODO up to date, then commit + push.** Done — commit 6e2fb2b pushed

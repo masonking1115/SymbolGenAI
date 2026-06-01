@@ -225,6 +225,10 @@ wrdata dc_compliance.dat i(vsns_bias) v(vsense) v(opaout) v(biasd)
 # Analyzers
 
 
+# Threshold defaults below are the numeric gate; their grounding (requirement /
+# datasheet / engineering estimate) is recorded in blocks.yaml `pass_source:` for
+# the matching sim_type. err_limit_frac=1% = chosen accuracy target (engineering
+# estimate); the 0–640µA range it applies over is the customer spec.
 def analyze_dc_sweep(trace, *, r_sense: float = R_SENSE, vdd: float = VDD,
                      err_limit_frac: float = 0.01) -> dict:
     """V-to-I accuracy vs ideal (vdd - V_DAC)/r_sense.
@@ -322,6 +326,8 @@ def analyze_compliance(trace, *, r_sense: float = R_SENSE, vdd: float = VDD,
     }
 
 
+# peak_limit_dB=3.0 = engineering principle: ~3dB closed-loop peaking ≈ 45° phase
+# margin (see blocks.yaml opa_bias/ac_stability pass_source).
 def analyze_ac_stability(trace, *, peak_limit_dB: float = 3.0) -> dict:
     """Closed-loop peaking as a phase-margin proxy. Flat (~0 dB) = well
     damped; a resonant peak > ~3 dB indicates < ~45° phase margin."""
@@ -344,6 +350,8 @@ def analyze_ac_stability(trace, *, peak_limit_dB: float = 3.0) -> dict:
     }
 
 
+# settle_limit_s=50µs / settle_frac=1% = engineering estimate (bias updates at
+# I2C rates, so 50µs is comfortably fast); see blocks.yaml transient_settling.
 def analyze_transient_settling(trace, *, settle_frac: float = 0.01,
                                settle_limit_s: float = 50e-6) -> dict:
     """Settling time + overshoot of the bias current after a DAC step."""
@@ -377,6 +385,8 @@ def analyze_transient_settling(trace, *, settle_frac: float = 0.01,
     }
 
 
+# leak_limit_A=1µA = engineering estimate of "effectively off" (requirement is
+# "off by default"; sim measures ~3pA on the DAC POR code). See blocks.yaml por_failsafe.
 def analyze_por(op: dict, *, leak_limit_A: float = 1e-6) -> dict:
     """Fail-safe: bias current reaching the DUT at power-on must be ~0."""
     i_bias = abs(op.get("i(vsns_bias)", 0.0))
