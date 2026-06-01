@@ -894,6 +894,10 @@ class AgentRun:
     text: str = ""
     stream_log: str = ""             # full concise stream (thinking/assistant/tool),
                                      # never overwritten — persisted for after-the-fact audit
+    # Structured mirror of stream_log: one {line, ev} per pushed event, so a late
+    # subscriber can replay the typed reasoning timeline (think/tool/say/...), not
+    # just the flat strings. `ev` is None for lines with no structured form.
+    stream_events: list[dict] = field(default_factory=list)
     status: str = "running"          # "running" | "ok" | "fail" | "cancelled"
     returncode: int | None = None
     subscribers: list[asyncio.Queue] = field(default_factory=list)
@@ -1033,10 +1037,19 @@ async def _spawn_claude(
     return proc, cmd
 
 
-def _summarize_event(ev: dict) -> str | None:
-    """Best-effort one-line summary of a stream-json event for the GUI log.
+def _summarize_event(ev: dict) -> tuple[str, dict] | tuple[None, None]:
+    """Best-effort summary of a stream-json event for the GUI.
 
-    Returns None for events we don't want to surface (system init, etc.).
+    Returns (summary_str, structured) where:
+      • summary_str is the one-line human string kept for the flat consoles
+        (unchanged format: "thinking: …" / "assistant: …" / "tool: …" / "result: …").
+      • structured is a typed dict the new AgentConsole renders as a reasoning
+        timeline — one of:
+          {"t":"think","text": <FULL reasoning, not truncated>}
+          {"t":"say","text": <assistant prose>}
+          {"t":"tool","name": <Tool>, "target": <file/command>}
+          {"t":"result","subtype": <subtype>}
+      Returns (None, None) for events we don't surface (system init, tool echoes).
     """
     t = ev.get("type")
     if t == "assistant":
@@ -1044,38 +1057,40 @@ def _summarize_event(ev: dict) -> str | None:
         for block in msg.get("content", []):
             btype = block.get("type")
             if btype == "thinking":
-                # The agent's private reasoning. Surfacing a concise line lets the
-                # user verify the agent UNDERSTANDS the problem and reaches its
-                # conclusion for the right reason (not just the right outcome).
+                # The agent's private reasoning — the "why". The flat string stays
+                # a tidy one-liner (back-compat), but the structured event carries
+                # the FULL text so the reasoning view can show intent, not a stub.
                 txt = (block.get("thinking") or "").strip()
                 if txt:
-                    # collapse whitespace so multi-line reasoning is one tidy line
                     one = " ".join(txt.split())
-                    return f"thinking: {one[:280]}"
+                    return f"thinking: {one[:280]}", {"t": "think", "text": txt}
             elif btype == "text":
                 txt = block.get("text", "").strip()
                 if txt:
-                    return f"assistant: {txt[:240]}"
-            elif block.get("type") == "tool_use":
+                    return f"assistant: {txt[:240]}", {"t": "say", "text": txt}
+            elif btype == "tool_use":
                 name = block.get("name", "?")
                 inp = block.get("input", {})
-                hint = ""
+                target = ""
                 if name in ("Read", "Edit", "Write"):
-                    hint = f" {inp.get('file_path', '?')}"
+                    target = inp.get("file_path", "") or ""
                 elif name == "Bash":
-                    hint = f" {inp.get('command', '?')[:80]}"
-                return f"tool: {name}{hint}"
+                    target = (inp.get("command", "") or "")[:200]
+                elif name in ("Grep", "Glob"):
+                    target = (inp.get("pattern", "") or "")[:120]
+                hint = f" {target[:80]}" if target else ""
+                return f"tool: {name}{hint}", {"t": "tool", "name": name, "target": target}
     elif t == "user":
         # tool_result echoed back to the model — usually noise
-        return None
+        return None, None
     elif t == "result":
         sub = ev.get("subtype")
         if sub == "success":
-            return None
-        return f"result: {sub}"
+            return None, None
+        return f"result: {sub}", {"t": "result", "subtype": sub}
     elif t == "system" and ev.get("subtype") == "init":
-        return None
-    return None
+        return None, None
+    return None, None
 
 
 async def _parse_decisions(text: str) -> list[dict]:
@@ -1105,12 +1120,14 @@ async def _run_subprocess(run: AgentRun, proc: asyncio.subprocess.Process) -> No
     assert proc.stdout is not None
     run.proc = proc                  # handle so cancel_run can terminate it
 
-    def push(line: str) -> None:
+    def push(line: str, ev: dict | None = None) -> None:
         run.text += line + "\n"
         run.stream_log += line + "\n"   # preserved even after run.text is replaced
+        run.stream_events.append({"line": line, "ev": ev})  # structured replay buffer
+        payload = {"line": line, "ev": ev}
         for q in list(run.subscribers):
             try:
-                q.put_nowait(line)
+                q.put_nowait(payload)
             except asyncio.QueueFull:
                 pass
 
@@ -1130,7 +1147,7 @@ async def _run_subprocess(run: AgentRun, proc: asyncio.subprocess.Process) -> No
                         break
             except Exception:
                 pass
-            push("[raw] (skipped an over-long stream line)")
+            push("[raw] (skipped an over-long stream line)", {"t": "raw", "text": "(skipped an over-long stream line)"})
             continue
         if not raw:
             break
@@ -1140,12 +1157,12 @@ async def _run_subprocess(run: AgentRun, proc: asyncio.subprocess.Process) -> No
         try:
             ev = json.loads(line)
         except json.JSONDecodeError:
-            push(f"[raw] {line[:200]}")
+            push(f"[raw] {line[:200]}", {"t": "raw", "text": line[:200]})
             continue
         run.events.append(ev)
-        summary = _summarize_event(ev)
+        summary, structured = _summarize_event(ev)
         if summary:
-            push(summary)
+            push(summary, structured)
         if ev.get("type") == "result" and ev.get("subtype") == "success":
             final_text.append(ev.get("result", ""))
 
@@ -1154,7 +1171,7 @@ async def _run_subprocess(run: AgentRun, proc: asyncio.subprocess.Process) -> No
         err = await proc.stderr.read()
         if err:
             for el in err.decode("utf-8", errors="replace").splitlines():
-                push(f"[stderr] {el}")
+                push(f"[stderr] {el}", {"t": "stderr", "text": el})
 
     run.returncode = await proc.wait()
     # A terminated proc has a nonzero/negative rc; report it as 'cancelled'
@@ -2203,11 +2220,16 @@ async def stream_run(run_id: str) -> AsyncIterator[bytes]:
         else:
             yield b"event: done\ndata: {\"status\": \"not_found\"}\n\n"
         return
-    # Replay the full concise stream (thinking/assistant/tool lines), not just the
-    # final answer — run.text gets overwritten with the final result on completion,
-    # but stream_log preserves the whole reasoning trace for the dropdown.
-    for line in (run.stream_log or run.text).splitlines():
-        yield f"data: {json.dumps({'line': line})}\n\n".encode()
+    # Replay the full concise stream (thinking/assistant/tool), carrying the typed
+    # `ev` so a late subscriber rebuilds the reasoning timeline, not just flat text.
+    # stream_events is the structured mirror of stream_log (run.text gets overwritten
+    # with the final answer on completion; these buffers preserve the whole trace).
+    if run.stream_events:
+        for e in run.stream_events:
+            yield f"data: {json.dumps({'line': e.get('line', ''), 'ev': e.get('ev')})}\n\n".encode()
+    else:
+        for line in (run.stream_log or run.text).splitlines():
+            yield f"data: {json.dumps({'line': line})}\n\n".encode()
     q: asyncio.Queue = asyncio.Queue(maxsize=1000)
     run.subscribers.append(q)
     try:
@@ -2220,7 +2242,11 @@ async def stream_run(run_id: str) -> AsyncIterator[bytes]:
                     f"data: {json.dumps({'status': run.status, 'rc': run.returncode, 'text': final})}\n\n"
                 ).encode()
                 return
-            yield f"data: {json.dumps({'line': item})}\n\n".encode()
+            # item is {"line": str, "ev": dict|None} (back-compat: tolerate a bare str)
+            if isinstance(item, dict):
+                yield f"data: {json.dumps({'line': item.get('line', ''), 'ev': item.get('ev')})}\n\n".encode()
+            else:
+                yield f"data: {json.dumps({'line': item})}\n\n".encode()
     finally:
         try:
             run.subscribers.remove(q)

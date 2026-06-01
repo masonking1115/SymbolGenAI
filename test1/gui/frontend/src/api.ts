@@ -457,11 +457,18 @@ export const api = {
     }),
 
   // ---- Closed-loop design review: loop orchestration (Phase 4) -------------
-  loopStart: async (maxRounds?: number): Promise<{ loop_id: string; max_rounds?: number }> => {
+  loopStart: async (
+    maxRounds?: number,
+    opts?: { fixWarnings?: boolean; reviewOnly?: boolean },
+  ): Promise<{ loop_id: string; max_rounds?: number; fix_warnings?: boolean; review_only?: boolean }> => {
     const r = await fetch("/api/loop/start", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ max_rounds: maxRounds }),
+      body: JSON.stringify({
+        max_rounds: maxRounds,
+        fix_warnings: opts?.fixWarnings ?? false,
+        review_only: opts?.reviewOnly ?? false,
+      }),
     });
     if (!r.ok) throw new Error("loop start failed");
     return r.json();
@@ -549,10 +556,21 @@ export const api = {
     `https://app.ultralibrarian.com/search?queryText=${encodeURIComponent(mpn)}`,
 };
 
-/** Subscribe to an agent run's SSE stream. */
+/** A structured agent event accompanying a streamed line. The backend
+ * (agent.py:_summarize_event) tags each line so the reasoning view can render
+ * intent, not just text. `undefined` for lines with no structured form. */
+export type AgentEv =
+  | { t: "think"; text: string }
+  | { t: "say"; text: string }
+  | { t: "tool"; name: string; target?: string }
+  | { t: "result"; subtype?: string }
+  | { t: "raw" | "stderr"; text: string };
+
+/** Subscribe to an agent run's SSE stream. onLine receives the human line and
+ * (when present) the structured event — old callers can ignore the 2nd arg. */
 export function subscribeAgent(
   runId: string,
-  onLine: (line: string) => void,
+  onLine: (line: string, ev?: AgentEv) => void,
   onDone?: (status: { status: string; rc: number | null; text?: string }) => void,
 ): () => void {
   const es = new EventSource(`/api/agent/${runId}/stream`);
@@ -566,7 +584,7 @@ export function subscribeAgent(
   es.onmessage = (e) => {
     try {
       const j = JSON.parse(e.data);
-      if (j.line !== undefined) onLine(j.line);
+      if (j.line !== undefined) onLine(j.line, j.ev ?? undefined);
     } catch {
       // ignore
     }

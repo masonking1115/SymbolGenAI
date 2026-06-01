@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, subscribeAgent, subscribeRun } from "../api";
+import { AgentConsole, type ActiveAgent } from "../components/AgentConsole";
 import { ChangelogPanel } from "../components/ChangelogPanel";
-import { Console } from "../components/Console";
 import { I } from "../components/Icon";
+import { LoopTick } from "../components/LoopTick";
 import { PageHeader } from "../components/PageHeader";
 import { RoundsPicker } from "../components/RoundsPicker";
 import type {
@@ -82,6 +83,11 @@ export function Generator({
   // active run's output is retained across tab switches + refreshes.
   const _snap0 = loadConsole();
   const [lines, setLines] = useState<string[]>(() => _snap0?.lines ?? []);
+  // Agents spawned this Generate (apply + each lint-fix pass) — each gets a live
+  // reasoning pane in the shared AgentConsole. The "generate" build run is a
+  // subprocess (not a claude agent), so it streams into the raw feed (`lines`),
+  // not here. Reset at the start of every Generate.
+  const [genAgents, setGenAgents] = useState<ActiveAgent[]>([]);
   const [runId, setRunId] = useState<string | null>(null);
   const [runState, setRunState] = useState<RunState>(() => _snap0?.runState ?? "idle");
   const [lint, setLint] = useState<LintReport | null>(null);
@@ -202,6 +208,7 @@ export function Generator({
       if (!ok) return;
     }
     setLines([]);
+    setGenAgents([]);
     setRunState("running");
     setHealth({ text: "running…", tone: "neutral" });
     clearActivity();
@@ -225,6 +232,8 @@ export function Generator({
         setSubPhase(`apply ${queuedCount} bullet${queuedCount === 1 ? "" : "s"}`);
         setLines((prev) => [...prev, `[APPLY] Starting changelog apply pass for ${queuedCount} item(s)`]);
         pushActivity(`▶ apply pass (${queuedCount} item${queuedCount === 1 ? "" : "s"})`);
+        // Register the apply agent so it gets a live reasoning pane.
+        setGenAgents((prev) => [...prev, { id: apply_run_id, kind: "apply", status: "running", targets: [`${queuedCount} item${queuedCount === 1 ? "" : "s"}`] }]);
         // Stream the agent's tool calls into the rail.
         await new Promise<void>((resolve) => {
           subscribeAgent(
@@ -240,6 +249,7 @@ export function Generator({
             ({ status }) => {
               setLines((prev) => [...prev, `[APPLY] Finished with status: ${status}`]);
               pushActivity(`✓ apply ${status}`);
+              setGenAgents((prev) => prev.map((a) => a.id === apply_run_id ? { ...a, status } : a));
               resolve();
             },
           );
@@ -263,8 +273,15 @@ export function Generator({
             setSubPhase(kind === "lint-fix" ? "fixing lint/validator failures" : "building + gating");
             pushActivity(`▶ ${kind}`);
             const tag = kind === "lint-fix" ? "[FIX]" : "[GEN]";
+            // lint-fix is a claude agent → give it a reasoning pane; generate is a
+            // build subprocess → raw feed only.
+            if (kind === "lint-fix") setGenAgents((prev) => [...prev, { id, kind: "lint_fix", status: "running", targets: [] }]);
             const onLine = (line: string) => { setLines((prev) => [...prev, `${tag} ${line}`]); pushActivity(line); };
-            const onDone = ({ status }: { status: string }) => { pushActivity(`✓ ${kind} ${status}`); resolve(status); };
+            const onDone = ({ status }: { status: string }) => {
+              pushActivity(`✓ ${kind} ${status}`);
+              if (kind === "lint-fix") setGenAgents((prev) => prev.map((a) => a.id === id ? { ...a, status } : a));
+              resolve(status);
+            };
             if (kind === "generate") subscribeRun(id, onLine, onDone);
             else subscribeAgent(id, onLine, onDone);
           });
@@ -757,51 +774,17 @@ export function Generator({
 
         <SubSection
           title="Generator console"
-          hint="stdout from gen_schematic.py — streamed live"
+          hint="agent reasoning + build output — streamed live"
         >
-          <Console
-            lines={lines}
-            status={runState}
+          <AgentConsole
+            agents={genAgents}
+            rawLines={lines}
+            running={runState === "running"}
+            status={runState === "ok" ? "ok" : runState === "fail" ? "fail" : runState === "running" ? "running" : "idle"}
           />
         </SubSection>
       </div>
     </div>
-  );
-}
-
-// One of the two mutually-exclusive closed-loop scope ticks next to Generate.
-function LoopTick({
-  label,
-  title,
-  checked,
-  disabled,
-  onToggle,
-}: {
-  label: string;
-  title: string;
-  checked: boolean;
-  disabled?: boolean;
-  onToggle: () => void;
-}) {
-  return (
-    <label
-      title={title}
-      className={
-        "inline-flex items-center gap-1.5 text-[12px] select-none cursor-pointer " +
-        (disabled ? "opacity-50 pointer-events-none " : "") +
-        (checked ? "text-ink-900" : "text-ink-600")
-      }
-    >
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={onToggle}
-        disabled={disabled}
-        className="accent-ink-900"
-      />
-      <I.Refresh size={12} className={checked ? "text-ink-900" : "text-ink-400"} />
-      {label}
-    </label>
   );
 }
 

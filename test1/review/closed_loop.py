@@ -104,6 +104,14 @@ class Loop:
     # How many rounds this loop may run before stopping (user-chosen in the GUI,
     # default MAX_ROUNDS_DEFAULT; clamped to [1, MAX_ROUNDS] at creation).
     max_rounds: int = MAX_ROUNDS
+    # Severity scope (mirrors the generator's fix_warnings): when False (default),
+    # the loop only acts on / counts ERROR-severity findings toward all-clear and
+    # leaves WARNING/INFO advisory; when True, WARNING findings are also in scope.
+    fix_warnings: bool = False
+    # review_only: evaluate + report findings, but DO NOT run any fix rounds
+    # (the "Run review" mode). The loop does its initial eval, publishes findings,
+    # and stops without dispatching apply/sim/lint_fix agents.
+    review_only: bool = False
     rounds: list[Round] = field(default_factory=list)
     findings_initial: list[Finding] = field(default_factory=list)
     findings_current: list[Finding] = field(default_factory=list)
@@ -385,6 +393,23 @@ def archive_snapshot(L: Loop) -> None:
 
 
 # ---- Planner -- map findings to round actions ---------------------------
+
+def _severity_of(f: Finding) -> str:
+    """Normalize a Finding's severity to a plain string (it may be an enum)."""
+    s = getattr(f, "severity", "")
+    return (s.value if hasattr(s, "value") else str(s)).upper()
+
+
+def in_scope(findings: list[Finding], fix_warnings: bool) -> list[Finding]:
+    """The findings the loop should act on / count toward all-clear, per the
+    severity scope. ERROR is always in scope; WARNING only when fix_warnings.
+    INFO is always advisory (never drives the loop). This mirrors the generator's
+    fix_warnings gate (app.py _gates_passed) so 'Fix errors' vs 'Fix errors +
+    warnings' behave the same way in both tabs. Out-of-scope findings stay in
+    L.findings_current so the Findings panel still reports them."""
+    keep = {"ERROR"} | ({"WARNING"} if fix_warnings else set())
+    return [f for f in findings if _severity_of(f) in keep]
+
 
 def plan_actions(findings: list[Finding]) -> list[Action]:
     """Bucket findings by required action kind. Returns a list of Actions
@@ -711,13 +736,20 @@ async def run_loop(loop_id: str) -> None:
         await emit(L, "eval_done", findings=len(L.findings_initial))
         await emit(L, "loop_start", findings=len(L.findings_initial))
 
-        for r in range(1, L.max_rounds + 1):
+        # "Run review" mode: report findings, don't run any fix rounds. Skip the
+        # round loop entirely; finalization below sets the terminal status.
+        rounds_iter = [] if L.review_only else range(1, L.max_rounds + 1)
+        for r in rounds_iter:
             if L.cancelled:
                 break
-            if not L.findings_current:
-                break  # all-clear
+            # Only in-scope findings (ERROR, +WARNING if fix_warnings) drive the
+            # loop; out-of-scope (advisory) findings stay reported but don't block
+            # all-clear or get handed to an apply pass.
+            scoped = in_scope(L.findings_current, L.fix_warnings)
+            if not scoped:
+                break  # all-clear (within scope)
 
-            R = Round(n=r, findings_before=len(L.findings_current))
+            R = Round(n=r, findings_before=len(scoped))
             L.round = r
             L.rounds.append(R)
             await emit(L, "round_start", round=r,
@@ -732,7 +764,7 @@ async def run_loop(loop_id: str) -> None:
             was_buildable = (R.n == 1) or all(
                 (rr.build_status in ("ok", "", "skipped")) for rr in L.rounds[:-1])
 
-            for action in plan_actions(L.findings_current):
+            for action in plan_actions(scoped):
                 if L.cancelled:
                     break
                 R.actions.append(action)
@@ -804,7 +836,9 @@ async def run_loop(loop_id: str) -> None:
                 _scoped_reeval, L.findings_current, changed_sheets,
                 changed_refdes, _progress)
             await emit(L, "eval_done", findings=len(new_findings))
-            R.findings_after = len(new_findings)
+            # Round accounting is scope-consistent with findings_before (which was
+            # the in-scope count): count only in-scope findings remaining.
+            R.findings_after = len(in_scope(new_findings, L.fix_warnings))
             old_ids = {f.rule_id for f in L.findings_current}
             new_ids = {f.rule_id for f in new_findings}
             cleared = sorted(old_ids - new_ids)
@@ -838,7 +872,15 @@ async def run_loop(loop_id: str) -> None:
                 break
 
         if not L.cancelled and L.status == "running":
-            L.status = "all_clear" if not L.findings_current else "max_rounds"
+            # All-clear iff no IN-SCOPE findings remain (advisory WARNING/INFO under
+            # an ERROR-only scope don't keep the loop from declaring success).
+            clear = not in_scope(L.findings_current, L.fix_warnings)
+            if L.review_only:
+                # eval-only: 'reviewed' when findings remain (no fix attempted),
+                # 'all_clear' when there were none to begin with.
+                L.status = "all_clear" if clear else "reviewed"
+            else:
+                L.status = "all_clear" if clear else "max_rounds"
         if L.cancelled:
             L.status = "cancelled"
 
@@ -1025,12 +1067,17 @@ def write_findings_json(L: Loop) -> None:
 
 
 
-def start_loop(max_rounds: int | None = None) -> str:
+def start_loop(max_rounds: int | None = None, fix_warnings: bool = False,
+               review_only: bool = False) -> str:
     """Allocate a new Loop, register it, kick off the run task. max_rounds is the
-    user's chosen round budget (clamped to [1, MAX_ROUNDS]; None -> the default)."""
+    user's chosen round budget (clamped to [1, MAX_ROUNDS]; None -> the default).
+    fix_warnings: when True the loop also clears WARNING findings (else ERROR-only),
+    mirroring the generator's 'Fix errors + warnings' mode. review_only: evaluate +
+    report findings without running any fix rounds (the 'Run review' mode)."""
     loop_id = uuid.uuid4().hex[:8]
     L = Loop(loop_id=loop_id, started_at=time.time(),
-             max_rounds=clamp_rounds(max_rounds))
+             max_rounds=clamp_rounds(max_rounds), fix_warnings=fix_warnings,
+             review_only=review_only)
     _LOOPS[loop_id] = L
     asyncio.create_task(run_loop(loop_id))
     return loop_id

@@ -3,7 +3,7 @@ import { api, subscribeLoop } from "../api";
 import { I } from "./Icon";
 import { LiveConsole } from "./LiveConsole";
 import { PipelineStrip, type Step, type StepState } from "./PipelineStrip";
-import { WorkflowConsole } from "./WorkflowConsole";
+import { AgentConsole } from "./AgentConsole";
 import type { LoopEvent, LoopSummary, LoopRound, LoopAction } from "../types";
 
 interface Props {
@@ -309,8 +309,8 @@ export function WorkflowSection({ loopId, onLoopCompleted, setHealth, onSummary 
 
       {/* Console — always present once a loop has started. A PINNED agent (from
           the round history) gets the full raw LiveConsole for deep inspection.
-          Otherwise the WorkflowConsole shows the default Steps view (split per
-          agent) with a Raw toggle back to the discrete loop-activity feed. */}
+          Otherwise the shared AgentConsole shows the Reasoning view (one pane per
+          agent) with Agents + Raw toggles. */}
       {pinnedAgentId ? (
         <LiveConsole
           agentRunId={pinnedAgentId}
@@ -320,7 +320,7 @@ export function WorkflowSection({ loopId, onLoopCompleted, setHealth, onSummary 
           }
         />
       ) : (
-        <WorkflowConsole
+        <AgentConsole
           agents={activeAgents}
           rounds={summary?.rounds ?? []}
           rawLines={loopLog}

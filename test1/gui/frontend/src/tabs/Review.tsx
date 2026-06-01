@@ -4,6 +4,7 @@ import { DiffAndAccept } from "../components/DiffAndAccept";
 import type { DiffMode } from "../components/DiffPanes";
 import { FindingsSummary } from "../components/FindingsSummary";
 import { I } from "../components/Icon";
+import { LoopTick } from "../components/LoopTick";
 import { PageHeader } from "../components/PageHeader";
 import { RoundsPicker } from "../components/RoundsPicker";
 import { WorkflowSection } from "../components/WorkflowSection";
@@ -79,6 +80,11 @@ export function Review({
   const [runState, setRunState] = useState<RunState>("idle");
   // How many rounds the closed-loop review may run (1–10; 3 recommended).
   const [reviewRounds, setReviewRounds] = useState(3);
+  // Run mode (mirrors the Generator's loopMode):
+  //   "review_only"     — evaluate + report findings, run NO fix rounds.
+  //   "errors"          — auto-fix loop until ERROR findings clear (default).
+  //   "errors_warnings" — auto-fix loop until ERROR + WARNING findings clear.
+  const [reviewMode, setReviewMode] = useState<"review_only" | "errors" | "errors_warnings">("errors");
   const [queue, setQueue] = useState<Map<string, FixQueueEntry>>(new Map());
 
   const refresh = useCallback(async () => {
@@ -172,7 +178,10 @@ export function Review({
     setRunState("running");
     setHealth({ text: "loop starting…", tone: "neutral" });
     try {
-      const { loop_id } = await api.loopStart(reviewRounds);
+      const { loop_id } = await api.loopStart(reviewRounds, {
+        fixWarnings: reviewMode === "errors_warnings",
+        reviewOnly: reviewMode === "review_only",
+      });
       setActiveLoopId(loop_id);
       // The loop can finish almost instantly when the design already passes
       // every rule (0 findings → 0 rounds → all_clear in ~100ms). In that case
@@ -236,12 +245,29 @@ export function Review({
             disabled={runState === "running"}
             className="h-9 px-3 inline-flex items-center gap-2 rounded-md bg-ink-900 text-white text-sm font-medium hover:bg-black disabled:opacity-50"
           >
-            <I.Play size={14} /> Design review
+            <I.Play size={14} /> {reviewMode === "review_only" ? "Run review" : "Design review"}
           </button>
+          {/* Run-mode ticks (mirror the Generator). review_only is the implicit
+              base state; ticking a fix scope flips it on, re-ticking returns to
+              review-only. Mutually exclusive. */}
+          <LoopTick
+            label="Auto-fix errors"
+            title="After evaluating the rules, an agent fixes the ERROR findings, rebuilds, and re-checks (up to the chosen number of rounds). WARNING/INFO stay advisory. Untick for review-only (evaluate + report, no edits)."
+            checked={reviewMode === "errors"}
+            disabled={runState === "running"}
+            onToggle={() => setReviewMode((m) => (m === "errors" ? "review_only" : "errors"))}
+          />
+          <LoopTick
+            label="Auto-fix errors + warnings"
+            title="Same auto-fix loop, but the agent also clears every WARNING finding — it keeps fixing and rebuilding until both ERRORs and WARNINGs reach zero. INFO stays advisory."
+            checked={reviewMode === "errors_warnings"}
+            disabled={runState === "running"}
+            onToggle={() => setReviewMode((m) => (m === "errors_warnings" ? "review_only" : "errors_warnings"))}
+          />
           <RoundsPicker
             value={reviewRounds}
             onChange={setReviewRounds}
-            disabled={runState === "running"}
+            disabled={runState === "running" || reviewMode === "review_only"}
           />
           <button
             onClick={refresh}
@@ -250,7 +276,9 @@ export function Review({
             <I.Refresh size={14} /> Refresh
           </button>
           <span className="text-xs text-ink-500 ml-2">
-            Design review runs the closed loop: evaluate rules → auto-correct findings → rebuild → re-check, then Diff &amp; Accept.
+            {reviewMode === "review_only"
+              ? "Run review evaluates every rule and reports findings — no edits, no rebuild."
+              : "Design review runs the closed loop: evaluate rules → auto-correct findings → rebuild → re-check, then Diff & Accept."}
           </span>
         </div>
 

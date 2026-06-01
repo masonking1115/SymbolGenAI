@@ -3146,6 +3146,12 @@ class LoopStartBody(BaseModel):
     # How many review rounds to run (user-chosen; clamped to [1, MAX_ROUNDS] by
     # closed_loop.clamp_rounds, default MAX_ROUNDS_DEFAULT). None -> default.
     max_rounds: int | None = None
+    # Severity scope (mirrors the generator's fix_warnings): False -> the loop
+    # clears ERROR findings only (WARNING/INFO stay advisory); True -> it also
+    # clears WARNING findings.
+    fix_warnings: bool = False
+    # review_only: evaluate + report findings, run NO fix rounds ("Run review").
+    review_only: bool = False
 
 
 @app.post("/api/loop/start")
@@ -3154,9 +3160,12 @@ async def loop_start(body: LoopStartBody = LoopStartBody()) -> dict:
     for L in _loop_mod._LOOPS.values():
         if L.status == "running":
             raise HTTPException(409, f"loop {L.loop_id} already running")
-    loop_id = _loop_mod.start_loop(max_rounds=body.max_rounds)
+    loop_id = _loop_mod.start_loop(max_rounds=body.max_rounds,
+                                   fix_warnings=body.fix_warnings,
+                                   review_only=body.review_only)
     L = _loop_mod._LOOPS[loop_id]
-    return {"loop_id": loop_id, "max_rounds": L.max_rounds}
+    return {"loop_id": loop_id, "max_rounds": L.max_rounds,
+            "fix_warnings": L.fix_warnings, "review_only": L.review_only}
 
 
 @app.get("/api/loop/latest")

@@ -1,7 +1,30 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, subscribeAgent } from "../api";
+import { AgentConsole, type ActiveAgent } from "../components/AgentConsole";
 import { I } from "../components/Icon";
 import type { SimBlock, SimRequirements, SimResult, SimSeries, SimXAxis } from "../types";
+
+// Build the per-(block,sim) agent list for the shared AgentConsole: the setup
+// and interpret passes, each with a status derived from the live phase. setup
+// is done once the flow moves past "setup"; interpret is running while phase
+// === "interpret" and done afterward. (A fresh-cached scenario has no setup
+// agent → no setupRunId → no pane, which is correct.)
+function simAgents(it: Interp | undefined, isRunning: boolean): ActiveAgent[] {
+  if (!it) return [];
+  const out: ActiveAgent[] = [];
+  if (it.setupRunId) {
+    const running = isRunning && it.phase === "setup";
+    out.push({ id: it.setupRunId, kind: "setup", status: running ? "running" : "ok", targets: [] });
+  }
+  if (it.interpretRunId) {
+    const running = isRunning && it.phase === "interpret";
+    const status = running ? "running"
+      : it.verdict === "OUT_OF_SPEC" ? "fail"
+      : it.interpretError ? "fail" : "ok";
+    out.push({ id: it.interpretRunId, kind: "interpret", status, targets: [] });
+  }
+  return out;
+}
 
 type StepState = "pending" | "active" | "pass" | "fail" | "warn" | "done";
 
@@ -142,6 +165,10 @@ interface Interp {
   running: boolean;
   lines: string[];
   phase?: "setup" | "sim" | "interpret" | "done";
+  // Agent run ids for this sim's setup + interpret passes, so the shared
+  // AgentConsole can show each agent's reasoning in its own pane.
+  setupRunId?: string;
+  interpretRunId?: string;
   setupFresh?: boolean;   // true if the cached scenario was reused (no setup agent)
   verdict?: "MEETS_SPEC" | "OUT_OF_SPEC" | "NEEDS_CLARIFICATION";
   margin?: string;
@@ -367,7 +394,8 @@ export function Simulation({ setHealth, blocks, selected, onBlocksChanged }: Pro
         setInterp((prev) => ({ ...prev, [key]: { running: true, lines: [], phase: "setup" } }));
         setHealth({ text: `${simType}: reading datasheets…`, tone: "neutral" });
         const setup = await api.simSetup(block.id, simType);
-        setInterp((prev) => ({ ...prev, [key]: { ...(prev[key]!), setupFresh: !!setup.fresh } }));
+        setInterp((prev) => ({ ...prev, [key]: { ...(prev[key]!), setupFresh: !!setup.fresh,
+          setupRunId: (!setup.fresh && setup.run_id) ? setup.run_id : undefined } }));
         if (!setup.fresh && setup.run_id) {
           if (runCtl.current) runCtl.current.runId = setup.run_id;   // cancel target
           await new Promise<void>((resolve) => {
@@ -398,6 +426,7 @@ export function Simulation({ setHealth, blocks, selected, onBlocksChanged }: Pro
         setInterp((prev) => ({ ...prev, [key]: { ...(prev[key]!), phase: "interpret" } }));
         try {
           const { run_id } = await api.simInterpret(block.id, simType);
+          setInterp((prev) => ({ ...prev, [key]: { ...(prev[key]!), interpretRunId: run_id } }));
           if (runCtl.current) runCtl.current.runId = run_id;          // cancel target
           // If a cancel landed in the gap before the run_id came back, kill it now.
           if (wasCancelled()) api.cancelAgent(run_id).catch(() => {});
@@ -771,12 +800,16 @@ export function Simulation({ setHealth, blocks, selected, onBlocksChanged }: Pro
                       {(res || interp[key]) && (
                         <div className="border-t border-edge px-4 py-3">
                           <WorkflowSteps res={res} it={interp[key]} isRunning={isRunning} />
-                          {/* Behind-the-scenes: which agents are spawning + what
-                              they're doing. Only while live, or when there are
-                              real streamed events to inspect — never an empty
-                              "no activity" box on a restored, idle entry. */}
+                          {/* Behind-the-scenes: the setup + interpret agents, each
+                              with its own reasoning pane (shared AgentConsole — same
+                              chrome as the Generator + Review tabs). Only while live,
+                              or when there are real streamed events to inspect. */}
                           {(isRunning || (interp[key]?.lines?.length ?? 0) > 0) && (
-                            <AgentActivityLog it={interp[key]} isRunning={isRunning} />
+                            <AgentConsole
+                              agents={simAgents(interp[key], isRunning)}
+                              rawLines={interp[key]?.lines ?? []}
+                              running={isRunning}
+                            />
                           )}
                           {res && res.status !== "ran" ? (
                             <div className="text-xs text-ink-500">{res.message}</div>
@@ -1502,61 +1535,8 @@ const LOG_VERB: Record<LogKind, string> = {
   agent: "", read: "read", write: "wrote", bash: "ran", think: "", result: "", raw: "",
 };
 
-function AgentActivityLog({ it, isRunning }: { it?: Interp; isRunning: boolean }) {
-  const [open, setOpen] = useState(true);
-  const endRef = useRef<HTMLDivElement>(null);
-  // Classified events from the agent's streamed stream-json output.
-  const lines = it?.lines ?? [];
-  const entries: LogEntry[] = lines.map(classifyLine).filter((e) => e.text);
-  useEffect(() => { endRef.current?.scrollIntoView({ block: "nearest" }); }, [entries.length]);
-
-  if (!it) return null;
-  const phase = it.phase;
-  // The live-agent header pulses ONLY while actually running — never from a
-  // restored phase on reload.
-  const agentLabel = !isRunning ? null
-    : phase === "setup" ? "Datasheet & scenario agent — extracting device params + operating point"
-    : phase === "interpret" ? "Verdict agent — checking the result against datasheets + spec"
-    : null;
-
-  return (
-    <div className="mt-3 rounded-md border border-edge bg-ink-900/[0.02]">
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center gap-2 px-2.5 py-1.5 text-[11px] text-ink-600 hover:text-ink-900"
-      >
-        <I.Wrench size={12} />
-        <span className="uppercase tracking-wide">behind the scenes</span>
-        {agentLabel && (
-          <span className="inline-flex items-center gap-1 text-[10px] text-ink-500">
-            <span className="w-1.5 h-1.5 rounded-full bg-violet-500 animate-pulse" />
-            {agentLabel}
-          </span>
-        )}
-        <span className="ml-auto text-ink-400">{open ? "▾" : "▸"} {entries.length}</span>
-      </button>
-      {open && entries.length > 0 && (
-        <div className="max-h-44 overflow-auto px-2.5 pb-2 font-mono text-[10.5px] leading-relaxed thin-scroll">
-          {entries.map((e, i) => (
-            <div key={i} className="flex items-start gap-1.5 py-0.5">
-              <span className={"mt-0.5 shrink-0 " + LOG_TONE[e.kind]}>{LOG_ICON[e.kind]}</span>
-              <span className="text-ink-400 shrink-0 w-8">{LOG_VERB[e.kind]}</span>
-              <span className={"break-all " + (e.kind === "think" ? "text-ink-600 italic" : LOG_TONE[e.kind])}>
-                {e.text}
-              </span>
-            </div>
-          ))}
-          <div ref={endRef} />
-        </div>
-      )}
-      {open && entries.length === 0 && (
-        <div className="px-2.5 pb-2 text-[10.5px] text-ink-400 font-mono">
-          {agentLabel ? "waiting for agent output…" : "no agent activity (params were cached; ngspice ran directly)"}
-        </div>
-      )}
-    </div>
-  );
-}
+// (AgentActivityLog was replaced by the shared <AgentConsole> — the sim setup +
+// interpret agents now render in standardized per-agent reasoning panes.)
 
 function ThinkingChecklist({ block, it }: { block: SimBlock; it: Interp }) {
   // What the agent is looking at, derived from its streamed Read/Write calls.
