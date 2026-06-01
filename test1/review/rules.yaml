@@ -418,60 +418,6 @@ rules:
     rail: GND
     value_match: 10k
     direction: down
-- id: PULLDOWN_BIAS_ISO0
-  family: schematic
-  severity: ERROR
-  title: "BIAS_ISO0 gate requires a 10k\u03A9 pull-down (fail-safe OFF at POR)"
-  applies_to:
-    refdes: R44
-    pins: []
-    net: BIAS_ISO0
-    rail: GND
-    sheet: bias
-    role_spec: {}
-  source:
-  - doc: design_requirements.md
-    loc: Bias circuit topology
-    quote: "gated by `BIAS_ISO0/1` from the FPGA with 10 k\u03A9 pull-downs (R44/R45)\
-      \ at the gates"
-  fix_hint: "Add a 10k\u03A9 pull-down (R44) on the BIAS_ISO0 gate so the isolation\
-    \ NMOS is OFF at POR."
-  enabled: true
-  origin: generated
-  evaluation: structural
-  predicate:
-    kind: pullup_pulldown
-    net: BIAS_ISO0
-    rail: GND
-    value_match: 10k
-    direction: down
-- id: PULLDOWN_BIAS_ISO1
-  family: schematic
-  severity: ERROR
-  title: "BIAS_ISO1 gate requires a 10k\u03A9 pull-down (fail-safe OFF at POR)"
-  applies_to:
-    refdes: R45
-    pins: []
-    net: BIAS_ISO1
-    rail: GND
-    sheet: bias
-    role_spec: {}
-  source:
-  - doc: design_requirements.md
-    loc: Bias circuit topology
-    quote: "gated by `BIAS_ISO0/1` from the FPGA with 10 k\u03A9 pull-downs (R44/R45)\
-      \ at the gates"
-  fix_hint: "Add a 10k\u03A9 pull-down (R45) on the BIAS_ISO1 gate so the isolation\
-    \ NMOS is OFF at POR."
-  enabled: true
-  origin: generated
-  evaluation: structural
-  predicate:
-    kind: pullup_pulldown
-    net: BIAS_ISO1
-    rail: GND
-    value_match: 10k
-    direction: down
 - id: DECOUPLE_VDDD
   family: schematic
   severity: WARNING
@@ -1002,9 +948,9 @@ rules:
 - id: FMC_PG_C2M
   family: schematic
   severity: WARNING
-  title: FMC C1 (PG_C2M) should connect to LDO_PG
+  title: FMC D1 (PG_C2M) should connect to LDO_PG
   applies_to:
-    refdes: J1
+    refdes: J2
     pins: []
     net: LDO_PG
     sheet: fmc
@@ -1014,14 +960,18 @@ rules:
     loc: FMC LPC pinout / Power & management pins
     quote: "Power-good back to carrier \u2014 drive from LDO PG / tie HIGH via pull-up\
       \ if unused"
-  fix_hint: Wire FMC pin C1 to the LDO PG net (or pull HIGH if unused).
+  - doc: Parts Library/ASP-134606-01/VITA57.1_FMC_HPC_LPC_SIGNALS_AND_PINOUT.xlsx
+    loc: LPC sheet
+    quote: PG_C2M is on D1 (row D); C1 is GND per VITA 57.1 LPC
+  fix_hint: Wire FMC pin D1 (PG_C2M, row D = J2) to the LDO PG net (or pull HIGH if
+    unused). C1 is GND.
   enabled: true
   origin: generated
   evaluation: structural
   predicate:
     kind: connector_pin
-    refdes: J1
-    pin: C1
+    refdes: J2
+    pin: D1
     net: LDO_PG
 - id: HDR_GPIO0
   family: schematic
@@ -1559,6 +1509,7 @@ rules:
   predicate:
     kind: present
     mpn: TPS7A8401A
+    refdes: []
     role_spec: {}
 - id: PRESENT_DAC
   family: design
@@ -1579,6 +1530,7 @@ rules:
   predicate:
     kind: present
     mpn: MCP4728
+    refdes: []
     role_spec: {}
 - id: PRESENT_OPAMP
   family: design
@@ -1599,6 +1551,7 @@ rules:
   predicate:
     kind: present
     mpn: OPA2388
+    refdes: []
     role_spec: {}
 - id: PRESENT_PMOS
   family: design
@@ -1619,26 +1572,7 @@ rules:
   predicate:
     kind: present
     mpn: PMZ1200UPEYL
-    role_spec: {}
-- id: PRESENT_BIAS_ISO_FET
-  family: design
-  severity: ERROR
-  title: Bias isolation NMOS (2N7002) must be populated by default
-  applies_to:
-    pins: []
-    mpn: 2N7002
-    role_spec: {}
-  source:
-  - doc: design_requirements.md
-    loc: Parts to implement / Bias circuit
-    quote: Series NMOS isolation FETs (POPULATED default, 2N7002)
-  fix_hint: Populate the 2N7002 isolation FETs (Q42/Q43) by default.
-  enabled: true
-  origin: generated
-  evaluation: structural
-  predicate:
-    kind: present
-    mpn: 2N7002
+    refdes: []
     role_spec: {}
 - id: SEM_BIAS_DEFAULT_OFF
   family: design
@@ -1651,36 +1585,22 @@ rules:
   source:
   - doc: design_requirements.md
     loc: Parts to implement / Bias circuit
-    quote: Default-OFF at POR
-  fix_hint: Ensure the isolation NMOSes default OFF (gate pull-downs) so no bias reaches
-    Bobcat at POR.
+    quote: Bias off by default
+  fix_hint: Ensure the MCP4728 POR/EEPROM default code keeps each VOUT at the rail
+    so the PMOS pass FET is OFF and no bias reaches Bobcat at POR; firmware must program
+    a known code before enabling current.
   enabled: true
   origin: generated
   evaluation: semantic
-  prompt: "The bias circuit must deliver zero current into Bobcat at power-on-reset.\
-    \ Verify the isolation NMOS gates (BIAS_ISO0/1) have pull-downs to GND and that\
-    \ the parallel 0\u03A9 override jumpers (R42/R43) are DNP by default, so an unprogrammed\
-    \ MCP4728 cannot push current into Bobcat until the FPGA explicitly asserts the\
-    \ isolation enable."
-- id: SEM_BIAS_OVERRIDE_DNP
-  family: design
-  severity: WARNING
-  title: "Parallel 0\u03A9 bias override jumpers must be DNP by default"
-  applies_to:
-    pins: []
-    sheet: bias
-    role_spec: {}
-  source:
-  - doc: design_requirements.md
-    loc: Parts to implement / Bias circuit
-    quote: "Parallel 0 \u03A9 jumpers R42/R43 across the NMOS D-S are **DNP by default**"
-  fix_hint: Mark R42/R43 as DNP; populate only for benchtop standalone use.
-  enabled: true
-  origin: generated
-  evaluation: semantic
-  prompt: "Confirm the parallel 0\u03A9 jumpers across the isolation NMOS drain-source\
-    \ (R42/R43) are marked DNP by default. Populating them bypasses FPGA isolation\
-    \ control and re-exposes the EEPROM-provisioning hazard."
+  prompt: The bias circuit must deliver zero current into Bobcat at power-on-reset.
+    There is NO isolation FET (the deck backup topology drives the PMOS drain straight
+    to BIASx); off-by-default is enforced by the MCP4728 itself, which powers up at
+    its full-scale code so VOUT = VDD, driving the PMOS gate high and holding the
+    pass FET OFF. Verify the design relies on this DAC POR/EEPROM default (V_DAC at
+    the rail => PMOS off => ~0 bias) and documents that firmware programs a known
+    code before enabling current. PASS if the off-by-default mechanism is the DAC
+    POR code as described; FAIL if the design would source bias before the DAC is
+    explicitly programmed.
 - id: SEM_MCP4728_POR_CODE
   family: design
   severity: WARNING
@@ -2272,7 +2192,7 @@ rules:
 - id: BLK_BIAS_POR_FAILSAFE
   family: block
   severity: ERROR
-  title: No bias current reaches Bobcat at POR (Q42/Q43 isolation holds)
+  title: No bias current reaches Bobcat at POR (MCP4728 POR code holds the PMOS off)
   applies_to:
     pins: []
     sheet: bias
@@ -2282,11 +2202,13 @@ rules:
     block: opa_bias
   source:
   - doc: design_requirements.md
-    loc: Assembly / provisioning notes / MCP4728 EEPROM (W8)
-    quote: "the Q42/Q43 isolation NMOSes (populated default, default-OFF) \u2026 cannot\
-      \ reach Bobcat"
-  fix_hint: Verify the isolation NMOS is populated and the BIAS_ISO gate pull-down
-    (R44/R45) is present.
+    loc: Bias circuit / off by default
+    quote: "Bias off by default \u2014 the MCP4728 powers up at its full-scale code,\
+      \ driving the PMOS gate high so the pass FET is OFF and ~0 current reaches Bobcat\
+      \ until firmware programs a current."
+  fix_hint: "Ensure the MCP4728 POR/EEPROM default code keeps V_DAC at the rail (PMOS\
+    \ off); firmware must program a known code before enabling current. (No isolation\
+    \ FET \u2014 off-by-default is the DAC POR code, matching the deck.)"
   enabled: true
   origin: generated
   evaluation: structural
@@ -2294,8 +2216,8 @@ rules:
     kind: sim_review
     sim_block: opa_bias
     sim_type: por_failsafe
-    criterion: "Bias current into the DUT at POR (BIAS_ISO low) must be <= 1 \xB5\
-      A. PASS if bias_current_at_por_A <= 1e-6; FAIL otherwise."
+    criterion: "Bias current into the DUT at POR (DAC at full-scale code) must be\
+      \ <= 1 \xB5A. PASS if bias_current_at_por_A <= 1e-6; FAIL otherwise."
 - id: BLK_BIAS_DAC_VREF_EXTERNAL
   family: block
   severity: WARNING
@@ -2326,29 +2248,6 @@ rules:
     \ This is a configuration/provisioning intent \u2014 PASS if the netlist/notes\
     \ reflect external-VREF (VDD) operation; the MCP4728 has no dedicated VREF pin\
     \ (it is register-selected), so judge from the design notes, not a pin."
-- id: BLK_BIAS_ISO_PULLDOWN
-  family: block
-  severity: ERROR
-  title: "BIAS_ISO0/1 have 10 k\u03A9 gate pull-downs (default-OFF at POR)"
-  applies_to:
-    pins: []
-    net: BIAS_ISO0
-    sheet: bias
-    role_spec: {}
-    block: opa_bias
-  source:
-  - doc: design_requirements.md
-    loc: Parts to implement / Bias circuit
-    quote: "gated by BIAS_ISO0/1 from the FPGA with 10 k\u03A9 pull-downs (R44/R45)\
-      \ at the gates"
-  fix_hint: "Add a 10 k\u03A9 pull-down from BIAS_ISO0/1 to GND (R44/R45)."
-  enabled: true
-  origin: generated
-  evaluation: semantic
-  prompt: "Verify each isolation-FET gate net (BIAS_ISO0, BIAS_ISO1) has a ~10 k\u03A9\
-    \ pull-down to GND so the 2N7002 is OFF at POR until the FPGA drives it HIGH.\
-    \ Examine the full net membership \u2014 PASS if a 10 k\u03A9 resistor to GND\
-    \ is present on each; FAIL if either floats or lacks the pull-down."
 - id: BLK_LDO_SETPOINT_COVERAGE
   family: block
   severity: ERROR
@@ -2890,44 +2789,6 @@ rules:
     \ if the names instead use the 8400A high-range labels (50/100/200/400/800mV/1V6),\
     \ because firmware that grounds a bit by its NAME would then set the wrong voltage.\
     \ PASS only if every LDO_SET_* name matches its pin's 8401A weight."
-- id: BLK_BIAS_ISO_GATE_DRIVE
-  family: block
-  severity: WARNING
-  title: Bias isolation NMOS (2N7002) must actually turn on across the FULL VADJ range
-  applies_to:
-    refdes: Q42
-    pins: []
-    sheet: bias
-    role_spec: {}
-    block: opa_bias
-  source:
-  - doc: design_requirements.md
-    loc: Power in (from FMC) / Bias circuit
-    quote: "VADJ 1.2\u20133.3V \u2026 Series NMOS isolation FETs (POPULATED default,\
-      \ 2N7002) \u2026 gated by BIAS_ISO0/1 from the FPGA"
-  - doc: 2n7002.pdf
-    loc: Gate-Source threshold voltage
-    quote: "VGS(th): min 1 V, max 2.5 V (at VGS=VDS, ID=250 \xB5A); RDS(on) only specified\
-      \ at VGS=5 V and 10 V"
-  fix_hint: "Either document a min VADJ (\u22482.5 V) for bias delivery, OR use a\
-    \ logic-level low-Vth NMOS (e.g. Si2302 / AO3400, VGS(th) < ~1 V), OR drive BIAS_ISO\
-    \ from a +3V3-domain GPIO instead of the VADJ-referenced LA bank."
-  enabled: true
-  origin: generated
-  evaluation: semantic
-  prompt: "Q42/Q43 are 2N7002 NMOS isolators between the PMOS drain and the BIASx\
-    \ output. Per the datasheet the 2N7002 gate threshold VGS(th) is 1.0 V (min) to\
-    \ 2.5 V (max) \u2014 a STANDARD-threshold part, with RDS(on) only specified at\
-    \ VGS = 5 V / 10 V (none below). The gate (BIAS_ISO0/1) is driven by an FPGA output\
-    \ on an FMC LA-bank pin whose high level equals VADJ; the NMOS SOURCE sits at\
-    \ the BIASx node (~0.5 V DUT compliance). So the effective gate overdrive is V_GS\
-    \ \u2248 VADJ \u2212 0.5 V. The requirements allow VADJ anywhere in 1.2\u2013\
-    3.3 V. Check whether the NMOS is reliably ON across that WHOLE range: compute\
-    \ V_GS at the VADJ extremes and compare to VGS(th) max (2.5 V). FAIL if at the\
-    \ low end of the stated VADJ range V_GS falls below VGS(th) max (e.g. VADJ=1.2\
-    \ V \u21D2 V_GS=0.7 V \u226A 1 V min \u21D2 the FET is OFF and no bias reaches\
-    \ Bobcat). PASS only if the FET is guaranteed on across the full VADJ range, or\
-    \ if the design explicitly documents a minimum VADJ for bias operation."
 - id: BLK_FOOTPRINT_MATCHES_DATASHEET
   family: block
   severity: WARNING

@@ -111,6 +111,10 @@ class ValueInRange(_PredBase):
 class Present(_PredBase):
     kind: Literal["present"] = "present"
     mpn: str | None = None
+    # Match by reference designator(s) instead of a hardcoded MPN — part-agnostic,
+    # so a part swap (e.g. 2N7002 -> BSS138) doesn't false-fire a "missing part"
+    # rule. When set, the listed refdes must all exist and be populated (not DNP).
+    refdes: list[str] = []
     role_spec: dict = {}
 
 class SimPass(_PredBase):

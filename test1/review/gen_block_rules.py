@@ -121,11 +121,11 @@ def build_block_rules():
              fix="If peaking > 3 dB, add a small series gate R or feedback Cff for phase margin."),
         _sim("BLK_BIAS_POR_FAILSAFE", block=B, sim_block="opa_bias", sim_type="por_failsafe",
              sev="ERROR", sheet="bias",
-             title="No bias current reaches Bobcat at POR (Q42/Q43 isolation holds)",
-             source="Assembly / provisioning notes / MCP4728 EEPROM (W8)",
-             quote="the Q42/Q43 isolation NMOSes (populated default, default-OFF) … cannot reach Bobcat",
-             criterion="Bias current into the DUT at POR (BIAS_ISO low) must be <= 1 µA. PASS if bias_current_at_por_A <= 1e-6; FAIL otherwise.",
-             fix="Verify the isolation NMOS is populated and the BIAS_ISO gate pull-down (R44/R45) is present."),
+             title="No bias current reaches Bobcat at POR (MCP4728 POR code holds the PMOS off)",
+             source="Bias circuit / off by default",
+             quote="Bias off by default — the MCP4728 powers up at its full-scale code, driving the PMOS gate high so the pass FET is OFF and ~0 current reaches Bobcat until firmware programs a current.",
+             criterion="Bias current into the DUT at POR (DAC at full-scale code) must be <= 1 µA. PASS if bias_current_at_por_A <= 1e-6; FAIL otherwise.",
+             fix="Ensure the MCP4728 POR/EEPROM default code keeps V_DAC at the rail (PMOS off); firmware must program a known code before enabling current. (No isolation FET — off-by-default is the DAC POR code, matching the deck.)"),
         _sem("BLK_BIAS_DAC_VREF_EXTERNAL", block=B, sev="WARNING", sheet="bias", refdes="U40",
              title="MCP4728 uses external VREF = VDD (rail-to-rail), not the 2.048 V internal ref",
              source="Parts to implement / Bias circuit",
@@ -137,14 +137,10 @@ def build_block_rules():
                      "if the netlist/notes reflect external-VREF (VDD) operation; the MCP4728 has no dedicated VREF "
                      "pin (it is register-selected), so judge from the design notes, not a pin."),
              fix="Document external-VREF=VDD in the MCP4728 provisioning; it is register-selected, not a pin."),
-        _sem("BLK_BIAS_ISO_PULLDOWN", block=B, sev="ERROR", sheet="bias", net="BIAS_ISO0",
-             title="BIAS_ISO0/1 have 10 kΩ gate pull-downs (default-OFF at POR)",
-             source="Parts to implement / Bias circuit",
-             quote="gated by BIAS_ISO0/1 from the FPGA with 10 kΩ pull-downs (R44/R45) at the gates",
-             prompt=("Verify each isolation-FET gate net (BIAS_ISO0, BIAS_ISO1) has a ~10 kΩ pull-down to GND so the "
-                     "2N7002 is OFF at POR until the FPGA drives it HIGH. Examine the full net membership — PASS if a "
-                     "10 kΩ resistor to GND is present on each; FAIL if either floats or lacks the pull-down."),
-             fix="Add a 10 kΩ pull-down from BIAS_ISO0/1 to GND (R44/R45)."),
+        # BLK_BIAS_ISO_PULLDOWN removed: the bias isolation FETs (Q42/Q43) and
+        # their BIAS_ISO gate pull-downs (R44/R45) were dropped to match the
+        # deck's backup topology. Off-by-default is now the MCP4728 POR code,
+        # covered by BLK_BIAS_POR_FAILSAFE above.
     ]
 
     # ========================================================================
@@ -338,30 +334,12 @@ def build_block_rules():
              fix=("Rename the LDO_SET_* nets to the 8401A weights (pin5→25mV … pin11→800mV) across power.yaml, "
                   "fmc.yaml, gen/config.py LA_ASSIGN, and the builders; or use weight-agnostic LDO_SET_B0..B5.")),
 
-        # --- F-3: bias isolation NMOS gate drive vs Vth across the VADJ range ---
-        # GROUNDING: 2n7002.pdf VGS(th) = 1 V min / 2.5 V max (at VGS=VDS, ID=250µA);
-        # design_requirements VADJ = 1.2–3.3 V and BIAS_ISO0/1 are FMC LA-bank pins
-        # (VCCO = VADJ on the carrier), source at the ~0.5 V DUT compliance.
-        _sem("BLK_BIAS_ISO_GATE_DRIVE", block="opa_bias", sev="WARNING", sheet="bias", refdes="Q42",
-             title="Bias isolation NMOS (2N7002) must actually turn on across the FULL VADJ range",
-             source="Power in (from FMC) / Bias circuit",
-             quote="VADJ 1.2–3.3V … Series NMOS isolation FETs (POPULATED default, 2N7002) … gated by BIAS_ISO0/1 from the FPGA",
-             datasheet=("2n7002.pdf", "Gate-Source threshold voltage",
-                        "VGS(th): min 1 V, max 2.5 V (at VGS=VDS, ID=250 µA); RDS(on) only specified at VGS=5 V and 10 V"),
-             prompt=(
-                 "Q42/Q43 are 2N7002 NMOS isolators between the PMOS drain and the BIASx output. Per the datasheet "
-                 "the 2N7002 gate threshold VGS(th) is 1.0 V (min) to 2.5 V (max) — a STANDARD-threshold part, with "
-                 "RDS(on) only specified at VGS = 5 V / 10 V (none below). The gate (BIAS_ISO0/1) is driven by an FPGA "
-                 "output on an FMC LA-bank pin whose high level equals VADJ; the NMOS SOURCE sits at the BIASx node "
-                 "(~0.5 V DUT compliance). So the effective gate overdrive is V_GS ≈ VADJ − 0.5 V. The requirements "
-                 "allow VADJ anywhere in 1.2–3.3 V. Check whether the NMOS is reliably ON across that WHOLE range: "
-                 "compute V_GS at the VADJ extremes and compare to VGS(th) max (2.5 V). FAIL if at the low end of the "
-                 "stated VADJ range V_GS falls below VGS(th) max (e.g. VADJ=1.2 V ⇒ V_GS=0.7 V ≪ 1 V min ⇒ the FET is "
-                 "OFF and no bias reaches Bobcat). PASS only if the FET is guaranteed on across the full VADJ range, or "
-                 "if the design explicitly documents a minimum VADJ for bias operation."),
-             fix=("Either document a min VADJ (≈2.5 V) for bias delivery, OR use a logic-level low-Vth NMOS "
-                  "(e.g. Si2302 / AO3400, VGS(th) < ~1 V), OR drive BIAS_ISO from a +3V3-domain GPIO instead of "
-                  "the VADJ-referenced LA bank.")),
+        # --- F-3 RESOLVED by removal: the bias isolation NMOS (Q42/Q43) and its
+        # VADJ-referenced gate drive were dropped to match the deck's backup
+        # topology (a plain PMOS V-to-I loop, off-by-default via the MCP4728 POR
+        # code). With no FET gated from the VADJ-domain LA bank, the low-VADJ
+        # turn-on conflict no longer exists, so the BLK_BIAS_ISO_GATE_DRIVE rule
+        # has been retired. Off-by-default is now verified by BLK_BIAS_POR_FAILSAFE.
 
         # --- F-6: footprint string must match the part's datasheet package ---
         # GROUNDING: each part's own datasheet states its package: MCP4728 = 10-Lead

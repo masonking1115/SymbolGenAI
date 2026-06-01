@@ -1,12 +1,14 @@
 # Bias sheet — MCP4728 quad I²C DAC + 2× channel V-to-I bias loop.
 #
-# Each bias channel is:
+# Each bias channel is the deck's BACKUP option, exactly as drawn:
 #   V_DAC (MCP4728 VOUTx) → OPA2388 +IN → opamp drives PMOS gate → PMOS source
-#   ties to +3V3 through a 5.11 kΩ sense R, opamp -IN feedback samples the
-#   source node. PMOS drain → optional 2N7002 NMOS isolator (DNP) → BIASx out.
-#   A parallel 0Ω jumper across NMOS D-S keeps the bias path closed when the
-#   NMOS is DNP'd (default). 10 kΩ pull-down on each BIAS_ISO gate ensures
-#   FET-OFF at POR when the NMOS is populated (E7).
+#   ties to +3V3 through a 3.65 kΩ sense R, opamp -IN feedback samples the
+#   source node. PMOS drain → BIASx out (via the off-sheet 1×2 jumper).
+#
+# "Off by default" (deck requirement) is enforced by the MCP4728 itself: a
+# virgin/POR DAC powers up at code 0xFFF → VOUT = VDD → PMOS gate high → PMOS
+# OFF → 0 µA into Bobcat. No isolation FET is used (matches the customer deck;
+# the FPGA must program the DAC to an off/known code before enabling current).
 #
 # Note: U41 is a dual op-amp (OPA2388), placed as ONE single-unit symbol (the
 # Ultra-Librarian part). Channel 0 uses amp A (pins 1/2/3), channel 1 uses amp
@@ -44,22 +46,6 @@ parts:
     value: 3.65k 0.1%
     footprint: Resistor_SMD:R_0603_1608Metric
     notes: "Channel-0 sense R. 3.65k sets 0–640 µA FS; was 5.11k, which capped regulated FS at ~484 µA (I·R left no headroom over the 0.5 V DUT compliance)."
-  Q42:
-    lib_id: Lib:2N7002
-    value: "2N7002"
-    footprint: Package_TO_SOT_SMD:SOT-23
-    notes: "Series isolator — POPULATED by default. Default-off (R44 gate pull-down) so a virgin MCP4728 cannot push bias into Bobcat until FPGA asserts BIAS_ISO0 HIGH (W2 fail-safe)."
-  R42:
-    lib_id: Lib:CRCW04020000Z0ED
-    value: "0"
-    footprint: Resistor_SMD:R_0402_1005Metric
-    dnp: true
-    notes: "Parallel 0Ω override across Q42 D-S — DNP by default. Populate ONLY to disable FPGA isolation and force the bias path closed (e.g. for benchtop standalone use without FPGA control)."
-  R44:
-    lib_id: Lib:CR0402-FX-1002GLF
-    value: 10k
-    footprint: Resistor_SMD:R_0402_1005Metric
-    notes: BIAS_ISO0 gate pull-down (FET OFF at POR when Q42 populated)
   C42:
     lib_id: Lib:GRM155R71C104KA88D
     value: 0.1uF
@@ -77,22 +63,6 @@ parts:
     value: 3.65k 0.1%
     footprint: Resistor_SMD:R_0603_1608Metric
     notes: "Channel-1 sense R — same 3.65k 0.1% as R40 (sets 0–640 µA FS); see R40 note."
-  Q43:
-    lib_id: Lib:2N7002
-    value: "2N7002"
-    footprint: Package_TO_SOT_SMD:SOT-23
-    notes: "Series isolator — POPULATED by default. Default-off (R45 gate pull-down) so a virgin MCP4728 cannot push bias into Bobcat until FPGA asserts BIAS_ISO1 HIGH (W2 fail-safe)."
-  R43:
-    lib_id: Lib:CRCW04020000Z0ED
-    value: "0"
-    footprint: Resistor_SMD:R_0402_1005Metric
-    dnp: true
-    notes: "Parallel 0Ω override across Q43 D-S — DNP by default. Populate ONLY to disable FPGA isolation."
-  R45:
-    lib_id: Lib:CR0402-FX-1002GLF
-    value: 10k
-    footprint: Resistor_SMD:R_0402_1005Metric
-    notes: BIAS_ISO1 gate pull-down
   C43:
     lib_id: Lib:GRM155R71C104KA88D
     value: 0.1uF
@@ -119,18 +89,16 @@ nets:
       - U41.4     # OPA2388 V- (shared, unit-1 drawing only)
       - C42.2        # channel-0 +3V3 decoupling bot
       - C43.2        # channel-1 +3V3 decoupling bot
-      - R44.2        # ch-0 BIAS_ISO pull-down bot
-      - R45.2        # ch-1 BIAS_ISO pull-down bot
 
   # ===== Hier-label nets (Bias → Bobcat) =====
-  BIAS0: { type: hier, direction: output, members: [Q42.2, R42.2] }   # NMOS source + 0Ω jumper rail side
-  BIAS1: { type: hier, direction: output, members: [Q43.2, R43.2] }
+  # PMOS drain drives BIASx directly (no isolation FET — matches the deck's
+  # backup topology). The 1×2 series jumper to Bobcat lives off-sheet.
+  BIAS0: { type: hier, direction: output, members: [Q40.3] }   # ch-0 PMOS drain
+  BIAS1: { type: hier, direction: output, members: [Q41.3] }   # ch-1 PMOS drain
 
   # ===== Global-label nets =====
   SCL: { type: global, direction: bidirectional, members: [U40.2] }
   SDA: { type: global, direction: bidirectional, members: [U40.3] }
-  BIAS_ISO0: { type: global, direction: input, members: [Q42.1, R44.1] }
-  BIAS_ISO1: { type: global, direction: input, members: [Q43.1, R45.1] }
 
   # ===== Internal nets (unlabeled local connectivity) =====
   internal_VOUTA_to_OPA_pos:
@@ -156,13 +124,6 @@ nets:
   internal_PMOS1_source_feedback:
     type: internal
     members: [Q41.2, R41.2, U41.6]
-  internal_BIAS0_drain_stub:
-    type: internal
-    # PMOS Q40 drain → Q42 NMOS drain, also bridged by R42 (0Ω parallel jumper).
-    members: [Q40.3, Q42.3, R42.1]
-  internal_BIAS1_drain_stub:
-    type: internal
-    members: [Q41.3, Q43.3, R43.1]
 
   # MCP4728 pins NC'd in the schematic (validator skips no_connect markers,
   # so leave these unenumerated):

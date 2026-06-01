@@ -53,10 +53,10 @@ def build_bias() -> tuple[AltiumSheet, object]:
                                     orientation=orientation, unit=unit)
 
     # ===== Header notes =====
-    s.text("BIAS BLOCK - POR FAIL-SAFE", 1000, 8400)
-    s.text("Q42/Q43 (populated, default-OFF via R44/R45) block bias at POR.", 1000, 8200)
-    s.text("FPGA must drive BIAS_ISO0/1 HIGH; MCP4728 defaults (code=0) are safe.", 1000, 8000)
-    s.text("R42/R43 DNP -- populate ONLY to bypass FPGA control.", 1000, 7800)
+    s.text("BIAS BLOCK - POR FAIL-SAFE (MCP4728 POR code; no isolation FET)", 1000, 8400)
+    s.text("Off by default: MCP4728 powers up at full-scale code -> VOUT=VDD -> PMOS OFF -> 0 uA.", 1000, 8200)
+    s.text("Provision EEPROM to VREF=VDD + code 0xFFF; FPGA programs a known code before enabling.", 1000, 8000)
+    s.text("Deck backup topology: PMOS drain drives BIASx directly via the off-sheet 1x2 jumper.", 1000, 7800)
 
     # =========================================================
     # Cluster A: MCP4728 DAC  U40 at (4000, 5000)
@@ -142,11 +142,6 @@ def build_bias() -> tuple[AltiumSheet, object]:
         pmos_cx: int,
         pmos_ref: str,
         sense_ref: str,
-        nmos_cx: int,
-        nmos_cy: int,
-        nmos_ref: str,
-        par_ref: str,
-        pd_ref: str,
         cap_ref: str,
     ) -> dict[str, tuple[int, int]]:
         PMOS_CY = 5000
@@ -169,64 +164,26 @@ def build_bias() -> tuple[AltiumSheet, object]:
         src_fb = (src_x, src_y + 300)
         s.junction(*src_fb)
 
-        # --- PMOS drain → NMOS drain ---
-        NM = place(nmos_ref, nmos_cx, nmos_cy)
-        nm_g_x, nm_g_y = NM["1"]   # gate   (nmos_cx-500, nmos_cy)
-        nm_s_x, nm_s_y = NM["2"]   # source (nmos_cx, nmos_cy-500)
-        nm_d_x, nm_d_y = NM["3"]   # drain  (nmos_cx, nmos_cy+500)
-        s.wire(drn_x, drn_y, nm_d_x, nm_d_y)
+        # --- PMOS drain → BIASx output port (no isolation FET; deck topology) ---
+        # The drain pin faces DOWN (ori=2). Drop straight down a short stub and
+        # break out east to the BIASx port. The 1×2 series jumper to Bobcat is
+        # off-sheet, so the drain net leaves directly on the BIASx hier port.
+        BIAS_PORT_Y = drn_y - 800
+        s.wire(drn_x, drn_y, drn_x, BIAS_PORT_Y)
+        BIAS_PORT_X = drn_x + 1400
+        s.wire(drn_x, BIAS_PORT_Y, BIAS_PORT_X, BIAS_PORT_Y)
+        s.port(f"BIAS{ch_idx}", BIAS_PORT_X, BIAS_PORT_Y, io=PortIOType.OUTPUT)
 
-        # --- Parallel 0Ω jumper (R4x) ---
-        PAR_CX = nmos_cx + 900
-        PAR = place(par_ref, PAR_CX, nmos_cy)
-        par_top_x, par_top_y = PAR["1"]   # (PAR_CX, nmos_cy+100)
-        par_bot_x, par_bot_y = PAR["2"]   # (PAR_CX, nmos_cy-100)
-        # No junction on the NMOS drain/source pins: a wire ending on a pin
-        # auto-connects in Altium, so a dot there is redundant.
-        s.wire(nm_d_x, nm_d_y, par_top_x, nm_d_y)
-        s.wire(par_top_x, nm_d_y, par_top_x, par_top_y)
-        s.wire(nm_s_x, nm_s_y, par_bot_x, nm_s_y)
-        s.wire(par_bot_x, nm_s_y, par_bot_x, par_bot_y)
-
-        # BIASx port right of jumper column — +200 keeps body clear of the
-        # adjacent ch1 NMOS body and the ch1 pull-down vertical wire.
-        BIAS_PORT_X = PAR_CX + 200
-        s.junction(PAR_CX, nm_s_y)
-        s.wire(PAR_CX, nm_s_y, BIAS_PORT_X, nm_s_y)
-        s.port(f"BIAS{ch_idx}", BIAS_PORT_X, nm_s_y, io=PortIOType.OUTPUT)
-
-        # BIAS_ISOx port + pull-down on NMOS gate. Offset -200 (was -300): the
-        # port body extends LEFT from the connection, and at -300 ch1's body left
-        # edge clipped the adjacent ch0 parallel-jumper R42 by ~5 mil (caught once
-        # the linter used the true drawn body). -200 shifts the body right, clear
-        # of R42, while staying left of the gate pin.
-        ISO_PORT_X = nm_g_x - 200
-        s.wire(nm_g_x, nm_g_y, ISO_PORT_X, nm_g_y)
-        s.port(f"BIAS_ISO{ch_idx}", ISO_PORT_X, nm_g_y, io=PortIOType.INPUT)
-        PD_CX = nm_g_x
-        PD_CY = nm_g_y - 900
-        # No junction on the NMOS gate pin — wire-on-pin auto-connects.
-        PD = place(pd_ref, PD_CX, PD_CY)
-        pd_top_x, pd_top_y = PD["1"]
-        pd_bot_x, pd_bot_y = PD["2"]
-        s.wire(PD_CX, nm_g_y, pd_top_x, pd_top_y)
-        PD_GND_Y = pd_bot_y - 300
-        s.wire(pd_bot_x, pd_bot_y, pd_bot_x, PD_GND_Y)
-        s.power_at("GND", pd_bot_x, PD_GND_Y)
-
-        # Each channel's 3-line fail-safe note is ~2500 mil wide and the two
-        # PMOS columns are only 2500 mil apart, so per-column notes overlapped
-        # into an unreadable glob (label_overlap). Park both channels' note
-        # blocks in the open band below the DAC/op-amp instead, stacked so the
-        # two 3-line blocks never share a row.
+        # Off-by-default note: no isolation FET — the MCP4728 POR/EEPROM code
+        # (VOUT at the rail → PMOS off) holds bias at ~0 until firmware programs
+        # a current. Parked in the open band below the DAC/op-amp, stacked so the
+        # two channels' blocks never share a row.
         note_x = 4400
-        note_base = 3000 - (ch_idx * 800)
-        s.text(f"FAIL-SAFE: BIAS_ISO{ch_idx} default-LOW (R{int(pd_ref[1:])} pull-down)",
+        note_base = 3000 - (ch_idx * 600)
+        s.text(f"BIAS{ch_idx}: off by default via MCP4728 POR code (VOUT=VDD -> {pmos_ref} OFF).",
                note_x, note_base)
-        s.text(f"-> {nmos_ref} OFF at POR -> no bias until FPGA asserts HIGH.",
+        s.text("FPGA must program a known DAC code before enabling current.",
                note_x, note_base - 200)
-        s.text(f"{par_ref} is DNP -- populate ONLY to bypass FPGA control.",
-               note_x, note_base - 400)
 
         # (Channel decoupling cap cap_ref is placed in the shared decap bank in
         # the main body — it connects by +3V3/GND net name only, so grouping all
@@ -236,12 +193,8 @@ def build_bias() -> tuple[AltiumSheet, object]:
     # =========================================================
     # Place both channel clusters (unchanged x positions).
     # =========================================================
-    ch0 = bias_channel(0, pmos_cx=11000, pmos_ref="Q40", sense_ref="R40",
-                        nmos_cx=11000, nmos_cy=2800, nmos_ref="Q42",
-                        par_ref="R42", pd_ref="R44", cap_ref="C42")
-    ch1 = bias_channel(1, pmos_cx=13500, pmos_ref="Q41", sense_ref="R41",
-                        nmos_cx=13500, nmos_cy=2800, nmos_ref="Q43",
-                        par_ref="R43", pd_ref="R45", cap_ref="C43")
+    ch0 = bias_channel(0, pmos_cx=11000, pmos_ref="Q40", sense_ref="R40", cap_ref="C42")
+    ch1 = bias_channel(1, pmos_cx=13500, pmos_ref="Q41", sense_ref="R41", cap_ref="C43")
 
     # =========================================================
     # Op-amp ↔ channel links

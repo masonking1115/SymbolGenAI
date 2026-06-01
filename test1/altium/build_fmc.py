@@ -60,8 +60,7 @@ LA_ROUTING = [
     ("OSC_EN",        "R115", "global", PortIOType.OUTPUT),
     ("WEIGHT_EN",     "R116", "global", PortIOType.OUTPUT),
     ("SAMPLE_TRIG",   "R117", "global", PortIOType.OUTPUT),
-    ("BIAS_ISO0",     "R120", "global", PortIOType.OUTPUT),
-    ("BIAS_ISO1",     "R121", "global", PortIOType.OUTPUT),
+    # BIAS_ISO0/1 (R120/R121) removed — bias isolation FETs dropped to match the deck.
     ("LDO_SET_25mV",  "R122", "global", PortIOType.OUTPUT),
     ("LDO_SET_50mV", "R123", "global", PortIOType.OUTPUT),
     ("LDO_SET_100mV", "R124", "global", PortIOType.OUTPUT),
@@ -157,6 +156,34 @@ def build_fmc() -> tuple[AltiumSheet, object]:
         s.power_at("GND", ex, py)
         wired.add((r, n))
 
+    # ===== VITA 57.1 LPC ground pins (F-1a) — bussed to one GND rail per row ====
+    # 61 connector GND pins (authoritative list, verified vs LA_ASSIGN). Formerly
+    # left in the blanket No-ERC sweep. Per-pin GND glyphs are impossible to lay
+    # out cleanly here — the left channel is already packed with the LA 0Ω bank +
+    # ports, so ~20 GND glyphs/column collide with everything. Instead each row's
+    # GND pins are bussed onto ONE vertical GND rail via s.gnd_bus, with the rail
+    # placed in the CLEAR lane LEFT of every other left-exit element:
+    #   * LA ports terminate at px-1700, their bodies reach px-2400;
+    #   * power/special stubs reach at most px-1500.
+    # A rail at px-2500 therefore sits left of all of them, so its vertical trunk
+    # crosses no other net's wire and no port body (anti-short / no wire_through_
+    # port). Each pin's horizontal leg runs at its own row, parallel to (never
+    # crossing) the other rows' stubs. One GND glyph hangs below the lowest pin,
+    # clear of the connector — so the whole bank adds just 4 power glyphs.
+    GND_PINS = {
+        "C": [1, 4, 5, 8, 9, 12, 13, 16, 17, 20, 21, 24, 25, 28, 29, 32, 33, 36, 38, 40],
+        "D": [2, 3, 6, 7, 10, 13, 16, 19, 22, 25, 28, 37, 39],
+        "G": [1, 4, 5, 8, 11, 14, 17, 20, 23, 26, 29, 32, 35, 38, 40],
+        "H": [3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33, 36, 39],
+    }
+    GND_RAIL_REACH = 2500   # left of every LA port body (px-2400) and stub
+    for row, nums in GND_PINS.items():
+        pts = [pin(row, n) for n in sorted(nums)]
+        rail_x = pts[0][0] - GND_RAIL_REACH
+        s.gnd_bus(pts, rail_x)
+        for n in nums:
+            wired.add((row, n))
+
     # ===== VADJ (G39, H40 per VITA 57.1) output port =====
     for r, n in [("G", 39), ("H", 40)]:
         px, py = pin(r, n)
@@ -165,12 +192,12 @@ def build_fmc() -> tuple[AltiumSheet, object]:
         s.port("VADJ", ex, py, io=PortIOType.OUTPUT)
         wired.add((r, n))
 
-    # ===== LDO_PG (C1) input port =====
-    px, py = pin("C", 1)
+    # ===== LDO_PG (PG_C2M @ D1 per VITA 57.1 LPC) input port =====
+    px, py = pin("D", 1)
     ex = px - SPECIAL_REACH
     s.wire(px, py, ex, py)
     s.port("LDO_PG", ex, py, io=PortIOType.INPUT)
-    wired.add(("C", 1))
+    wired.add(("D", 1))
 
     # ===== I²C global ports (SCL=C30, SDA=C31 per VITA 57.1) =====
     for net, (r, n) in [("SCL", ("C", 30)), ("SDA", ("C", 31))]:

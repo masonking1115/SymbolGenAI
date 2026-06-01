@@ -302,6 +302,18 @@ def eval_value_in_range(p: ValueInRange, view: NetlistView) -> bool:
 
 
 def eval_present(p: Present, view: NetlistView) -> bool:
+    # Part-agnostic refdes match (preferred): the listed designators must all
+    # exist AND be populated (not DNP). Survives a part swap (2N7002 -> BSS138)
+    # because it keys on the reference, not a hardcoded MPN.
+    if p.refdes:
+        for ref in p.refdes:
+            hit = view.part(ref)
+            if not hit:
+                return False
+            _sheet, part = hit
+            if getattr(part, "dnp", False):
+                return False  # present in BOM but DNP => not populated
+        return True
     if p.mpn:
         # Part dataclass has no .mpn field — the `value` field is overloaded
         # to carry either a discrete value ("10k") or an MPN ("TPS7A8401A"),
@@ -574,6 +586,43 @@ def _mpn_decode_lines(parts: list[tuple[str, object]]) -> list[str]:
     return out
 
 
+def _part_datasheet_facts(rule: "SemanticRule", view: NetlistView) -> list[str]:
+    """FAIL-SAFE for part-specific semantic rules: surface the ACTUALLY-populated
+    subject part + its datasheet, and warn if the rule's own text names a DIFFERENT
+    part (stale citation after a part swap).
+
+    Background: BLK_BIAS_ISO_GATE_DRIVE was authored citing 2n7002.pdf with the
+    2N7002's Vth baked into the prompt. After Q42/Q43 were swapped to BSS138 the
+    judge kept reusing the 2N7002 number (a stale-citation false verdict). This
+    block makes the rule re-ground on the populated part automatically and flags
+    the drift so it can't pass silently on the wrong part's spec."""
+    out: list[str] = []
+    at = rule.applies_to
+    if not at.refdes:
+        return out
+    p = view.part(at.refdes)
+    if not p:
+        return out
+    _sheet, part = p
+    lib_id = str(getattr(part, "lib_id", "") or "")
+    mpn = lib_id.split(":", 1)[1].strip() if ":" in lib_id else lib_id.strip()
+    if not mpn:
+        return out
+    # Locate the populated part's datasheet under Parts Library/<MPN>/.
+    ds_dir = PROJECT_DIR / "Parts Library" / mpn
+    pdfs = sorted(ds_dir.glob("*.pdf")) if ds_dir.exists() else []
+    ds_hint = (f"Parts Library/{mpn}/{pdfs[0].name}" if pdfs
+               else f"(no local datasheet found under Parts Library/{mpn}/)")
+    out.append(
+        f"\nPOPULATED-PART DATASHEET FACTS (FAIL-SAFE — judge the ACTUAL part, not "
+        f"any part named in the rule text):\n"
+        f"  {at.refdes} is populated as MPN '{mpn}'. Read its spec from its OWN "
+        f"datasheet: {ds_hint}. If the rule's prose or citations quote a threshold "
+        f"for a DIFFERENT part, that value does NOT apply unless it matches '{mpn}'."
+        f" Use '{mpn}'’s own datasheet values.")
+    return out
+
+
 def _netlist_context_for(rule: SemanticRule, view: NetlistView) -> str:
     """Build a focused but COMPLETE netlist excerpt for the rule's applies_to so
     the agent judges against the ACTUAL design.
@@ -649,6 +698,11 @@ def _netlist_context_for(rule: SemanticRule, view: NetlistView) -> str:
             "manufacturer part number — trust these over your own code-reading; "
             "MISMATCH = the displayed value contradicts the part number):")
         lines.extend(decoded)
+
+    # FAIL-SAFE: for a part-specific rule, re-ground on the POPULATED part's
+    # datasheet + warn on stale part-name citations (prevents a rule authored
+    # against an old part from judging a swapped-in part by the wrong spec).
+    lines.extend(_part_datasheet_facts(rule, view))
 
     return "\n".join(lines) if lines else "(no specific netlist subject; judge against the cited source + design intent)"
 

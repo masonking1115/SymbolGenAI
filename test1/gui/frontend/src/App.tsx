@@ -240,7 +240,16 @@ export default function App() {
   const genHasRealDiff = !!(genDiff && Object.values(genDiff.sheets).some(s => s.count > 0));
   const genDiffVisible = genDiffVisibleOverride ?? genHasRealDiff;
 
-  const onArtifactsChanged = useCallback(() => setBust((b) => b + 1), []);
+  // Any artifact change (a Generate or review loop completing, on ANY tab) must
+  // refresh EVERY status surface, not just the schematic images. Bump both the
+  // cross-tab `bust` (PngViewer, Review findings, sim-block staleness) AND
+  // `refreshTrigger` (the Generator tab's lint/freshness counts) so the Generator
+  // can't show stale 0/0/0 after a build that ran from the Review tab. (Previously
+  // this bumped only `bust`, leaving Generator lint stale across tabs.)
+  const onArtifactsChanged = useCallback(() => {
+    setBust((b) => b + 1);
+    setRefreshTrigger((t) => t + 1);
+  }, []);
   const onRefresh = useCallback(() => {
     // Increment bust to force re-fetch of sheets/PNG in PngViewer
     setBust((b) => b + 1);

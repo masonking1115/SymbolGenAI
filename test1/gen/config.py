@@ -106,9 +106,8 @@ LA_ASSIGN: dict[str, tuple[str, int]] = {
     # W1 — Power EN signals from FPGA
     "LDO_EN":        ("C", 22),   # LA18_P_CC
     "LSW_EN":        ("H", 22),   # LA19_P
-    # E7 — Bias isolation FET enables (gates Q42/Q43 when populated)
-    "BIAS_ISO0":     ("G", 21),   # LA20_P
-    "BIAS_ISO1":     ("H", 25),   # LA21_P
+    # BIAS_ISO0/1 (LA20_P G21 / LA21_P H25) removed — bias isolation FETs were
+    # dropped to match the deck's backup topology; those LA pins are now unused.
     # E5 — TPS7A8401A ANY-OUT setpoint pins
     "LDO_SET_25mV":  ("G", 24),   # LA22_P
     "LDO_SET_50mV": ("D", 23),   # LA23_P

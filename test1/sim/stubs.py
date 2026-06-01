@@ -80,8 +80,8 @@ class RailOut:
 class DigitalDrive:
     """A digital control input driven from outside (FPGA via FMC).
 
-    Covers: LDO_EN, LSW_EN, BIAS_ISO*, LDO_SET_* selects. Clean ramp from
-    0 to V_hi at t_on. For a static-high enable, leave t_on at 0.
+    Covers: LDO_EN, LSW_EN, LDO_SET_* selects. Clean ramp from 0 to V_hi at
+    t_on. For a static-high enable, leave t_on at 0.
     """
     node: str
     V_hi: float = 3.3

@@ -1,13 +1,13 @@
 """opa_bias deck builder — the precision V-to-I bias loop (one channel).
 
-Topology (channel 0, from bias.yaml):
+Topology (channel 0, from bias.yaml — the deck's BACKUP option, as drawn):
     MCP4728 VOUTA ──► OPA2388 +IN
     OPA2388 OUT  ──► PMOS(Q40) gate
-    PMOS source  ──► R_sense(5.11k) ──► +3V3,  and ──► OPA2388 -IN  (feedback)
-    PMOS drain   ──► 2N7002(Q42) isolator ──► BIAS0
+    PMOS source  ──► R_sense(3.65k) ──► +3V3,  and ──► OPA2388 -IN  (feedback)
+    PMOS drain   ──► BIAS0   (via the off-sheet 1×2 jumper; no isolation FET)
 
 The loop forces V(source) = V(DAC), so the current through R_sense is
-    I_bias = (V(+3V3) - V(DAC)) / R_sense          (0..646 µA full-scale)
+    I_bias = (V(+3V3) - V(DAC)) / R_sense          (0..904 µA full-scale)
 i.e. the DAC voltage *inversely* sets the bias current. Accuracy is set by
 the op-amp (offset + finite gain), not the pass FET — that's the whole point
 of the feedback loop, and it's what dc_sweep measures.
@@ -16,8 +16,9 @@ Modes:
     dc_sweep          — sweep V_DAC 0..3.3, measure I_bias vs ideal
     ac_stability      — closed-loop response peaking (phase-margin proxy)
     transient_settling— step V_DAC, measure settle time + overshoot
-    por               — power-on: DAC at default 0xFFF + BIAS_ISO low → bias
-                        must be ~0 reaching the DUT (fail-safe gate)
+    por               — power-on: DAC at default 0xFFF → VOUT = VDD → PMOS gate
+                        high → PMOS OFF → bias ~0 into the DUT (fail-safe is the
+                        DAC POR code alone — there is no isolation FET).
 """
 
 from __future__ import annotations
@@ -50,28 +51,27 @@ _MODE_TO_SIMTYPE = {
 BIAS_COMPLIANCE_V = 0.5
 BIAS_NOMINAL_A = 320e-6      # PDF nominal operating current
 
-# Catalog net name → SPICE node. BIAS_ISO drives the isolator gate; +3V3 is
-# the supply; BIAS0 is the output into the DUT bias load.
+# Catalog net name → SPICE node. +3V3 is the supply; BIAS0 is the output into
+# the DUT bias load. (No BIAS_ISO — the isolation FET was removed to match the
+# deck's backup topology; off-by-default now comes from the DAC POR code.)
 _NET_TO_NODE = {
     "+3V3": "V3V3",
     "BIAS0": "BIAS0",
-    "BIAS_ISO0": "BIAS_ISO0",
 }
 
 
 # SPICE deck element ref → netlist refdes on bias.yaml, so the GUI can tie a
 # model element back to the real schematic part. None = behavioral scaffolding
 # with no physical part (boundary source, ammeter, DUT load stub). Channel 0
-# uses R40/Q40/Q42; channel 1 would be R41/Q41/Q43 (the deck builds ch0 today).
+# uses R40/Q40; channel 1 would be R41/Q41 (the deck builds ch0 today). The
+# isolation FET was removed (deck backup topology), so there's no isolator ref.
 def refdes_map(channel: int = 0) -> dict[str, str | None]:
     sense = {0: "R40", 1: "R41"}[channel]
     pmos = {0: "Q40", 1: "Q41"}[channel]
-    iso = {0: "Q42", 1: "Q43"}[channel]
     return {
         "XOPA": "U41",            # OPA2388 op-amp
         "MQ40": pmos,             # PMZ1200 pass FET
-        "MQ42": iso,              # 2N7002 isolator
-        "RSENSE": sense,          # 5.11k sense resistor
+        "RSENSE": sense,          # 3.65k sense resistor
         "VDAC": "U40",            # MCP4728 DAC — output modeled as a programmed V
         # --- model-only (no schematic part) ---
         "VSNS_BIAS": None,        # 0V ammeter into the DUT bias node
@@ -79,7 +79,6 @@ def refdes_map(channel: int = 0) -> dict[str, str | None]:
         "VBIASCOMP": None,        # DUT 0.5V compliance source (compliance sim)
         "VV3V3_SRC": None,        # off-sheet +3V3 source (boundary)
         "RV3V3_SRC": None,        # +3V3 source impedance (boundary)
-        "VBIAS_ISO0_DRV": None,   # FPGA isolator drive (boundary)
     }
 
 
@@ -101,10 +100,9 @@ def _core_topology(v_dac_src: str, *, r_sense: float) -> list[str]:
         "MQ40 BIASD OPAOUT VSENSE V3V3 PMOS_PMZ1200",
         f"* --- sense R (netlist R40): VSENSE -> +3V3 (feedback samples VSENSE) ---",
         f"RSENSE VSENSE V3V3 {r_sense:.6g}",
-        "* --- 2N7002 isolator Q42: D=BIASD G=BIAS_ISO0 S=BIASO ---",
-        "MQ42 BIASD BIAS_ISO0 BIASO 0 NMOS_2N7002",
+        "* --- PMOS drain drives BIAS0 directly (no isolation FET — deck topology) ---",
         "* --- ammeter into the BIAS output node (current into the DUT) ---",
-        "VSNS_BIAS BIASO BIAS0 0",
+        "VSNS_BIAS BIASD BIAS0 0",
     ]
 
 
@@ -183,14 +181,16 @@ wrdata transient_settling.dat i(vsns_bias) v(vsense) v(vdac)
         trace_specs["transient_settling"] = ["i(vsns_bias)", "v(vsense)", "v(vdac)"]
 
     elif mode == "por":
-        # Fail-safe: virgin MCP4728 powers up at code 0xFFF → VOUT = VDD, and
-        # BIAS_ISO low → isolator open. Bias reaching the DUT must be ~0.
+        # Fail-safe: virgin MCP4728 powers up at code 0xFFF → VOUT = VDD → PMOS
+        # gate driven to VDD → PMOS OFF. Bias reaching the DUT must be ~0. With
+        # no isolation FET, the DAC POR code is the sole off-by-default mechanism
+        # (matches the deck) — this verifies it holds on the DAC alone.
         dac = f"VDAC VDAC 0 DC {vdd:.6g}"      # default full-scale code ⇒ I=0
-        bnds = _boundaries_for(sim_type)       # BIAS_ISO0 driven low by catalog
+        bnds = _boundaries_for(sim_type)
         core = _core_topology(dac, r_sense=r_sense)
         analysis = """.control
 op
-print i(vsns_bias) v(vsense) v(biasd) v(bias_iso0)
+print i(vsns_bias) v(vsense) v(biasd)
 .endc
 """
 

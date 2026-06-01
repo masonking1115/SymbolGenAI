@@ -360,11 +360,8 @@ ROWS = [
         "V-to-I sense resistor; sets I_FS = (3.3V - V_DAC) / R_sense",
         "3.65 kOhm, 0.1%, 25 ppm/C, thin-film", "0603",
         "", PROMPT_RSENSE),
-    ("Qen1, Qen2 (DNP)", 2, "NMOS enable FET (DNP)",
-        "Optional series enable FET between PMOS drain and BIASx jumper; hard isolation",
-        "Vgs(th) <= 2 V, Vds >= 6 V", "SOT-23",
-        "2N7002",
-        "Optional / DNP. Series NMOS pass switch between Q1/Q2 PMOS drain and BIASx jumper. GPIO low at reset -> NMOS off -> hard output isolation independent of MCP4728 EEPROM state."),
+    # NOTE: the optional bias isolation NMOS (formerly Qen1/Qen2) was removed to
+    # match the deck's backup topology — off-by-default is the MCP4728 POR code.
     ("J1-J7",    7,  "RF connector",
         "Board-mount SMA jack, 50 ohm, DC-6 GHz",
         "SMA female, 50 ohm", "edge or vertical TH",

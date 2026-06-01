@@ -52,8 +52,9 @@ parts:
   R117: { lib_id: Lib:CRCW04020000Z0ED, value: "0", footprint: Resistor_SMD:R_0402_1005Metric, notes: "SAMPLE_TRIG  LA17_P @ D20" }
   R118: { lib_id: Lib:CRCW04020000Z0ED, value: "0", footprint: Resistor_SMD:R_0402_1005Metric, notes: "LDO_EN  LA18_P @ C22" }
   R119: { lib_id: Lib:CRCW04020000Z0ED, value: "0", footprint: Resistor_SMD:R_0402_1005Metric, notes: "LSW_EN  LA19_P @ H22" }
-  R120: { lib_id: Lib:CRCW04020000Z0ED, value: "0", footprint: Resistor_SMD:R_0402_1005Metric, notes: "BIAS_ISO0  LA20_P @ G21" }
-  R121: { lib_id: Lib:CRCW04020000Z0ED, value: "0", footprint: Resistor_SMD:R_0402_1005Metric, notes: "BIAS_ISO1  LA21_P @ H25" }
+  # R120/R121 removed: the bias isolation FETs were dropped to match the deck's
+  # backup topology (off-by-default now comes from the MCP4728 POR code, not a
+  # gated FET). LA20_P (G21) and LA21_P (H25) are now unused LA pins.
   R122: { lib_id: Lib:CRCW04020000Z0ED, value: "0", footprint: Resistor_SMD:R_0402_1005Metric, notes: "LDO_SET_25mV  LA22_P @ G24" }
   R123: { lib_id: Lib:CRCW04020000Z0ED, value: "0", footprint: Resistor_SMD:R_0402_1005Metric, notes: "LDO_SET_50mV  LA23_P @ D23" }
   R124: { lib_id: Lib:CRCW04020000Z0ED, value: "0", footprint: Resistor_SMD:R_0402_1005Metric, notes: "LDO_SET_100mV  LA24_P @ H28" }
@@ -70,14 +71,87 @@ nets:
   GND:
     type: power
     # Strapping pins tied to GND — H2=PRSNT_M2C_L (asserts mezzanine presence),
-    # C34=GA0, D35=GA1 (geographical address straps). Mass GND bussing of the
-    # unrouted FMC pins is uncovered by validation (see top comment).
-    members: [J4:u4.H2, J1:u1.C34, J2:u2.D35]
+    # C34=GA0, D35=GA1 (geographical address straps).
+    #
+    # PLUS every VITA 57.1 LPC ground pin (61 pins, authoritative list from
+    # ASP-134606-01/VITA57.1_FMC_HPC_LPC_SIGNALS_AND_PINOUT.xlsx, LPC sheet,
+    # verified vs LA_ASSIGN — F-1a). Row→refdes: C=J1:u1, D=J2:u2, G=J3:u3,
+    # H=J4:u4. C1 is included (F-1b moved LDO_PG off C1 → D1). Each is routed to
+    # a GND power symbol in build_fmc.py (no longer left No-ERC).
+    members:
+      - J4:u4.H2
+      - J1:u1.C34
+      - J2:u2.D35
+      # Row C (J1:u1)
+      - J1:u1.C1
+      - J1:u1.C4
+      - J1:u1.C5
+      - J1:u1.C8
+      - J1:u1.C9
+      - J1:u1.C12
+      - J1:u1.C13
+      - J1:u1.C16
+      - J1:u1.C17
+      - J1:u1.C20
+      - J1:u1.C21
+      - J1:u1.C24
+      - J1:u1.C25
+      - J1:u1.C28
+      - J1:u1.C29
+      - J1:u1.C32
+      - J1:u1.C33
+      - J1:u1.C36
+      - J1:u1.C38
+      - J1:u1.C40
+      # Row D (J2:u2)
+      - J2:u2.D2
+      - J2:u2.D3
+      - J2:u2.D6
+      - J2:u2.D7
+      - J2:u2.D10
+      - J2:u2.D13
+      - J2:u2.D16
+      - J2:u2.D19
+      - J2:u2.D22
+      - J2:u2.D25
+      - J2:u2.D28
+      - J2:u2.D37
+      - J2:u2.D39
+      # Row G (J3:u3)
+      - J3:u3.G1
+      - J3:u3.G4
+      - J3:u3.G5
+      - J3:u3.G8
+      - J3:u3.G11
+      - J3:u3.G14
+      - J3:u3.G17
+      - J3:u3.G20
+      - J3:u3.G23
+      - J3:u3.G26
+      - J3:u3.G29
+      - J3:u3.G32
+      - J3:u3.G35
+      - J3:u3.G38
+      - J3:u3.G40
+      # Row H (J4:u4)
+      - J4:u4.H3
+      - J4:u4.H6
+      - J4:u4.H9
+      - J4:u4.H12
+      - J4:u4.H15
+      - J4:u4.H18
+      - J4:u4.H21
+      - J4:u4.H24
+      - J4:u4.H27
+      - J4:u4.H30
+      - J4:u4.H33
+      - J4:u4.H36
+      - J4:u4.H39
 
   # ===== Hier-label nets (FMC ↔ this sheet's parent → Power) =====
   # VITA 57.1 LPC VADJ pins: G39, H40.
   VADJ:   { type: hier, direction: output, members: [J3:u3.G39, J4:u4.H40] }
-  LDO_PG: { type: hier, direction: input,  members: [J1:u1.C1] }   # PG_C2M @ C1
+  LDO_PG: { type: hier, direction: input,  members: [J2:u2.D1] }   # PG_C2M @ D1 (row D = unit 2 = J2)
   # LDO_EN / LSW_EN go through 0Ω first (R118/R119) — only the labeled side
   # is the named net.
   LDO_EN: { type: hier, direction: output, members: [R118.1] }
@@ -105,8 +179,6 @@ nets:
   OSC_EN:      { type: global, direction: output, members: [R115.1] }
   WEIGHT_EN:   { type: global, direction: output, members: [R116.1] }
   SAMPLE_TRIG: { type: global, direction: output, members: [R117.1] }
-  BIAS_ISO0:   { type: global, direction: output, members: [R120.1] }
-  BIAS_ISO1:   { type: global, direction: output, members: [R121.1] }
   LDO_SET_25mV:  { type: global, direction: output, members: [R122.1] }
   LDO_SET_50mV: { type: global, direction: output, members: [R123.1] }
   LDO_SET_100mV: { type: global, direction: output, members: [R124.1] }
@@ -136,8 +208,9 @@ nets:
   internal_LA17_stub: { type: internal, members: [J2:u2.D20, R117.2] }
   internal_LA18_stub: { type: internal, members: [J1:u1.C22, R118.2] }
   internal_LA19_stub: { type: internal, members: [J4:u4.H22, R119.2] }
-  internal_LA20_stub: { type: internal, members: [J3:u3.G21, R120.2] }
-  internal_LA21_stub: { type: internal, members: [J4:u4.H25, R121.2] }
+  # internal_LA20/LA21 stubs removed with R120/R121 (bias-iso FETs dropped).
+  # Connector pins G21 (LA20_P) and H25 (LA21_P) are now unused LA pins and
+  # fall into the builder's blanket No-ERC sweep, per VITA 57.1 for unused LA.
   internal_LA22_stub: { type: internal, members: [J3:u3.G24, R122.2] }
   internal_LA23_stub: { type: internal, members: [J2:u2.D23, R123.2] }
   internal_LA24_stub: { type: internal, members: [J4:u4.H28, R124.2] }

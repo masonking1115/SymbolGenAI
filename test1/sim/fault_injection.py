@@ -74,12 +74,12 @@ def opa_dc(vos=None):
     res = run_deck(deck, trace_specs=specs)
     return _verdict(B.analyze_dc_sweep(res.traces["dc_sweep"]))
 
-def opa_por(iso_on=False, dac=None):
+def opa_por(dac=None):
+    # The DAC POR code is the SOLE off-by-default mechanism now (no isolation
+    # FET — deck topology). Fault: DAC not at its safe full-scale code → the
+    # PMOS turns partly on and bias leaks into the DUT at power-on.
     deck, specs = B.build_deck(mode="por")
-    if iso_on:   # fault: isolator gate-pulldown missing → defaults ON at POR
-        deck = deck.replace("VBIAS_ISO0_DRV BIAS_ISO0 0 DC 0",
-                            "VBIAS_ISO0_DRV BIAS_ISO0 0 DC 3.3")
-    if dac is not None:  # fault: DAC not at safe default code
+    if dac is not None:
         deck = deck.replace("VDAC VDAC 0 DC 3.3", f"VDAC VDAC 0 DC {dac}")
     return _verdict(B.analyze_por(run_deck(deck, trace_specs=specs).op_point))
 
@@ -111,8 +111,8 @@ CASES = [
      lambda: opa_dc(), lambda: opa_dc("5m"),
      "op-amp input offset 15uV -> 5mV"),
     ("opa_bias / por_failsafe",
-     lambda: opa_por(), lambda: opa_por(iso_on=True, dac=1.0),
-     "isolator defaults ON + DAC not at safe code (pull-down missing)"),
+     lambda: opa_por(), lambda: opa_por(dac=1.0),
+     "DAC not at safe full-scale code at POR -> PMOS partly on, bias leaks"),
     ("vddio_pdn / transient_load_step",
      lambda: pdn_loadstep("vddio_pdn", "VDDIO"),
      lambda: pdn_loadstep("vddio_pdn", "VDDIO", n_caps=1),

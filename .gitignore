@@ -78,6 +78,12 @@ test1/gui/state/loops/
 test1/altium/out/render_snapshots/
 # review_history/ = timestamped review/error report snapshots
 test1/review_history/
+# backend process logs (stdout/stderr of the running app.py)
+test1/gui/state/backend.out
+test1/gui/state/backend.err
+# per-agent effort/model selections (set live in the GUI, machine-local)
+test1/gui/state/agent_effort.json
+test1/gui/state/agent_models.json
 
 # Agent scratch files (rule_gen / apply passes write temp builders + bundle
 # checks into the working tree; they are never inputs to real code).
@@ -87,3 +93,7 @@ test1/_*.tmp.py
 
 # Regenerated merged Altium symbol library (rebuilt by build_symbols)
 test1/altium/out/lib/
+
+# Ultra Librarian extraction scratch (vendor zip contents; one-off, not inputs)
+/_ul_temp/
+/_ul_temp_asp/

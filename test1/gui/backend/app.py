@@ -641,54 +641,107 @@ def lint(run_id: str | None = None) -> JSONResponse:
 
 
 # ---- Review findings -----------------------------------------------------
+def _live_structural_findings() -> list[dict] | None:
+    """Recompute the STRUCTURAL rules against the CURRENT netlist, right now.
+
+    Structural rules are instant (pure netlist predicate dispatch — no claude -p,
+    no ngspice), so we can always serve them LIVE. This is what keeps the Review
+    tab honest after a design edit: previously /api/findings only echoed the last
+    completed review-loop's findings.json, so a fixed (or newly-broken) design
+    showed stale counts until a full slow loop re-ran. Returns serialized finding
+    dicts (same shape the loop writes), or None if evaluation fails (caller then
+    falls back to the on-disk findings so we never hard-fail the panel)."""
+    try:
+        from test1.review.rule_eval import run_all
+        from test1.review.closed_loop import _finding_to_dict
+        # semantic=False → ONLY the instant structural predicates (skips the
+        # claude -p semantic rules + ngspice sim_review). Fast enough per-request.
+        findings = run_all(None, None, False, None)
+        return [_finding_to_dict(f) for f in findings]
+    except Exception as e:
+        print(f"[findings] live structural recompute failed: {e}", flush=True)
+        return None
+
+
 def _findings_payload() -> dict:
     """Build the findings response body as a plain dict.
 
-    findings.json may be either (a) a bare list of Finding dicts (legacy
-    KiCad run_review.py path) or (b) a dict envelope produced by the
-    Voltai-PDF parser `_review_incoming/install_review.py`
-    ({ project, findings: [...], semantic: [...], summary: {...}, sources }).
-    Both shapes are accepted.
+    STRUCTURAL findings are recomputed LIVE each call (instant, reflects the
+    current netlist). SEMANTIC findings are slow (claude -p) so they come from the
+    last completed review loop's findings.json/semantic_findings.json, tagged with
+    when that was (`semantic_as_of`) — the frontend can show "semantic checks as of
+    last review". This makes the Review tab always-current for the fast checks
+    without waiting on a full loop.
 
-    Internal callers (e.g. apply_finding) use this directly; the HTTP route
-    wraps it in a no-store JSONResponse. (Previously apply_finding called the
-    route function and tried to subscript the JSONResponse — a TypeError that
-    made every per-finding Apply return HTTP 500.)
+    findings.json may be either (a) a bare list of Finding dicts (legacy KiCad
+    path) or (b) a dict envelope ({findings, semantic, summary, sources}).
+
+    Internal callers (e.g. apply_finding) use this directly; the HTTP route wraps
+    it in a no-store JSONResponse.
     """
-    data: list = []
+    # --- on-disk (last loop) findings: split structural vs semantic ----------
+    disk_findings: list = []
     envelope_summary: dict | None = None
     envelope_semantic: list | None = None
+    semantic_as_of: float | None = None
     if FINDINGS_JSON.exists():
         try:
             raw = json.loads(FINDINGS_JSON.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             raw = []
         if isinstance(raw, dict):
-            data = raw.get("findings") or []
+            disk_findings = raw.get("findings") or []
             envelope_semantic = raw.get("semantic")
             envelope_summary = raw.get("summary")
         elif isinstance(raw, list):
-            data = raw
+            disk_findings = raw
+        try:
+            semantic_as_of = FINDINGS_JSON.stat().st_mtime
+        except OSError:
+            semantic_as_of = None
     semantic: list = envelope_semantic if envelope_semantic is not None else []
     if not semantic and SEMANTIC_FINDINGS.exists():
         try:
             semantic = json.loads(SEMANTIC_FINDINGS.read_text())
         except json.JSONDecodeError:
             semantic = []
-    if envelope_summary is not None:
-        summary = {"ERROR": int(envelope_summary.get("ERROR", 0)),
-                   "WARNING": int(envelope_summary.get("WARNING", 0)),
-                   "INFO": int(envelope_summary.get("INFO", 0))}
+
+    # --- LIVE structural recompute (authoritative for structural rules) ------
+    live = _live_structural_findings()
+    structural_fresh = live is not None
+    if structural_fresh:
+        # Identify which rule_ids are STRUCTURAL so we drop their stale disk rows
+        # and replace them with the freshly-computed ones. Semantic disk rows are
+        # kept as-is (we can't cheaply recompute them per request).
+        try:
+            from test1.review.rule_eval import load_rules
+            from test1.review.rule_schema import StructuralRule
+            structural_ids = {r.id for r in load_rules().rules
+                              if isinstance(r, StructuralRule)}
+        except Exception:
+            structural_ids = set()
+        # carry forward only the NON-structural disk findings, then add live ones.
+        non_structural = [f for f in disk_findings
+                          if f.get("rule_id") not in structural_ids]
+        data = live + non_structural
     else:
-        summary = {"ERROR": 0, "WARNING": 0, "INFO": 0}
-        for f in data:
-            sev = (f.get("severity") or "").upper()
-            if sev in summary:
-                summary[sev] += 1
+        data = disk_findings  # fallback: serve the last loop's findings verbatim
+
+    # Summary counts BOTH the (live) structural findings AND the (last-review)
+    # semantic findings, so the header badge reflects every open issue — incl.
+    # semantic ones like the bias-FET gate-drive WARNING that only a full review
+    # produces. (Previously the summary counted `data` only, hiding semantics.)
+    summary = {"ERROR": 0, "WARNING": 0, "INFO": 0}
+    for f in (data + semantic):
+        sev = (f.get("severity") or "").upper()
+        if sev in summary:
+            summary[sev] += 1
     return {
         "findings": data,
         "semantic": semantic,
         "summary": summary,
+        "structural_fresh": structural_fresh,   # live structural recompute succeeded
+        "semantic_as_of": semantic_as_of,        # mtime of the last loop's findings
         "error_log_exists": ERROR_LOG.exists(),
         "timestamp": time.time(),
     }

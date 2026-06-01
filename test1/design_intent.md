@@ -47,6 +47,17 @@ involved so it's verifiable.
   confirmed RR1608M in tnpw_e3.pdf). Do NOT raise the value back to 5.11k — see
   prior bullet (lower R_sense is required for the FS ceiling).
 
+- **Bias isolation NMOS (Q42/Q43, BSS138) are gated from the VADJ-referenced LA
+  bank, so bias requires VADJ ≥ 2.5 V.** BIAS_ISO0/1 ride FMC R120/R121 →
+  LA20_P/LA21_P, whose VOH = VADJ. With the source at ~0.5 V, V_GS = VADJ−0.5;
+  at the 1.2 V VADJ floor that is ≈0.7 V, below BSS138's 1.5 V VGS(th) max → not
+  guaranteed on. Since VADJ also sets Bobcat VDDIO (via the load switch), the two
+  are coupled — you cannot raise gate drive without raising VDDIO. **Do not
+  "fix" this by raising R_sense or re-deriving gate voltage on the bias sheet
+  alone.** The accepted resolution is the documented VADJ ≥ 2.5 V constraint
+  (F-3). A lower-Vth NMOS or a +3V3-domain gate driver is a human
+  sourcing/architecture decision, not a routine edit. (Closed-loop run be87dc9a.)
+
 - **R42/R43 are DNP (0Ω jumpers left unpopulated)** — the 2N7002 isolator is the
   active POR-failsafe path, not the jumper. Don't model/treat them as closed.
 

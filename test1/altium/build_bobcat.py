@@ -95,6 +95,17 @@ def build_bobcat() -> tuple[AltiumSheet, object]:
         s.power_at("GND", px, VDDD_GND_Y)
     # Title BELOW the cap/GND column so it doesn't sit on top of C20.
     s.text("VDDD core bypass", U["12"][0] - 400, VDDD_GND_Y - 400)
+    # C44: 10uF post-jumper bulk on +VDDD (F-7, DUT-side). +VDDD is a named power
+    # rail, so the cap connects by power-symbol alone (like the VDDIO bulk row) —
+    # placed one column LEFT of the C20/C21 pair, clear of the chip pins, with its
+    # own +VDDD/GND glyphs on opposite pins so the rail-name texts don't collide.
+    C44_X = U["12"][0] - 1200
+    place("C44", C44_X, VDDD_CAP_CY)
+    s.wire(C44_X, VDDD_CAP_CY + 100, C44_X, VDDD_CAP_CY + 500)   # pin1(top) -> +VDDD
+    s.power_at("+VDDD", C44_X, VDDD_CAP_CY + 500, stub=-200)
+    s.wire(C44_X, VDDD_CAP_CY - 100, C44_X, VDDD_GND_Y)          # pin2(bottom) -> GND
+    s.power_at("GND", C44_X, VDDD_GND_Y)
+    s.text("VDDD bulk 10uF", C44_X - 400, VDDD_GND_Y - 400)
 
     # =====================================================================
     # Cluster D: VDDA1 path (pin 1, left edge) — series 0R R20 + C22 decouple
@@ -135,6 +146,29 @@ def build_bobcat() -> tuple[AltiumSheet, object]:
     s.wire(C22["2"][0], C22_UP_Y, C22_GX, C22_UP_Y)          # left at the raised row
     s.wire(C22_GX, C22_UP_Y, C22_GX, C22_GY)                 # down to GND stub
     s.power_at("GND", C22_GX, C22_GY)
+    # C45: 10uF post-jumper bulk on internal_VDDA1_path (F-7, DUT-side). The
+    # internal net is unlabeled (wired-only), so C45 must physically join it.
+    # Placed in the clear band to the LEFT of the C22/+VDDA1 column (well clear of
+    # the chip left edge at x=3600), tapping the chip-pin1->R20.1 wire interior at
+    # (3400,5900) via a riser UP to a lane above C22, then west to C45's column and
+    # down INTO pin1 (in-line, vertical) so the cap sits in the net's path.
+    C45_X = 1600                     # clear band left of +VDDA1 glyph (x=2400)
+    C45_CY = C22_CY + 600            # 7400 — above C22's GND, clear band
+    place("C45", C45_X, C45_CY, orientation=2)
+    C45 = s.pins_of("C45", 1)        # 1=(1600,7300) bottom ; 2=(1600,7500) top
+    C45_TAP_PT_X = R20p["1"][0] + 400   # 3400 — on the (3000..3600) internal wire (on-grid)
+    C45_LANE_Y = C45["1"][1] - 300   # 7000 — west-run lane, above C22 (6900)
+    s.junction(C45_TAP_PT_X, p1y)
+    s.wire(C45_TAP_PT_X, p1y, C45_TAP_PT_X, C45_LANE_Y)      # riser UP off the internal net
+    s.wire(C45_TAP_PT_X, C45_LANE_Y, C45_X, C45_LANE_Y)      # west at the raised lane to C45's col
+    s.wire(C45_X, C45_LANE_Y, C45_X, C45["1"][1])            # up INTO C45.1 (in-line, vertical)
+    C45_GX = C45_X - 400             # 1200 — left of the cap
+    C45_UP_Y = C45["2"][1] + 200     # 7700
+    C45_GY = C45["2"][1] - 400       # 7100
+    s.wire(C45["2"][0], C45["2"][1], C45["2"][0], C45_UP_Y)   # pin2(top) up
+    s.wire(C45["2"][0], C45_UP_Y, C45_GX, C45_UP_Y)          # left at raised row
+    s.wire(C45_GX, C45_UP_Y, C45_GX, C45_GY)                 # down to GND stub
+    s.power_at("GND", C45_GX, C45_GY)
 
     # =====================================================================
     # Cluster E: VDDA2 path (pins 26, 27 tied, right edge) — series R21 + C23
@@ -177,6 +211,34 @@ def build_bobcat() -> tuple[AltiumSheet, object]:
     s.wire(C23["2"][0], C23_UP_Y, C23_GX, C23_UP_Y)         # right at the raised row
     s.wire(C23_GX, C23_UP_Y, C23_GX, C23_GY)                # down to GND stub
     s.power_at("GND", C23_GX, C23_GY)
+    # C46: 10uF post-jumper bulk on internal_VDDA2_path (F-7, DUT-side). Placed in
+    # the clear band to the RIGHT of R21 (past the +VDDA2 glyph), tapping the
+    # internal net by extending a horizontal stub EAST off R21.2's row to a riser
+    # column, so no wire runs through R21's pins (avoids passive_on_corner) and
+    # nothing crosses the chip body. pin1(bottom) drops onto the riser; pin2(top)
+    # up to its own GND glyph.
+    C46_X = R21_CX + 1600            # 9300 — well right of R21 (7700) and +VDDA2 (8200)
+    C46_CY = R21_y + 1200            # 6600 — above the R21 row, clear band
+    place("C46", C46_X, C46_CY, orientation=2)
+    C46 = s.pins_of("C46", 1)        # 1=(9300,6500) bottom ; 2=(9300,6700) top
+    # Tap the tie->R21.2 internal wire at its mid-span (x=7200,y=5400), riser UP to
+    # a clear lane ABOVE the R21 row, then east to C46.1 — staying clear of the
+    # +VDDA2 rail wire (which runs east of R21 on the y=5400 row). The tap is on
+    # the wire interior, not on a pin; x=7200 is clear above y=5400 (BIAS exits
+    # end at x=6800), so the riser doesn't cross any signal lane.
+    C46_TAP_X = TIE_X + 300          # 7200 — mid-span of the tie->R21.2 wire
+    C46_LANE_Y = C46["1"][1] - 300   # 6200 — east-run lane BELOW C46.1 (clear of R21 row)
+    s.junction(C46_TAP_X, R21_y)
+    s.wire(C46_TAP_X, R21_y, C46_TAP_X, C46_LANE_Y)          # riser UP off the internal net
+    s.wire(C46_TAP_X, C46_LANE_Y, C46_X, C46_LANE_Y)         # east at the raised lane to C46's column
+    s.wire(C46_X, C46_LANE_Y, C46_X, C46["1"][1])            # up INTO C46.1 (in-line, vertical)
+    C46_GX = C46_X + 400             # 9700 — right of the cap
+    C46_UP_Y = C46["2"][1] + 200     # 6900
+    C46_GY = C46["2"][1] - 400       # 6300
+    s.wire(C46["2"][0], C46["2"][1], C46["2"][0], C46_UP_Y)  # pin2(top) up
+    s.wire(C46["2"][0], C46_UP_Y, C46_GX, C46_UP_Y)         # right at the raised row
+    s.wire(C46_GX, C46_UP_Y, C46_GX, C46_GY)                # down to GND stub
+    s.power_at("GND", C46_GX, C46_GY)
 
     # =====================================================================
     # Cluster C: VDDIO decoupling — per-pin local +VDDIO symbols + cap row

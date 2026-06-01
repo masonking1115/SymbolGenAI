@@ -117,30 +117,30 @@ blocks:
     group: analog_bias
     status: implemented
     description: >
-      A per-channel precision current source. An MCP4728 DAC sets the target;
-      an OPA2388 op-amp drives a PMOS so its source, returned to +3V3 through a
-      5.11k 0.1% sense resistor, tracks the DAC voltage. The PMOS drain feeds a
-      2N7002 isolation FET out to BIASx. The closed loop sets the bias current
-      to (3V3 - V_DAC) / 5.11k, giving 0 to 646uA as the DAC sweeps down.
-    models_needed: [OPA2388, PMOS_PMZ1200, NMOS_2N7002]
+      A per-channel precision current source (the deck's BACKUP option, as
+      drawn). An MCP4728 DAC sets the target; an OPA2388 op-amp drives a PMOS so
+      its source, returned to +3V3 through a 3.65k 0.1% sense resistor, tracks
+      the DAC voltage. The PMOS drain drives BIASx directly through the off-sheet
+      1x2 jumper (no isolation FET — off-by-default comes from the DAC POR code).
+      The closed loop sets the bias current to (3V3 - V_DAC) / 3.65k, covering
+      the required 0 to 640uA as the DAC sweeps down.
+    models_needed: [OPA2388, PMOS_PMZ1200]
     datasheets:
       - { mpn: OPA2388, file: opa2388.pdf }
       - { mpn: MCP4728, file: 22187E.pdf }
       - { mpn: PMZ1200UPEYL, file: PMZ1200UPE.pdf }
-      - { mpn: 2N7002, file: 2n7002.pdf }
-      - { mpn: TNPW06035K11BEEA, file: tnpw_e3.pdf }
-    # OFF-SHEET boundary only. The 5.11k sense resistor (R40/R41) is NOT here —
+      - { mpn: TNPW06033K65BEEA, file: tnpw_e3.pdf }
+    # OFF-SHEET boundary only. The 3.65k sense resistor (R40/R41) is NOT here —
     # the deck reads it from bias.yaml via design_extract.sense_resistance().
     boundaries:
       "+3V3": { stub: RailIn,        params: { V: 3.3, R_src: 0.020 } }
       BIAS0: { stub: AnalogOutLoad, params: { R_load: 100, C_load: 20e-12 } }
-      BIAS_ISO0:   { stub: DigitalDrive,  params: { t_on: 0, V_hi: 3.3 } }   # isolator ON
     sim_types:
       - type: dc_sweep
         rationale: >
           The headline accuracy spec: sweep the DAC across its range and check the
-          delivered bias current tracks the ideal (3V3 - V_DAC) / 5.11k.
-        pass: "I_BIAS error vs ideal <= 1% from 10% to 100% of full-scale (646uA)."
+          delivered bias current tracks the ideal (3V3 - V_DAC) / 3.65k.
+        pass: "I_BIAS error vs ideal <= 1% from 10% to 100% of the required 640uA range."
       - type: dc_compliance
         rationale: >
           Bobcat draws its bias with the BIASx pin near 0.5V, nominally 320uA.
@@ -157,11 +157,12 @@ blocks:
         pass: "Bias current settles within 1% <= 50us, no sustained oscillation, for a mid-scale step."
       - type: por_failsafe
         rationale: >
-          Safety gate: at power-on the DAC wakes at full scale and the isolation
-          FET is held off, so almost no bias should reach Bobcat until it's enabled.
+          Safety gate: at power-on the MCP4728 wakes at its full-scale code
+          (VOUT = VDD), which drives the PMOS gate high and turns the pass FET
+          OFF, so almost no bias reaches Bobcat until firmware programs a current.
+          With no isolation FET, the DAC POR code is the sole off-by-default
+          mechanism (matches the deck) — this confirms it holds on the DAC alone.
         pass: "Bias current into Bobcat at power-on <= 1uA."
-        boundary_overrides:
-          BIAS_ISO0: { V_hi: 0 }     # isolator OFF (gate pull-down at POR)
       - type: monte_carlo_accuracy
         status: planned
         rationale: >
