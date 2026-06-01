@@ -7,8 +7,6 @@ sources_seen:
   mtime: 1779894724.8913655
 - path: test1\Parts Library\24AA08-I-SN\20001710L.pdf
   mtime: 1779942736.8604088
-- path: test1\Parts Library\24AA08-I-SN\24AA08-24LC08B-24FC08-8K-I2C-Serial-EEPROM-DS20001710.pdf
-  mtime: 1779894724.5367603
 - path: test1\Parts Library\2N7002\2n7002.pdf
   mtime: 1779894724.5533729
 - path: test1\Parts Library\ASP-134606-01\ASP-134606-01.pdf
@@ -25,12 +23,8 @@ sources_seen:
   mtime: 1779942511.527243
 - path: test1\Parts Library\GRM155R70J105KA12D\GRM155R70J105KA12-01.pdf
   mtime: 1779894724.6394575
-- path: test1\Parts Library\GRM155R70J105KA12D\GRM155R70J105KA12-01__2.pdf
-  mtime: 1779942412.0865543
 - path: test1\Parts Library\GRM155R71C104KA88D\GRM155R71C104KA88-01.pdf
   mtime: 1779894724.6548474
-- path: test1\Parts Library\GRM155R71C104KA88D\GRM155R71C104KA88-01__2.pdf
-  mtime: 1779942226.6973176
 - path: test1\Parts Library\GRM155R71H103KA88D\GRM155R71H103KA88-01.pdf
   mtime: 1779942296.7106862
 - path: test1\Parts Library\GRM21BR61A226ME44L\GRM21BR61A226ME44-01.pdf
@@ -39,20 +33,12 @@ sources_seen:
   mtime: 1779942120.6654193
 - path: test1\Parts Library\HRM-G-300-467B-1\HRM(G)-300-467B-1.pdf
   mtime: 1779942453.4329145
-- path: test1\Parts Library\HRM-G-300-467B-1\HRM(G)-300-467B-1_CL0323-0937-0-00_SpecSheet_0000360327.pdf
-  mtime: 1779894724.666566
 - path: test1\Parts Library\Keystone-5011\K75p62.pdf
   mtime: 1779894724.6720996
-- path: test1\Parts Library\Keystone-5011\K75p62__2.pdf
-  mtime: 1779942572.3961284
 - path: test1\Parts Library\MCP4728\22187E.pdf
   mtime: 1779894724.698329
-- path: test1\Parts Library\MCP4728\22187E__2.pdf
-  mtime: 1779942776.7196457
 - path: test1\Parts Library\OPA2388\opa2388.pdf
   mtime: 1779894724.7425537
-- path: test1\Parts Library\OPA2388\opa2388__2.pdf
-  mtime: 1779942828.2649832
 - path: test1\Parts Library\PMZ1200UPEYL\PMZ1200UPE.pdf
   mtime: 1779894724.7518094
 - path: test1\Parts Library\PMZ1200UPEYL\PMZ1200UPEYL_preview.pdf
@@ -63,8 +49,6 @@ sources_seen:
   mtime: 1779894724.7809985
 - path: test1\Parts Library\TPS7A8401A\tps7a84a.pdf
   mtime: 1779894724.8464491
-- path: test1\Parts Library\TPS7A8401A\tps7a84a__2.pdf
-  mtime: 1779942666.62764
 - path: test1\Parts Library\TSW-102-05-G-S\tsw_th.pdf
   mtime: 1779894724.8624337
 - path: test1\Parts Library\TSW-104-05-G-S\tsw_th.pdf
