@@ -2695,15 +2695,15 @@ rules:
     loc: Parts to implement
     quote: 'Parts to implement: Bobcat, TPS7A8401A, Load switch, EEPROM, Bias circuit,
       SMAs, header.'
-  fix_hint: "Assign an MPN / library part to every component (esp. connectors J50\u2013\
-    J56, headers)."
+  fix_hint: "Assign an MPN / library part to every component (connectors, headers,
+    and mechanical parts included)."
   enabled: true
   origin: generated
   evaluation: semantic
   prompt: Check that every placed component carries a real Manufacturer Part Number
-    (the lib_id / value is an MPN or a defined library part, not a placeholder). Connectors
-    (J*), SMAs, and headers count. PASS if all parts are MPN-associated; FAIL listing
-    any with a missing/placeholder MPN.
+    (the lib_id / value is an MPN or a defined library part, not a placeholder). Connectors,
+    SMAs, headers, and mechanical parts all count. PASS if all parts are MPN-associated;
+    FAIL listing any with a missing/placeholder MPN.
 - id: CHK_PASSIVES_HAVE_VALUE
   family: schematic
   severity: WARNING
@@ -2741,10 +2741,10 @@ rules:
   origin: generated
   evaluation: semantic
   prompt: "Check that each non-power signal net connects to at least two pins (a source\
-    \ and a destination). A net with only ONE pin is floating/unterminated \u2014\
-    \ e.g. a SAMPLE_OUT that reaches its series-R but whose far side never reaches\
-    \ the FMC. Ignore intentional single-pin test points / NC. PASS if all signal\
-    \ nets have >=2 pins; FAIL listing any single-pin signal net."
+    \ and a destination). A net with only ONE pin is floating/unterminated \u2014 e.g.\
+    \ a signal that reaches a series resistor but whose far side never connects\
+    \ onward to its destination. Ignore intentional single-pin test points / NC.\
+    \ PASS if all signal nets have >=2 pins; FAIL listing any single-pin signal net."
 - id: CHK_NO_MULTI_DRIVER
   family: schematic
   severity: ERROR
@@ -2783,10 +2783,11 @@ rules:
   enabled: true
   origin: generated
   evaluation: semantic
-  prompt: "Check that no power rail (+3V3, VADJ, +VDDIO, +VDDD, +VDDA1, +VDDA2, LDO\
-    \ output) is directly connected to GND (a dead short). A decoupling cap from rail\
-    \ to GND is expected and fine; a direct wire/0\u03A9 from rail to GND is not.\
-    \ PASS if no rail is shorted to GND; FAIL listing the shorted rail."
+  prompt: "Check that no power/supply rail is directly connected to GND (a dead\
+    \ short). Treat any net acting as a supply rail (a power-symbol net, or a net\
+    \ feeding device power pins) as a rail. A decoupling/bypass cap from rail to GND\
+    \ is expected and fine; a direct wire or 0\u03A9 jumper from a rail to GND is\
+    \ not. PASS if no rail is shorted to GND; FAIL listing each shorted rail."
 - id: CHK_VALUE_MATCHES_MPN
   family: schematic
   severity: INFO
@@ -2799,16 +2800,17 @@ rules:
     loc: Parts to implement
     quote: "5.11 k\u03A9 0.1% thin-film sense resistor \u2026 10k\u03A9 pull-downs\
       \ \u2026 2.2 k\u03A9 I\xB2C pull-ups"
-  fix_hint: 'Reconcile each schematic value with its MPN (notably R40/R41: 3.65k value
-    vs the 5.11k MPN lib_id).'
+  fix_hint: 'Reconcile each component''s displayed value with the value implied by
+    its MPN / library part (a value-vs-MPN mismatch means the wrong part is selected).'
   enabled: true
   origin: generated
   evaluation: semantic
   prompt: "Spot-check that each component's displayed schematic value is consistent\
-    \ with its MPN (e.g. a part labeled '10k' uses a 10k-MPN resistor; the 3.65k sense\
-    \ R uses a 3.65k part \u2014 NOTE: R40/R41 were changed to 3.65k but may still\
-    \ reference the 5.11k MPN lib_id TNPW06035K11BEEA, which is a real mismatch to\
-    \ flag). PASS if values match their MPNs; FAIL listing mismatches."
+    \ with the value implied by its MPN / library part id (e.g. a part labeled '10k'\
+    \ should use a 10k-valued resistor MPN; a '0.1uF' cap should use a 0.1uF MPN).\
+    \ A resistor/cap whose displayed value disagrees with its part number means the\
+    \ wrong part is selected. PASS if every value matches its MPN; FAIL listing each\
+    \ mismatch (refdes, displayed value, and the value the MPN implies)."
 - id: CHK_CAP_VOLTAGE_DERATING
   family: schematic
   severity: INFO
@@ -2836,7 +2838,6 @@ rules:
   title: Clock pins should connect to clock-named nets
   applies_to:
     pins: []
-    sheet: connectors
     role_spec: {}
   source:
   - doc: design_requirements.md
@@ -2847,7 +2848,8 @@ rules:
   enabled: true
   origin: generated
   evaluation: semantic
-  prompt: "Check that clock pins connect to clock-named nets \u2014 the CLK_OUT0\u2013\
-    3 outputs should land on nets named CLK_OUT* (and reach their SMAs). PASS if clock\
-    \ pins are on clock-named nets; FAIL if a clock pin is on a mis-named or non-clock\
-    \ net."
+  prompt: "Check that clock pins (oscillator outputs, CLK/clock-function pins) connect\
+    \ to nets whose names identify them as clocks (e.g. a CLK*/*_CLK/OSC* naming\
+    \ convention), so clock routing is unambiguous on the schematic. PASS if every\
+    \ clock pin lands on a clock-named net; FAIL listing any clock pin on a mis-named\
+    \ or non-clock net."

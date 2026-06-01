@@ -23,6 +23,7 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel
 
+from . import mpn_value
 from .findings import AutofixCategory, Finding, Severity
 from .netlist_view import load_all, NetlistView
 from .rule_schema import (
@@ -552,6 +553,27 @@ def _part_label(view: NetlistView, refdes: str) -> str:
     return f"{refdes} ({part.value}){dnp}"
 
 
+def _mpn_decode_lines(parts: list[tuple[str, object]]) -> list[str]:
+    """Deterministic value↔MPN comparison lines for R/C parts whose MPN encodes a
+    machine-readable value (Murata EIA pF codes, Vishay RKM / EIA-4 codes, …).
+
+    The semantic value↔MPN judge can't reliably decode opaque manufacturer codes
+    from memory (an E2E test caught it passing a 5.11k value behind a `3K65`
+    MPN), so we decode them HERE and surface a pre-computed MATCH/MISMATCH the
+    judge can just read. Conservative: parts whose MPN isn't decodable are
+    omitted (no line == 'use your own judgement'), never asserted as a match."""
+    out: list[str] = []
+    for ref, part in parts:
+        try:
+            line = mpn_value.describe(ref, str(part.value),
+                                      str(getattr(part, "lib_id", "")))
+        except Exception:
+            line = None  # decoder is best-effort; never break evaluation
+        if line:
+            out.append("  " + line)
+    return out
+
+
 def _netlist_context_for(rule: SemanticRule, view: NetlistView) -> str:
     """Build a focused but COMPLETE netlist excerpt for the rule's applies_to so
     the agent judges against the ACTUAL design.
@@ -601,6 +623,30 @@ def _netlist_context_for(rule: SemanticRule, view: NetlistView) -> str:
         for ref, part in nl.parts.items():
             dnp = " DNP" if getattr(part, "dnp", False) else ""
             lines.append(f"  {ref}: {part.value} ({part.lib_id}){dnp}")
+
+    # Deterministic value↔MPN decode (Murata/Vishay codes the judge can't read
+    # from memory). Scope it to the parts in view: the named sheet, else — for a
+    # board-wide rule with no specific subject (e.g. CHK_VALUE_MATCHES_MPN, whose
+    # applies_to is empty) — EVERY R/C part across all sheets, since that rule has
+    # nothing else to anchor on and would otherwise see no parts at all.
+    decode_scope: list[tuple[str, object]] = []
+    if at.sheet and at.sheet in view.by_sheet:
+        decode_scope = list(view.by_sheet[at.sheet].parts.items())
+    elif not (at.refdes or at.net or at.sheet):
+        for nl in view.by_sheet.values():
+            decode_scope.extend(nl.parts.items())
+    elif at.refdes:
+        p = view.part(at.refdes)
+        if p:
+            decode_scope = [(at.refdes, p[1])]
+    decoded = _mpn_decode_lines(decode_scope)
+    if decoded:
+        lines.append(
+            "\nDECODED PART VALUE vs MPN (computed deterministically from the "
+            "manufacturer part number — trust these over your own code-reading; "
+            "MISMATCH = the displayed value contradicts the part number):")
+        lines.extend(decoded)
+
     return "\n".join(lines) if lines else "(no specific netlist subject; judge against the cited source + design intent)"
 
 

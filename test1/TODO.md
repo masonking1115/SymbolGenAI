@@ -493,5 +493,50 @@ step that lives in the implementation plan, not a separate feature.
   designator/pin uniqueness, pin-names-match-datasheet, diff-pair _P/_N + polarity).
 - 115 rules total (general 80, components 9, blocks 26). All validate; ROUTE_ rules
   pass on the as-built design; PDF export + UI serve them.
-- OPEN (flagged by CHK_VALUE_MATCHES_MPN): R40/R41 value=3.65k but lib_id still the
-  5.11k MPN (TNPW06035K11BEEA) — needs a real 3.65k 0.1% part selected.
+- ~~OPEN: R40/R41 value vs 5.11k MPN~~ RESOLVED (2026-05-31). There was NO part
+  swap left to do — the netlist already has R40/R41 = value 3.65k + lib_id
+  TNPW06033K65BEEA + footprint, and the 3.65k symbol exists in Parts Library. The
+  "mismatch" was a STALE, project-specific RULE PROMPT: CHK_VALUE_MATCHES_MPN's
+  prompt literally said "R40/R41 ... may still reference the 5.11k MPN ... a real
+  mismatch to flag", so the judge kept emitting a false-positive INFO. Fixed by
+  GENERALIZING the CHK_* checklist prompts for reuse on future projects.
+
+## Generalize CHK_* rule prompts for reuse on later projects (2026-05-31) — DONE
+
+- [x] **The general-checklist (CHK_*) rule prompts must not hardcode project
+      specifics** (refdes, MPNs, specific nets/sheets) — they're meant to apply to
+      ANY design. Rewrote all 8 CHK_* prompts/fix_hints to state the general
+      principle: CHK_VALUE_MATCHES_MPN (dropped the stale R40/R41 + 5.11k-MPN lead);
+      CHK_POWER_NOT_SHORTED_GND (rail list → "any supply-rail net"); CHK_CLOCK_PINS_
+      CLOCK_NETS (CLK_OUT0–3 → generic clock-naming convention; also dropped its
+      `sheet: connectors` scope); CHK_PARTS_HAVE_MPN (J50–J56 → "connectors/headers/
+      mechanical"); CHK_SIGNAL_NET_MIN_TWO_PINS (SAMPLE_OUT example → generic series-
+      R example). The design-specific BLK_*/SEM_*/ROUTE_* rules are INTENTIONALLY
+      Bobcat-scoped (generated per-project from design_requirements.md) — left as-is.
+      NOTE: rule `source:` quotes stay project-specific (they're real per-project
+      citations, regenerated each project; only the reusable PROMPT logic was
+      generalized). Verified: 115 rules validate; CHK_VALUE_MATCHES_MPN now PASSes
+      3/3 (false positive gone); the other generalized CHK rules still PASS on the
+      real design; 21/21 review tests pass.
+
+## Strengthen CHK_VALUE_MATCHES_MPN with a deterministic MPN-value decoder (2026-05-31) — DONE
+
+- [x] **The value↔MPN judge couldn't decode opaque manufacturer value codes**
+      (Murata `104`=0.1µF, Vishay `3K65`=3.65k) so it PASSED a deliberately wrong
+      part (an E2E loop test: R40 labeled 5.11k behind a `3K65` MPN slipped through).
+      Two root causes: (1) the judge had no way to read the codes from memory; (2)
+      CHK_VALUE_MATCHES_MPN has an EMPTY applies_to, so it got the "no specific
+      subject" fallback and saw NO part list at all. Fix (same philosophy as the
+      sim-units fix — compute in Python, judge a clean comparison): new module
+      `test1/review/mpn_value.py` decodes R/C MPNs (RKM `3K65`→3650, EIA-4 `1002`→10k
+      with a package-size strip to kill the `0402`/`1002` collision, Murata 3-digit
+      pF codes anchored between voltage+tolerance letters); `rule_eval.py`'s
+      `_netlist_context_for` appends a "DECODED PART VALUE vs MPN" MATCH/MISMATCH
+      block, scoped to every R/C part board-wide for the empty-applies_to rule.
+      Conservative: undecodable MPN → no line (judge unaided, defaults PASS) — never
+      a wrong decoded value. Verified: decoder 26/26 on the real BOM; isolated judge
+      FAILs the R40 mismatch + PASSes the clean design (no false positive across ~85
+      R/C parts); LIVE loop end-to-end (Test 3): R40 mismatch → 3 findings (the
+      strengthened CHK static check + 2 bias sim rules) → 1 apply round → all_clear;
+      30/30 review tests pass. Also added `test1/review/e2e_monitor.py` — a reusable
+      harness that triggers POST /api/loop/start and renders the SSE stream live.
