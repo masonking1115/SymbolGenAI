@@ -82,9 +82,9 @@ rules:
     role_spec: {}
   source:
   - doc: design_requirements.md
-    loc: Parts to implement / Bobcat
-    quote: "10k\u03A9 pull-downs on GPIO0\u20133, SPI_DMODE, SCLK, MOSI, OSC_EN, WEIGHT_EN,\
-      \ SAMPLE_TRIG."
+    loc: "Bobcat (DUT) \u2014 pinout & connections"
+    quote: "10 k\u03A9 pull-downs on GPIO0\u20133, SPI_DMODE, SCLK, MOSI, OSC_EN,\
+      \ WEIGHT_EN, SAMPLE_TRIG."
   fix_hint: "Add a 10k\u03A9 resistor from MOSI to GND."
   enabled: true
   origin: user
@@ -107,9 +107,9 @@ rules:
     role_spec: {}
   source:
   - doc: design_requirements.md
-    loc: Parts to implement / Bobcat
-    quote: "10k\u03A9 pull-downs on GPIO0\u20133, SPI_DMODE, SCLK, MOSI, OSC_EN, WEIGHT_EN,\
-      \ SAMPLE_TRIG."
+    loc: "Bobcat (DUT) \u2014 pinout & connections"
+    quote: "10 k\u03A9 pull-downs on GPIO0\u20133, SPI_DMODE, SCLK, MOSI, OSC_EN,\
+      \ WEIGHT_EN, SAMPLE_TRIG."
   fix_hint: "Add a 10k\u03A9 resistor from SCLK to GND."
   enabled: true
   origin: generated
@@ -132,9 +132,9 @@ rules:
     role_spec: {}
   source:
   - doc: design_requirements.md
-    loc: Parts to implement / Bobcat
-    quote: "10k\u03A9 pull-downs on GPIO0\u20133, SPI_DMODE, SCLK, MOSI, OSC_EN, WEIGHT_EN,\
-      \ SAMPLE_TRIG."
+    loc: "Bobcat (DUT) \u2014 pinout & connections"
+    quote: "10 k\u03A9 pull-downs on GPIO0\u20133, SPI_DMODE, SCLK, MOSI, OSC_EN,\
+      \ WEIGHT_EN, SAMPLE_TRIG."
   fix_hint: "Add a 10k\u03A9 resistor from SPI_DMODE to GND."
   enabled: true
   origin: generated
@@ -157,9 +157,9 @@ rules:
     role_spec: {}
   source:
   - doc: design_requirements.md
-    loc: Parts to implement / Bobcat
-    quote: "10k\u03A9 pull-downs on GPIO0\u20133, SPI_DMODE, SCLK, MOSI, OSC_EN, WEIGHT_EN,\
-      \ SAMPLE_TRIG."
+    loc: "Bobcat (DUT) \u2014 pinout & connections"
+    quote: "10 k\u03A9 pull-downs on GPIO0\u20133, SPI_DMODE, SCLK, MOSI, OSC_EN,\
+      \ WEIGHT_EN, SAMPLE_TRIG."
   fix_hint: "Add a 10k\u03A9 resistor from OSC_EN to GND."
   enabled: true
   origin: generated
@@ -182,9 +182,9 @@ rules:
     role_spec: {}
   source:
   - doc: design_requirements.md
-    loc: Parts to implement / Bobcat
-    quote: "10k\u03A9 pull-downs on GPIO0\u20133, SPI_DMODE, SCLK, MOSI, OSC_EN, WEIGHT_EN,\
-      \ SAMPLE_TRIG."
+    loc: "Bobcat (DUT) \u2014 pinout & connections"
+    quote: "10 k\u03A9 pull-downs on GPIO0\u20133, SPI_DMODE, SCLK, MOSI, OSC_EN,\
+      \ WEIGHT_EN, SAMPLE_TRIG."
   fix_hint: "Add a 10k\u03A9 resistor from WEIGHT_EN to GND."
   enabled: true
   origin: generated
@@ -207,9 +207,9 @@ rules:
     role_spec: {}
   source:
   - doc: design_requirements.md
-    loc: Parts to implement / Bobcat
-    quote: "10k\u03A9 pull-downs on GPIO0\u20133, SPI_DMODE, SCLK, MOSI, OSC_EN, WEIGHT_EN,\
-      \ SAMPLE_TRIG."
+    loc: "Bobcat (DUT) \u2014 pinout & connections"
+    quote: "10 k\u03A9 pull-downs on GPIO0\u20133, SPI_DMODE, SCLK, MOSI, OSC_EN,\
+      \ WEIGHT_EN, SAMPLE_TRIG."
   fix_hint: "Add a 10k\u03A9 resistor from SAMPLE_TRIG to GND."
   enabled: true
   origin: generated
@@ -232,9 +232,9 @@ rules:
     role_spec: {}
   source:
   - doc: design_requirements.md
-    loc: Parts to implement / Bobcat
-    quote: "10k\u03A9 pull-downs on GPIO0\u20133, SPI_DMODE, SCLK, MOSI, OSC_EN, WEIGHT_EN,\
-      \ SAMPLE_TRIG."
+    loc: "Bobcat (DUT) \u2014 pinout & connections"
+    quote: "10 k\u03A9 pull-downs on GPIO0\u20133, SPI_DMODE, SCLK, MOSI, OSC_EN,\
+      \ WEIGHT_EN, SAMPLE_TRIG."
   fix_hint: "Add a 10k\u03A9 resistor from GPIO0 to GND."
   enabled: true
   origin: generated
@@ -257,9 +257,9 @@ rules:
     role_spec: {}
   source:
   - doc: design_requirements.md
-    loc: Parts to implement / Bobcat
-    quote: "10k\u03A9 pull-downs on GPIO0\u20133, SPI_DMODE, SCLK, MOSI, OSC_EN, WEIGHT_EN,\
-      \ SAMPLE_TRIG."
+    loc: "Bobcat (DUT) \u2014 pinout & connections"
+    quote: "10 k\u03A9 pull-downs on GPIO0\u20133, SPI_DMODE, SCLK, MOSI, OSC_EN,\
+      \ WEIGHT_EN, SAMPLE_TRIG."
   fix_hint: "Add a 10k\u03A9 resistor from GPIO1 to GND."
   enabled: true
   origin: generated
@@ -282,9 +282,9 @@ rules:
     role_spec: {}
   source:
   - doc: design_requirements.md
-    loc: Parts to implement / Bobcat
-    quote: "10k\u03A9 pull-downs on GPIO0\u20133, SPI_DMODE, SCLK, MOSI, OSC_EN, WEIGHT_EN,\
-      \ SAMPLE_TRIG."
+    loc: "Bobcat (DUT) \u2014 pinout & connections"
+    quote: "10 k\u03A9 pull-downs on GPIO0\u20133, SPI_DMODE, SCLK, MOSI, OSC_EN,\
+      \ WEIGHT_EN, SAMPLE_TRIG."
   fix_hint: "Add a 10k\u03A9 resistor from GPIO2 to GND."
   enabled: true
   origin: generated
@@ -307,9 +307,9 @@ rules:
     role_spec: {}
   source:
   - doc: design_requirements.md
-    loc: Parts to implement / Bobcat
-    quote: "10k\u03A9 pull-downs on GPIO0\u20133, SPI_DMODE, SCLK, MOSI, OSC_EN, WEIGHT_EN,\
-      \ SAMPLE_TRIG."
+    loc: "Bobcat (DUT) \u2014 pinout & connections"
+    quote: "10 k\u03A9 pull-downs on GPIO0\u20133, SPI_DMODE, SCLK, MOSI, OSC_EN,\
+      \ WEIGHT_EN, SAMPLE_TRIG."
   fix_hint: "Add a 10k\u03A9 resistor from GPIO3 to GND."
   enabled: true
   origin: generated
@@ -332,8 +332,8 @@ rules:
     role_spec: {}
   source:
   - doc: design_requirements.md
-    loc: Parts to implement / Bobcat
-    quote: "10k\u03A9 pull-ups on CS_L, RESET_N."
+    loc: "Bobcat (DUT) \u2014 pinout & connections"
+    quote: "10 k\u03A9 pull-ups on CS_L, RESET_N."
   fix_hint: "Add a 10k\u03A9 resistor from CS_L to +VDDIO."
   enabled: true
   origin: generated
@@ -356,8 +356,8 @@ rules:
     role_spec: {}
   source:
   - doc: design_requirements.md
-    loc: Parts to implement / Bobcat
-    quote: "10k\u03A9 pull-ups on CS_L, RESET_N."
+    loc: "Bobcat (DUT) \u2014 pinout & connections"
+    quote: "10 k\u03A9 pull-ups on CS_L, RESET_N."
   fix_hint: "Add a 10k\u03A9 resistor from RESET_N to +VDDIO."
   enabled: true
   origin: generated
@@ -381,8 +381,8 @@ rules:
     role_spec: {}
   source:
   - doc: design_requirements.md
-    loc: Parts to implement / TPS7A8401A
-    quote: "EN driven by FPGA with 10k\u03A9 pull-down."
+    loc: LDO
+    quote: "EN input from the FPGA with a 10 k\u03A9 pull-down."
   fix_hint: "Add a 10k\u03A9 resistor from LDO_EN to GND (FPGA drives high to enable)."
   enabled: true
   origin: generated
@@ -406,8 +406,8 @@ rules:
     role_spec: {}
   source:
   - doc: design_requirements.md
-    loc: Parts to implement / TPS7A8401A
-    quote: "EN driven by FPGA with 10k\u03A9 pull-down."
+    loc: Load switch
+    quote: "Enable input from the FPGA with a 10 k\u03A9 pull-down."
   fix_hint: "Add a 10k\u03A9 resistor from LSW_EN to GND (FPGA drives high to enable)."
   enabled: true
   origin: generated
@@ -430,9 +430,8 @@ rules:
     role_spec: {}
   source:
   - doc: design_requirements.md
-    loc: Parts to implement / Bobcat
-    quote: "Decoupling caps on VDDD, VDDIO, VDDA1, VDDA2. Series 0\u03A9 on VDDA1,\
-      \ VDDA2."
+    loc: "Bobcat (DUT) \u2014 pinout & connections"
+    quote: Decoupling capacitors on VDDD, VDDIO, VDDA1, VDDA2.
   fix_hint: Place at least 2 decoupling caps on the +VDDD pins (12, 20).
   enabled: true
   origin: generated
@@ -456,9 +455,8 @@ rules:
     role_spec: {}
   source:
   - doc: design_requirements.md
-    loc: Parts to implement / Bobcat
-    quote: "Decoupling caps on VDDD, VDDIO, VDDA1, VDDA2. Series 0\u03A9 on VDDA1,\
-      \ VDDA2."
+    loc: "Bobcat (DUT) \u2014 pinout & connections"
+    quote: Decoupling capacitors on VDDD, VDDIO, VDDA1, VDDA2.
   fix_hint: "Place decoupling caps across the VDDIO pins (W2: 5\xD70.1\xB5F + 1\xD7\
     1\xB5F)."
   enabled: true
@@ -486,9 +484,8 @@ rules:
     role_spec: {}
   source:
   - doc: design_requirements.md
-    loc: Parts to implement / Bobcat
-    quote: "Decoupling caps on VDDD, VDDIO, VDDA1, VDDA2. Series 0\u03A9 on VDDA1,\
-      \ VDDA2."
+    loc: "Bobcat (DUT) \u2014 pinout & connections"
+    quote: Decoupling capacitors on VDDD, VDDIO, VDDA1, VDDA2.
   fix_hint: "Place a decoupling cap on the chip side of the VDDA1 series 0\u03A9 (pin\
     \ 1)."
   enabled: true
@@ -512,9 +509,8 @@ rules:
     role_spec: {}
   source:
   - doc: design_requirements.md
-    loc: Parts to implement / Bobcat
-    quote: "Decoupling caps on VDDD, VDDIO, VDDA1, VDDA2. Series 0\u03A9 on VDDA1,\
-      \ VDDA2."
+    loc: "Bobcat (DUT) \u2014 pinout & connections"
+    quote: Decoupling capacitors on VDDD, VDDIO, VDDA1, VDDA2.
   fix_hint: "Place a decoupling cap on the chip side of the VDDA2 series 0\u03A9 (pins\
     \ 26/27)."
   enabled: true
@@ -539,8 +535,8 @@ rules:
     role_spec: {}
   source:
   - doc: design_requirements.md
-    loc: Parts to implement / EEPROM
-    quote: "8-Kbit, I\xB2C, 3.3V supply"
+    loc: EEPROM
+    quote: "3.3 V supply, I\xB2C, 8 Kbit."
   fix_hint: "Place a 0.1\xB5F cap on the EEPROM VCC pin (8)."
   enabled: true
   origin: generated
@@ -562,9 +558,9 @@ rules:
     sheet: bias
     role_spec: {}
   source:
-  - doc: design_requirements.md
-    loc: Parts to implement / Bias circuit
-    quote: "**MCP4728** quad 12-bit I\xB2C voltage DAC"
+  - doc: design_implementation.md
+    loc: Component selection (our choices)
+    quote: Bias DAC | MCP4728
   fix_hint: "Place a 0.1\xB5F cap on the MCP4728 VDD pin (1)."
   enabled: true
   origin: generated
@@ -587,9 +583,8 @@ rules:
     role_spec: {}
   source:
   - doc: design_requirements.md
-    loc: Parts to implement / Bobcat
-    quote: "Decoupling caps on VDDD, VDDIO, VDDA1, VDDA2. Series 0\u03A9 on VDDA1,\
-      \ VDDA2."
+    loc: "Bobcat (DUT) \u2014 pinout & connections"
+    quote: "Series 0 \u03A9 on VDDA1, VDDA2."
   fix_hint: Route +VDDA1 to Bobcat pin 1 through series resistor R20.
   enabled: true
   origin: generated
@@ -611,9 +606,8 @@ rules:
     role_spec: {}
   source:
   - doc: design_requirements.md
-    loc: Parts to implement / Bobcat
-    quote: "Decoupling caps on VDDD, VDDIO, VDDA1, VDDA2. Series 0\u03A9 on VDDA1,\
-      \ VDDA2."
+    loc: "Bobcat (DUT) \u2014 pinout & connections"
+    quote: "Series 0 \u03A9 on VDDA1, VDDA2."
   fix_hint: Route +VDDA2 to Bobcat pins 26/27 through series resistor R21.
   enabled: true
   origin: generated
@@ -635,8 +629,8 @@ rules:
     role_spec: {}
   source:
   - doc: design_requirements.md
-    loc: Parts to implement / TPS7A8401A
-    quote: "Output fans out to Bobcat VDDD, VDDA1, VDDA2 each through a 1\xD72 jumper."
+    loc: LDO
+    quote: "Outputs to Bobcat VDDD, VDDA1, VDDA2 through 1\xD72 jumpers."
   fix_hint: Route the LDO OUT bus to +VDDD through jumper J10.
   enabled: true
   origin: generated
@@ -658,8 +652,8 @@ rules:
     role_spec: {}
   source:
   - doc: design_requirements.md
-    loc: Parts to implement / TPS7A8401A
-    quote: "Output fans out to Bobcat VDDD, VDDA1, VDDA2 each through a 1\xD72 jumper."
+    loc: LDO
+    quote: "Outputs to Bobcat VDDD, VDDA1, VDDA2 through 1\xD72 jumpers."
   fix_hint: Route the LDO OUT bus to +VDDA1 through jumper J11.
   enabled: true
   origin: generated
@@ -681,8 +675,8 @@ rules:
     role_spec: {}
   source:
   - doc: design_requirements.md
-    loc: Parts to implement / TPS7A8401A
-    quote: "Output fans out to Bobcat VDDD, VDDA1, VDDA2 each through a 1\xD72 jumper."
+    loc: LDO
+    quote: "Outputs to Bobcat VDDD, VDDA1, VDDA2 through 1\xD72 jumpers."
   fix_hint: Route the LDO OUT bus to +VDDA2 through jumper J12.
   enabled: true
   origin: generated
@@ -703,9 +697,9 @@ rules:
     sheet: fmc
     role_spec: {}
   source:
-  - doc: design_requirements.md
-    loc: FMC LPC pinout / Power & management pins
-    quote: C39, D36, D38, D40 | **3P3V**
+  - doc: design_implementation.md
+    loc: "FMC LPC pinout \u2014 as wired / Power & management pins"
+    quote: C39, D36, D38, D40 | 3P3V | EEPROM, LDO Vin, Bias
   fix_hint: Wire FMC pin C39 to +3V3.
   enabled: true
   origin: generated
@@ -726,9 +720,9 @@ rules:
     sheet: fmc
     role_spec: {}
   source:
-  - doc: design_requirements.md
-    loc: FMC LPC pinout / Power & management pins
-    quote: C39, D36, D38, D40 | **3P3V**
+  - doc: design_implementation.md
+    loc: "FMC LPC pinout \u2014 as wired / Power & management pins"
+    quote: C39, D36, D38, D40 | 3P3V | EEPROM, LDO Vin, Bias
   fix_hint: Wire FMC pin D36 to +3V3.
   enabled: true
   origin: generated
@@ -749,9 +743,9 @@ rules:
     sheet: fmc
     role_spec: {}
   source:
-  - doc: design_requirements.md
-    loc: FMC LPC pinout / Power & management pins
-    quote: C39, D36, D38, D40 | **3P3V**
+  - doc: design_implementation.md
+    loc: "FMC LPC pinout \u2014 as wired / Power & management pins"
+    quote: C39, D36, D38, D40 | 3P3V | EEPROM, LDO Vin, Bias
   fix_hint: Wire FMC pin D38 to +3V3.
   enabled: true
   origin: generated
@@ -772,9 +766,9 @@ rules:
     sheet: fmc
     role_spec: {}
   source:
-  - doc: design_requirements.md
-    loc: FMC LPC pinout / Power & management pins
-    quote: C39, D36, D38, D40 | **3P3V**
+  - doc: design_implementation.md
+    loc: "FMC LPC pinout \u2014 as wired / Power & management pins"
+    quote: C39, D36, D38, D40 | 3P3V | EEPROM, LDO Vin, Bias
   fix_hint: Wire FMC pin D40 to +3V3.
   enabled: true
   origin: generated
@@ -795,9 +789,9 @@ rules:
     sheet: fmc
     role_spec: {}
   source:
-  - doc: design_requirements.md
-    loc: FMC LPC pinout / Power & management pins
-    quote: G39, H40 | **VADJ**
+  - doc: design_implementation.md
+    loc: "FMC LPC pinout \u2014 as wired / Power & management pins"
+    quote: "G39, H40 | VADJ (1.2\u20133.3 V) | load switch \u2192 VDDIO"
   fix_hint: Wire FMC pin G39 to VADJ.
   enabled: true
   origin: generated
@@ -818,9 +812,9 @@ rules:
     sheet: fmc
     role_spec: {}
   source:
-  - doc: design_requirements.md
-    loc: FMC LPC pinout / Power & management pins
-    quote: G39, H40 | **VADJ**
+  - doc: design_implementation.md
+    loc: "FMC LPC pinout \u2014 as wired / Power & management pins"
+    quote: "G39, H40 | VADJ (1.2\u20133.3 V) | load switch \u2192 VDDIO"
   fix_hint: Wire FMC pin H40 to VADJ.
   enabled: true
   origin: generated
@@ -841,9 +835,9 @@ rules:
     sheet: fmc
     role_spec: {}
   source:
-  - doc: design_requirements.md
-    loc: FMC LPC pinout / Control & sideband
-    quote: C30 | **SCL**
+  - doc: design_implementation.md
+    loc: "FMC LPC pinout \u2014 as wired / Control / sideband"
+    quote: "C30 | SCL | I\xB2C \u2192 EEPROM + Bias"
   fix_hint: "Wire FMC pin C30 to the I\xB2C SCL net."
   enabled: true
   origin: generated
@@ -864,9 +858,9 @@ rules:
     sheet: fmc
     role_spec: {}
   source:
-  - doc: design_requirements.md
-    loc: FMC LPC pinout / Control & sideband
-    quote: C31 | **SDA**
+  - doc: design_implementation.md
+    loc: "FMC LPC pinout \u2014 as wired / Control / sideband"
+    quote: "C31 | SDA | I\xB2C \u2192 EEPROM + Bias"
   fix_hint: "Wire FMC pin C31 to the I\xB2C SDA net."
   enabled: true
   origin: generated
@@ -887,9 +881,9 @@ rules:
     sheet: fmc
     role_spec: {}
   source:
-  - doc: design_requirements.md
-    loc: FMC LPC pinout / Power & management pins
-    quote: Tie to GND on mezzanine
+  - doc: design_implementation.md
+    loc: "FMC LPC pinout \u2014 as wired / Power & management pins"
+    quote: H2 | PRSNT_M2C_L | tie GND on mezzanine
   fix_hint: Tie FMC pin H2 to GND for mezzanine presence detect.
   enabled: true
   origin: generated
@@ -910,9 +904,9 @@ rules:
     sheet: fmc
     role_spec: {}
   source:
-  - doc: design_requirements.md
-    loc: FMC LPC pinout / Power & management pins
-    quote: C34, D35 | GA0, GA1
+  - doc: design_implementation.md
+    loc: "FMC LPC pinout \u2014 as wired / Power & management pins"
+    quote: C34, D35 | GA0, GA1 | tie per carrier slot (typically GND)
   fix_hint: "Strap FMC pin C34 (GA0) per carrier slot \u2014 GND by default."
   enabled: true
   origin: generated
@@ -933,9 +927,9 @@ rules:
     sheet: fmc
     role_spec: {}
   source:
-  - doc: design_requirements.md
-    loc: FMC LPC pinout / Power & management pins
-    quote: C34, D35 | GA0, GA1
+  - doc: design_implementation.md
+    loc: "FMC LPC pinout \u2014 as wired / Power & management pins"
+    quote: C34, D35 | GA0, GA1 | tie per carrier slot (typically GND)
   fix_hint: "Strap FMC pin D35 (GA1) per carrier slot \u2014 GND by default."
   enabled: true
   origin: generated
@@ -956,10 +950,9 @@ rules:
     sheet: fmc
     role_spec: {}
   source:
-  - doc: design_requirements.md
-    loc: FMC LPC pinout / Power & management pins
-    quote: "Power-good back to carrier \u2014 drive from LDO PG / tie HIGH via pull-up\
-      \ if unused"
+  - doc: design_implementation.md
+    loc: "FMC LPC pinout \u2014 as wired / Power & management pins"
+    quote: D1 | PG_C2M | LDO PG output
   - doc: Parts Library/ASP-134606-01/VITA57.1_FMC_HPC_LPC_SIGNALS_AND_PINOUT.xlsx
     loc: LPC sheet
     quote: PG_C2M is on D1 (row D); C1 is GND per VITA 57.1 LPC
@@ -985,8 +978,8 @@ rules:
     role_spec: {}
   source:
   - doc: design_requirements.md
-    loc: Parts to implement
-    quote: "1\xD74 100-mil header** \u2014 GPIO0\u20133 breakout."
+    loc: "Bobcat (DUT) \u2014 pinout & connections"
+    quote: "GPIO0\u20133 to a 1\xD74, 100 mil header."
   fix_hint: "Wire 1\xD74 header J57 pin 1 to GPIO0."
   enabled: true
   origin: generated
@@ -1008,8 +1001,8 @@ rules:
     role_spec: {}
   source:
   - doc: design_requirements.md
-    loc: Parts to implement
-    quote: "1\xD74 100-mil header** \u2014 GPIO0\u20133 breakout."
+    loc: "Bobcat (DUT) \u2014 pinout & connections"
+    quote: "GPIO0\u20133 to a 1\xD74, 100 mil header."
   fix_hint: "Wire 1\xD74 header J57 pin 2 to GPIO1."
   enabled: true
   origin: generated
@@ -1031,8 +1024,8 @@ rules:
     role_spec: {}
   source:
   - doc: design_requirements.md
-    loc: Parts to implement
-    quote: "1\xD74 100-mil header** \u2014 GPIO0\u20133 breakout."
+    loc: "Bobcat (DUT) \u2014 pinout & connections"
+    quote: "GPIO0\u20133 to a 1\xD74, 100 mil header."
   fix_hint: "Wire 1\xD74 header J57 pin 3 to GPIO2."
   enabled: true
   origin: generated
@@ -1054,8 +1047,8 @@ rules:
     role_spec: {}
   source:
   - doc: design_requirements.md
-    loc: Parts to implement
-    quote: "1\xD74 100-mil header** \u2014 GPIO0\u20133 breakout."
+    loc: "Bobcat (DUT) \u2014 pinout & connections"
+    quote: "GPIO0\u20133 to a 1\xD74, 100 mil header."
   fix_hint: "Wire 1\xD74 header J57 pin 4 to GPIO3."
   enabled: true
   origin: generated
@@ -1077,8 +1070,8 @@ rules:
     role_spec: {}
   source:
   - doc: design_requirements.md
-    loc: Topology / block diagram
-    quote: "CLK_OUT0\u20133 route directly to SMAs"
+    loc: "Bobcat (DUT) \u2014 pinout & connections"
+    quote: "CLK_OUT0\u20133 to SMA connectors."
   fix_hint: Wire CLK_OUT0 to SMA J50 pin 1.
   enabled: true
   origin: generated
@@ -1100,8 +1093,8 @@ rules:
     role_spec: {}
   source:
   - doc: design_requirements.md
-    loc: Topology / block diagram
-    quote: "CLK_OUT0\u20133 route directly to SMAs"
+    loc: "Bobcat (DUT) \u2014 pinout & connections"
+    quote: "CLK_OUT0\u20133 to SMA connectors."
   fix_hint: Wire CLK_OUT1 to SMA J51 pin 1.
   enabled: true
   origin: generated
@@ -1123,8 +1116,8 @@ rules:
     role_spec: {}
   source:
   - doc: design_requirements.md
-    loc: Topology / block diagram
-    quote: "CLK_OUT0\u20133 route directly to SMAs"
+    loc: "Bobcat (DUT) \u2014 pinout & connections"
+    quote: "CLK_OUT0\u20133 to SMA connectors."
   fix_hint: Wire CLK_OUT2 to SMA J52 pin 1.
   enabled: true
   origin: generated
@@ -1146,8 +1139,8 @@ rules:
     role_spec: {}
   source:
   - doc: design_requirements.md
-    loc: Topology / block diagram
-    quote: "CLK_OUT0\u20133 route directly to SMAs"
+    loc: "Bobcat (DUT) \u2014 pinout & connections"
+    quote: "CLK_OUT0\u20133 to SMA connectors."
   fix_hint: Wire CLK_OUT3 to SMA J53 pin 1.
   enabled: true
   origin: generated
@@ -1169,8 +1162,8 @@ rules:
     role_spec: {}
   source:
   - doc: design_requirements.md
-    loc: Specs
-    quote: 3P3V (to EEPROM, LDO, Bias)
+    loc: FMC interface
+    quote: "3P3V \u2192 EEPROM, LDO, Bias."
   fix_hint: Connect U10 pin 15 to +3V3.
   enabled: true
   origin: generated
@@ -1192,8 +1185,8 @@ rules:
     role_spec: {}
   source:
   - doc: design_requirements.md
-    loc: Specs
-    quote: 3P3V (to EEPROM, LDO, Bias)
+    loc: FMC interface
+    quote: "3P3V \u2192 EEPROM, LDO, Bias."
   fix_hint: Connect U10 pin 16 to +3V3.
   enabled: true
   origin: generated
@@ -1215,8 +1208,8 @@ rules:
     role_spec: {}
   source:
   - doc: design_requirements.md
-    loc: Specs
-    quote: 3P3V (to EEPROM, LDO, Bias)
+    loc: FMC interface
+    quote: "3P3V \u2192 EEPROM, LDO, Bias."
   fix_hint: Connect U10 pin 17 to +3V3.
   enabled: true
   origin: generated
@@ -1238,8 +1231,8 @@ rules:
     role_spec: {}
   source:
   - doc: design_requirements.md
-    loc: Specs
-    quote: 3P3V (to EEPROM, LDO, Bias)
+    loc: FMC interface
+    quote: "3P3V \u2192 EEPROM, LDO, Bias."
   fix_hint: Connect U10 pin 12 to +3V3.
   enabled: true
   origin: generated
@@ -1261,8 +1254,8 @@ rules:
     role_spec: {}
   source:
   - doc: design_requirements.md
-    loc: Specs
-    quote: 3P3V (to EEPROM, LDO, Bias)
+    loc: FMC interface
+    quote: "3P3V \u2192 EEPROM, LDO, Bias."
   fix_hint: Connect U30 pin 8 to +3V3.
   enabled: true
   origin: generated
@@ -1284,8 +1277,8 @@ rules:
     role_spec: {}
   source:
   - doc: design_requirements.md
-    loc: Specs
-    quote: 3P3V (to EEPROM, LDO, Bias)
+    loc: FMC interface
+    quote: "3P3V \u2192 EEPROM, LDO, Bias."
   fix_hint: Connect U40 pin 1 to +3V3.
   enabled: true
   origin: generated
@@ -1307,8 +1300,8 @@ rules:
     role_spec: {}
   source:
   - doc: design_requirements.md
-    loc: Specs
-    quote: 3P3V (to EEPROM, LDO, Bias)
+    loc: FMC interface
+    quote: "3P3V \u2192 EEPROM, LDO, Bias."
   fix_hint: Connect U41 pin 8 to +3V3.
   enabled: true
   origin: generated
@@ -1330,8 +1323,8 @@ rules:
     role_spec: {}
   source:
   - doc: design_requirements.md
-    loc: Application
-    quote: "40-pin QFN (5\xD75 mm, 0.4 mm pitch, exposed GND pad 41)"
+    loc: "Bobcat (DUT) \u2014 pinout & connections"
+    quote: exposed pad (pin 41) = GND
   fix_hint: Tie the Bobcat exposed pad (pin 41) to GND.
   enabled: true
   origin: generated
@@ -1351,9 +1344,9 @@ rules:
     sheet: fmc
     role_spec: {}
   source:
-  - doc: design_requirements.md
-    loc: FMC LPC pinout / Power & management pins
-    quote: D32 | 3P3VAUX | Leave NC (not required)
+  - doc: design_implementation.md
+    loc: "FMC LPC pinout \u2014 as wired / Power & management pins"
+    quote: D32 | 3P3VAUX | NC
   fix_hint: Leave FMC pin D32 unconnected.
   enabled: true
   origin: generated
@@ -1372,9 +1365,9 @@ rules:
     sheet: fmc
     role_spec: {}
   source:
-  - doc: design_requirements.md
-    loc: FMC LPC pinout / Power & management pins
-    quote: C35, C37 | 12P0V | Leave NC (unused)
+  - doc: design_implementation.md
+    loc: "FMC LPC pinout \u2014 as wired / Power & management pins"
+    quote: C35, C37 | 12P0V | NC
   fix_hint: Leave FMC pin C35 unconnected.
   enabled: true
   origin: generated
@@ -1393,9 +1386,9 @@ rules:
     sheet: fmc
     role_spec: {}
   source:
-  - doc: design_requirements.md
-    loc: FMC LPC pinout / Power & management pins
-    quote: C35, C37 | 12P0V | Leave NC (unused)
+  - doc: design_implementation.md
+    loc: "FMC LPC pinout \u2014 as wired / Power & management pins"
+    quote: C35, C37 | 12P0V | NC
   fix_hint: Leave FMC pin C37 unconnected.
   enabled: true
   origin: generated
@@ -1414,9 +1407,9 @@ rules:
     sheet: fmc
     role_spec: {}
   source:
-  - doc: design_requirements.md
-    loc: FMC LPC pinout / Power & management pins
-    quote: H1 | VREF_A_M2C | Leave NC (LPC, no analog reference used)
+  - doc: design_implementation.md
+    loc: "FMC LPC pinout \u2014 as wired / Power & management pins"
+    quote: H1 | VREF_A_M2C | NC
   fix_hint: Leave FMC pin H1 unconnected.
   enabled: true
   origin: generated
@@ -1435,9 +1428,9 @@ rules:
     sheet: fmc
     role_spec: {}
   source:
-  - doc: design_requirements.md
-    loc: FMC LPC pinout / Control & sideband
-    quote: "TCK | JTAG \u2014 leave NC unless chained"
+  - doc: design_implementation.md
+    loc: "FMC LPC pinout \u2014 as wired / Control / sideband"
+    quote: "JTAG \u2014 NC unless chained"
   fix_hint: Leave FMC pin D29 (TCK) unconnected unless JTAG is chained.
   enabled: true
   origin: generated
@@ -1456,10 +1449,9 @@ rules:
     sheet: eeprom
     role_spec: {}
   source:
-  - doc: design_requirements.md
-    loc: Assembly / provisioning notes
-    quote: "R60 and R61 (2.2 k\u03A9 to +3V3 on EEPROM sheet) provide local SCL/SDA\
-      \ pull-ups"
+  - doc: design_implementation.md
+    loc: "Assembly / provisioning notes / I\xB2C pull-ups"
+    quote: "R60/R61 (2.2 k\u03A9 to +3V3) are local SCL/SDA pull-ups"
   fix_hint: "Set R60 (SCL pull-up to +3V3) to 2.2k\u03A9."
   enabled: true
   origin: generated
@@ -1478,10 +1470,9 @@ rules:
     sheet: eeprom
     role_spec: {}
   source:
-  - doc: design_requirements.md
-    loc: Assembly / provisioning notes
-    quote: "R60 and R61 (2.2 k\u03A9 to +3V3 on EEPROM sheet) provide local SCL/SDA\
-      \ pull-ups"
+  - doc: design_implementation.md
+    loc: "Assembly / provisioning notes / I\xB2C pull-ups"
+    quote: "R60/R61 (2.2 k\u03A9 to +3V3) are local SCL/SDA pull-ups"
   fix_hint: "Set R61 (SDA pull-up to +3V3) to 2.2k\u03A9."
   enabled: true
   origin: generated
@@ -1500,8 +1491,8 @@ rules:
     role_spec: {}
   source:
   - doc: design_requirements.md
-    loc: Parts to implement / TPS7A8401A
-    quote: "**TPS7A8401A** (TI, VQFN-20, 3.5\xD73.5 mm)"
+    loc: LDO
+    quote: TPS7A8401A (named in the deck).
   fix_hint: Add the TPS7A8401A LDO to the power sheet.
   enabled: true
   origin: generated
@@ -1520,9 +1511,9 @@ rules:
     mpn: MCP4728
     role_spec: {}
   source:
-  - doc: design_requirements.md
-    loc: Parts to implement / Bias circuit
-    quote: "**MCP4728** quad 12-bit I\xB2C voltage DAC"
+  - doc: design_implementation.md
+    loc: Component selection (our choices)
+    quote: Bias DAC | MCP4728
   fix_hint: Add the MCP4728 quad DAC to the bias sheet.
   enabled: true
   origin: generated
@@ -1541,9 +1532,9 @@ rules:
     mpn: OPA2388
     role_spec: {}
   source:
-  - doc: design_requirements.md
-    loc: Parts to implement / Bias circuit
-    quote: OPA2388 preferred
+  - doc: design_implementation.md
+    loc: Component selection (our choices)
+    quote: Bias op-amp | OPA2388
   fix_hint: Add the OPA2388 RRIO op-amp to the bias sheet.
   enabled: true
   origin: generated
@@ -1562,9 +1553,9 @@ rules:
     mpn: PMZ1200UPEYL
     role_spec: {}
   source:
-  - doc: design_requirements.md
-    loc: Parts to implement / Bias circuit
-    quote: small-signal PMOS (PMZ1200UPEYL)
+  - doc: design_implementation.md
+    loc: Component selection (our choices)
+    quote: Bias pass FET | PMZ1200UPEYL
   fix_hint: Add the PMZ1200UPEYL PMOS pass element(s) to the bias sheet.
   enabled: true
   origin: generated
@@ -1584,8 +1575,8 @@ rules:
     role_spec: {}
   source:
   - doc: design_requirements.md
-    loc: Parts to implement / Bias circuit
-    quote: Bias off by default
+    loc: Bias
+    quote: Off by default.
   fix_hint: Ensure the MCP4728 POR/EEPROM default code keeps each VOUT at the rail
     so the PMOS pass FET is OFF and no bias reaches Bobcat at POR; firmware must program
     a known code before enabling current.
@@ -1611,9 +1602,9 @@ rules:
     sheet: bias
     role_spec: {}
   source:
-  - doc: design_requirements.md
-    loc: Parts to implement / Bias circuit
-    quote: MCP4728 EEPROM programmed to **0xFFF** at bring-up
+  - doc: design_implementation.md
+    loc: Assembly / provisioning notes / MCP4728 EEPROM
+    quote: must be EEPROM-provisioned to VREF=VDD + code 0xFFF
   fix_hint: "Program the MCP4728 EEPROM to 0xFFF so V_OUT=3.3V \u2192 PMOS off \u2192\
     \ 0\xB5A at POR."
   enabled: true
@@ -1631,9 +1622,8 @@ rules:
     role_spec: {}
   source:
   - doc: design_requirements.md
-    loc: Parts to implement / Bias circuit
-    quote: "PMOS drain delivers regulated current INTO the BIASx pin via a 1\xD72\
-      \ jumper."
+    loc: Bias
+    quote: "PMOS drain \u2192 BIASx via a 1\xD72 jumper"
   fix_hint: Keep the high-side PMOS topology so current is sourced into BIAS0/BIAS1
     (not sunk).
   enabled: true
@@ -1653,10 +1643,10 @@ rules:
     sheet: bobcat
     role_spec: {}
   source:
-  - doc: design_requirements.md
-    loc: FMC LPC pinout / LA bank
-    quote: "Bobcat \u2192 FMC LA bank (via 0\u03A9): SAMPLE_OUTV, SAMPLE_OUT0\u2013\
-      7, CS_L, SCLK, MOSI, MISO, SPI_DMODE, RESET_N"
+  - doc: design_implementation.md
+    loc: "FMC LPC pinout \u2014 as wired / LA bank"
+    quote: "Bobcat \u2192 FMC LA (via 0\u03A9): SAMPLE_OUTV, SAMPLE_OUT0\u20137, CS_L,\
+      \ SCLK, MOSI, MISO, SPI_DMODE, RESET_N."
   fix_hint: "Route U20.2 (SAMPLE_OUTV) to the FMC LA pin through R100 (series 0\u03A9\
     )."
   enabled: true
@@ -1678,10 +1668,10 @@ rules:
     sheet: bobcat
     role_spec: {}
   source:
-  - doc: design_requirements.md
-    loc: FMC LPC pinout / LA bank
-    quote: "Bobcat \u2192 FMC LA bank (via 0\u03A9): SAMPLE_OUTV, SAMPLE_OUT0\u2013\
-      7, CS_L, SCLK, MOSI, MISO, SPI_DMODE, RESET_N"
+  - doc: design_implementation.md
+    loc: "FMC LPC pinout \u2014 as wired / LA bank"
+    quote: "Bobcat \u2192 FMC LA (via 0\u03A9): SAMPLE_OUTV, SAMPLE_OUT0\u20137, CS_L,\
+      \ SCLK, MOSI, MISO, SPI_DMODE, RESET_N."
   fix_hint: "Route U20.3 (SAMPLE_OUT0) to the FMC LA pin through R101 (series 0\u03A9\
     )."
   enabled: true
@@ -1703,10 +1693,10 @@ rules:
     sheet: bobcat
     role_spec: {}
   source:
-  - doc: design_requirements.md
-    loc: FMC LPC pinout / LA bank
-    quote: "Bobcat \u2192 FMC LA bank (via 0\u03A9): SAMPLE_OUTV, SAMPLE_OUT0\u2013\
-      7, CS_L, SCLK, MOSI, MISO, SPI_DMODE, RESET_N"
+  - doc: design_implementation.md
+    loc: "FMC LPC pinout \u2014 as wired / LA bank"
+    quote: "Bobcat \u2192 FMC LA (via 0\u03A9): SAMPLE_OUTV, SAMPLE_OUT0\u20137, CS_L,\
+      \ SCLK, MOSI, MISO, SPI_DMODE, RESET_N."
   fix_hint: "Route U20.4 (SAMPLE_OUT1) to the FMC LA pin through R102 (series 0\u03A9\
     )."
   enabled: true
@@ -1728,10 +1718,10 @@ rules:
     sheet: bobcat
     role_spec: {}
   source:
-  - doc: design_requirements.md
-    loc: FMC LPC pinout / LA bank
-    quote: "Bobcat \u2192 FMC LA bank (via 0\u03A9): SAMPLE_OUTV, SAMPLE_OUT0\u2013\
-      7, CS_L, SCLK, MOSI, MISO, SPI_DMODE, RESET_N"
+  - doc: design_implementation.md
+    loc: "FMC LPC pinout \u2014 as wired / LA bank"
+    quote: "Bobcat \u2192 FMC LA (via 0\u03A9): SAMPLE_OUTV, SAMPLE_OUT0\u20137, CS_L,\
+      \ SCLK, MOSI, MISO, SPI_DMODE, RESET_N."
   fix_hint: "Route U20.5 (SAMPLE_OUT2) to the FMC LA pin through R103 (series 0\u03A9\
     )."
   enabled: true
@@ -1753,10 +1743,10 @@ rules:
     sheet: bobcat
     role_spec: {}
   source:
-  - doc: design_requirements.md
-    loc: FMC LPC pinout / LA bank
-    quote: "Bobcat \u2192 FMC LA bank (via 0\u03A9): SAMPLE_OUTV, SAMPLE_OUT0\u2013\
-      7, CS_L, SCLK, MOSI, MISO, SPI_DMODE, RESET_N"
+  - doc: design_implementation.md
+    loc: "FMC LPC pinout \u2014 as wired / LA bank"
+    quote: "Bobcat \u2192 FMC LA (via 0\u03A9): SAMPLE_OUTV, SAMPLE_OUT0\u20137, CS_L,\
+      \ SCLK, MOSI, MISO, SPI_DMODE, RESET_N."
   fix_hint: "Route U20.6 (SAMPLE_OUT3) to the FMC LA pin through R104 (series 0\u03A9\
     )."
   enabled: true
@@ -1778,10 +1768,10 @@ rules:
     sheet: bobcat
     role_spec: {}
   source:
-  - doc: design_requirements.md
-    loc: FMC LPC pinout / LA bank
-    quote: "Bobcat \u2192 FMC LA bank (via 0\u03A9): SAMPLE_OUTV, SAMPLE_OUT0\u2013\
-      7, CS_L, SCLK, MOSI, MISO, SPI_DMODE, RESET_N"
+  - doc: design_implementation.md
+    loc: "FMC LPC pinout \u2014 as wired / LA bank"
+    quote: "Bobcat \u2192 FMC LA (via 0\u03A9): SAMPLE_OUTV, SAMPLE_OUT0\u20137, CS_L,\
+      \ SCLK, MOSI, MISO, SPI_DMODE, RESET_N."
   fix_hint: "Route U20.8 (SAMPLE_OUT4) to the FMC LA pin through R105 (series 0\u03A9\
     )."
   enabled: true
@@ -1803,10 +1793,10 @@ rules:
     sheet: bobcat
     role_spec: {}
   source:
-  - doc: design_requirements.md
-    loc: FMC LPC pinout / LA bank
-    quote: "Bobcat \u2192 FMC LA bank (via 0\u03A9): SAMPLE_OUTV, SAMPLE_OUT0\u2013\
-      7, CS_L, SCLK, MOSI, MISO, SPI_DMODE, RESET_N"
+  - doc: design_implementation.md
+    loc: "FMC LPC pinout \u2014 as wired / LA bank"
+    quote: "Bobcat \u2192 FMC LA (via 0\u03A9): SAMPLE_OUTV, SAMPLE_OUT0\u20137, CS_L,\
+      \ SCLK, MOSI, MISO, SPI_DMODE, RESET_N."
   fix_hint: "Route U20.9 (SAMPLE_OUT5) to the FMC LA pin through R106 (series 0\u03A9\
     )."
   enabled: true
@@ -1828,10 +1818,10 @@ rules:
     sheet: bobcat
     role_spec: {}
   source:
-  - doc: design_requirements.md
-    loc: FMC LPC pinout / LA bank
-    quote: "Bobcat \u2192 FMC LA bank (via 0\u03A9): SAMPLE_OUTV, SAMPLE_OUT0\u2013\
-      7, CS_L, SCLK, MOSI, MISO, SPI_DMODE, RESET_N"
+  - doc: design_implementation.md
+    loc: "FMC LPC pinout \u2014 as wired / LA bank"
+    quote: "Bobcat \u2192 FMC LA (via 0\u03A9): SAMPLE_OUTV, SAMPLE_OUT0\u20137, CS_L,\
+      \ SCLK, MOSI, MISO, SPI_DMODE, RESET_N."
   fix_hint: "Route U20.10 (SAMPLE_OUT6) to the FMC LA pin through R107 (series 0\u03A9\
     )."
   enabled: true
@@ -1853,10 +1843,10 @@ rules:
     sheet: bobcat
     role_spec: {}
   source:
-  - doc: design_requirements.md
-    loc: FMC LPC pinout / LA bank
-    quote: "Bobcat \u2192 FMC LA bank (via 0\u03A9): SAMPLE_OUTV, SAMPLE_OUT0\u2013\
-      7, CS_L, SCLK, MOSI, MISO, SPI_DMODE, RESET_N"
+  - doc: design_implementation.md
+    loc: "FMC LPC pinout \u2014 as wired / LA bank"
+    quote: "Bobcat \u2192 FMC LA (via 0\u03A9): SAMPLE_OUTV, SAMPLE_OUT0\u20137, CS_L,\
+      \ SCLK, MOSI, MISO, SPI_DMODE, RESET_N."
   fix_hint: "Route U20.11 (SAMPLE_OUT7) to the FMC LA pin through R108 (series 0\u03A9\
     )."
   enabled: true
@@ -1878,10 +1868,10 @@ rules:
     sheet: bobcat
     role_spec: {}
   source:
-  - doc: design_requirements.md
-    loc: FMC LPC pinout / LA bank
-    quote: "Bobcat \u2192 FMC LA bank (via 0\u03A9): SAMPLE_OUTV, SAMPLE_OUT0\u2013\
-      7, CS_L, SCLK, MOSI, MISO, SPI_DMODE, RESET_N"
+  - doc: design_implementation.md
+    loc: "FMC LPC pinout \u2014 as wired / LA bank"
+    quote: "Bobcat \u2192 FMC LA (via 0\u03A9): SAMPLE_OUTV, SAMPLE_OUT0\u20137, CS_L,\
+      \ SCLK, MOSI, MISO, SPI_DMODE, RESET_N."
   fix_hint: "Route U20.15 (MISO) to the FMC LA pin through R112 (series 0\u03A9)."
   enabled: true
   origin: generated
@@ -1900,9 +1890,8 @@ rules:
     role_spec: {}
   source:
   - doc: design_requirements.md
-    loc: Parts to implement
-    quote: 'Parts to implement: Bobcat, TPS7A8401A, Load switch, EEPROM, Bias circuit,
-      SMAs, header.'
+    loc: Deliverables (review scope)
+    quote: Preliminary BOM
   fix_hint: Assign an MPN / library part to every component (connectors, headers,
     and mechanical parts included).
   enabled: true
@@ -1921,9 +1910,9 @@ rules:
     role_spec: {}
   source:
   - doc: design_requirements.md
-    loc: Parts to implement
-    quote: "Decoupling caps \u2026 10k\u03A9 pull-downs \u2026 5.11 k\u03A9 \u2026\
-      \ series 0\u03A9 \u2026"
+    loc: "Bobcat (DUT) \u2014 pinout & connections"
+    quote: "Decoupling capacitors \u2026 Series 0 \u03A9 \u2026 10 k\u03A9 pull-downs\
+      \ \u2026 10 k\u03A9 pull-ups"
   fix_hint: "Give every passive a value (a 0\u03A9 jumper is '0', not blank)."
   enabled: true
   origin: generated
@@ -1941,9 +1930,8 @@ rules:
     role_spec: {}
   source:
   - doc: design_requirements.md
-    loc: Topology / block diagram
-    quote: "Bobcat SPI, RESET_N, and SAMPLE_OUT signals route to the FMC through series\
-      \ 0\u03A9 resistors"
+    loc: FMC interface
+    quote: "LA / HA signals through series 0 \u03A9 resistors"
   fix_hint: Terminate every signal net at >=2 pins (route the output to its destination).
   enabled: true
   origin: generated
@@ -1962,9 +1950,8 @@ rules:
     role_spec: {}
   source:
   - doc: design_requirements.md
-    loc: Interfaces
-    quote: "SPI (CS_L, SCLK, MOSI, MISO, SPI_DMODE, RESET_N), I\xB2C (EEPROM + Bias),\
-      \ GPIO0\u20133"
+    loc: FMC interface
+    quote: "I\xB2C (SCL/SDA) \u2192 EEPROM and Bias."
   fix_hint: Ensure each signal net has a single push-pull driver (or open-drain +
     pull-up for shared buses).
   enabled: true
@@ -1983,9 +1970,9 @@ rules:
     role_spec: {}
   source:
   - doc: design_requirements.md
-    loc: Specs
-    quote: "Power in (from FMC): 3P3V; VADJ 1.2\u20133.3V; Bobcat rails VDDD/VDDA1/VDDA2\
-      \ = 0.6\u20131.0V; VDDIO = VADJ"
+    loc: Power
+    quote: "From the FMC: 3.3 V (3P3V); VADJ, 1.2\u20133.3 V \u2026 Bobcat rails:\
+      \ VDDD, VDDA1, VDDA2 = 0.6\u20131.0 V"
   fix_hint: "Remove any direct rail-to-GND connection (decoupling caps are fine; a\
     \ 0\u03A9/wire short is not)."
   enabled: true
@@ -2004,10 +1991,9 @@ rules:
     pins: []
     role_spec: {}
   source:
-  - doc: design_requirements.md
-    loc: Parts to implement
-    quote: "5.11 k\u03A9 0.1% thin-film sense resistor \u2026 10k\u03A9 pull-downs\
-      \ \u2026 2.2 k\u03A9 I\xB2C pull-ups"
+  - doc: design_implementation.md
+    loc: Component selection (our choices)
+    quote: the rest are our picks
   fix_hint: Reconcile each component's displayed value with the value implied by its
     MPN / library part (a value-vs-MPN mismatch means the wrong part is selected).
   enabled: true
@@ -2028,8 +2014,8 @@ rules:
     role_spec: {}
   source:
   - doc: design_requirements.md
-    loc: Specs
-    quote: "Power in (from FMC): 3P3V \u2026 VADJ 1.2\u20133.3V"
+    loc: Power
+    quote: "From the FMC: 3.3 V (3P3V); VADJ, 1.2\u20133.3 V"
   fix_hint: "Confirm rail-cap voltage ratings give \u22652\xD7 margin over the rail\
     \ (check at BOM if not in the netlist)."
   enabled: true
@@ -2049,9 +2035,8 @@ rules:
     role_spec: {}
   source:
   - doc: design_requirements.md
-    loc: Signal outputs
-    quote: "Signal outputs: CLK_OUT0\u20133, SAMPLE_OUTV, SAMPLE_OUT0\u20137, OSC_EN,\
-      \ WEIGHT_EN, SAMPLE_TRIG"
+    loc: "Bobcat (DUT) \u2014 pinout & connections"
+    quote: "CLK_OUT0\u20133 to SMA connectors."
   fix_hint: Name clock nets CLK_OUT* and route the clock pins to them.
   enabled: true
   origin: generated
@@ -2074,9 +2059,8 @@ rules:
     block: opa_bias
   source:
   - doc: design_requirements.md
-    loc: Specs / Bias outputs
-    quote: "BIAS0, BIAS1 \u2014 independent programmable current sources, 0\u2013\
-      640 \xB5A, ~1 \xB5A step"
+    loc: Bias
+    quote: "Programmable range 0\u2013640 \xB5A, step size ~1 \xB5A"
   - doc: '[External] Bobcat Board Design.pdf'
     loc: Bias
     quote: Programmable range of 0-640uA with a step size of 1uA
@@ -2108,8 +2092,8 @@ rules:
     block: opa_bias
   source:
   - doc: design_requirements.md
-    loc: Specs / Bias outputs
-    quote: "nominal 320 \xB5A @ 0.5 V"
+    loc: Bias
+    quote: "nominally 320 \xB5A at 0.5 V"
   - doc: '[External] Bobcat Board Design.pdf'
     loc: Bias
     quote: nominally 320uA at 0.5V
@@ -2139,8 +2123,9 @@ rules:
     block: opa_bias
   source:
   - doc: design_requirements.md
-    loc: Specs / Bias outputs
-    quote: "0\u2013640 \xB5A, ~1 \xB5A step (nominal 320 \xB5A @ 0.5 V)"
+    loc: Bias
+    quote: "Programmable range 0\u2013640 \xB5A, step size ~1 \xB5A \u2026 nominally\
+      \ 320 \xB5A at 0.5 V"
   - doc: opa2388.pdf
     loc: Offset
     quote: "Ultra-low offset voltage: \xB10.25 \xB5V; zero drift \xB10.005 \xB5V/\xB0\
@@ -2173,8 +2158,9 @@ rules:
     block: opa_bias
   source:
   - doc: design_requirements.md
-    loc: Parts to implement / Bias circuit
-    quote: Op-amp output drives the gate of a small-signal PMOS (PMZ1200UPEYL).
+    loc: Bias
+    quote: "op-amp output drives a PMOS gate; PMOS source ties to the op-amp \u2212\
+      \ terminal"
   - doc: opa2388.pdf
     loc: Bandwidth
     quote: 'Gain bandwidth: 10 MHz'
@@ -2202,10 +2188,12 @@ rules:
     block: opa_bias
   source:
   - doc: design_requirements.md
-    loc: Bias circuit / off by default
-    quote: "Bias off by default \u2014 the MCP4728 powers up at its full-scale code,\
-      \ driving the PMOS gate high so the pass FET is OFF and ~0 current reaches Bobcat\
-      \ until firmware programs a current."
+    loc: Bias
+    quote: Off by default.
+  - doc: design_implementation.md
+    loc: Assembly / provisioning notes / MCP4728 EEPROM
+    quote: "the DAC code at the rail (0xFFF with VREF=VDD \u2192 V_OUT=3.3 V \u2192\
+      \ PMOS off)"
   fix_hint: "Ensure the MCP4728 POR/EEPROM default code keeps V_DAC at the rail (PMOS\
     \ off); firmware must program a known code before enabling current. (No isolation\
     \ FET \u2014 off-by-default is the DAC POR code, matching the deck.)"
@@ -2230,10 +2218,9 @@ rules:
     role_spec: {}
     block: opa_bias
   source:
-  - doc: design_requirements.md
-    loc: Parts to implement / Bias circuit
-    quote: "MCP4728 quad 12-bit I\xB2C voltage DAC with external V_REF tied to 3.3\
-      \ V (not internal 2.048 V ref)"
+  - doc: design_implementation.md
+    loc: "Bias circuit \u2014 as built"
+    quote: external VREF = 3.3 V for rail-to-rail
   - doc: 22187E.pdf
     loc: VREF
     quote: Internal or External Voltage Reference Selection; External VREF (VDD)
@@ -2262,9 +2249,8 @@ rules:
     block: ldo_rail
   source:
   - doc: design_requirements.md
-    loc: Parts to implement / TPS7A8401A
-    quote: "ANY-OUT pin-programmable output 0.5\u20132.075 V at 25 mV resolution (covers\
-      \ Bobcat 0.6\u20131.0 V rails)"
+    loc: LDO
+    quote: "0.6\u20131.0 V output, set via ANY-OUT inputs connected to the FPGA."
   - doc: tps7a84a.pdf
     loc: ANY-OUT
     quote: 'ANY-OUT operation: 0.5 V to 2.075 V, 25-mV resolution'
@@ -2293,8 +2279,8 @@ rules:
     block: ldo_rail
   source:
   - doc: design_requirements.md
-    loc: Parts to implement / TPS7A8401A
-    quote: "180 mV max dropout \u2026 3 A LDO"
+    loc: LDO
+    quote: 3.3 V input.
   - doc: tps7a84a.pdf
     loc: Dropout
     quote: 'Low dropout: 180 mV (maximum) at 3 A with BIAS'
@@ -2321,8 +2307,8 @@ rules:
     block: ldo_rail
   source:
   - doc: design_requirements.md
-    loc: Specs
-    quote: 'Power in (from FMC): 3P3V'
+    loc: Power
+    quote: 'From the FMC: 3.3 V (3P3V)'
   - doc: tps7a84a.pdf
     loc: Accuracy
     quote: 0.75% (maximum) accuracy over line, load, and temperature
@@ -2352,8 +2338,8 @@ rules:
     block: ldo_rail
   source:
   - doc: design_requirements.md
-    loc: Topology / block diagram
-    quote: "The LDO generates 0.6\u20131.0V for Bobcat VDDD/VDDA1/VDDA2"
+    loc: System block diagram (from the deck)
+    quote: The LDO generates Bobcat's low rails
   fix_hint: If a rail is off, check the setpoint, the source rail, or load-switch
     Rdson.
   enabled: true
@@ -2379,8 +2365,8 @@ rules:
     block: ldo_rail
   source:
   - doc: design_requirements.md
-    loc: Parts to implement / TPS7A8401A
-    quote: "Vin 1.1\u20136.5 V (with BIAS) \u2026 3P3V from FMC drives Vin and BIAS"
+    loc: LDO
+    quote: 3.3 V input
   - doc: tps7a84a.pdf
     loc: Vin
     quote: 'Input voltage range with BIAS: 1.1 V to 6.5 V'
@@ -2403,8 +2389,8 @@ rules:
     block: ldo_rail
   source:
   - doc: design_requirements.md
-    loc: Parts to implement / TPS7A8401A
-    quote: "EN driven by FPGA with 10k\u03A9 pull-down"
+    loc: LDO
+    quote: "EN input from the FPGA with a 10 k\u03A9 pull-down"
   fix_hint: "Add a 10 k\u03A9 pull-down from LDO_EN to GND."
   enabled: true
   origin: generated
@@ -2423,9 +2409,9 @@ rules:
     role_spec: {}
     block: ldo_rail
   source:
-  - doc: design_requirements.md
-    loc: Parts to implement / TPS7A8401A
-    quote: Open-drain PG output back to FPGA.
+  - doc: design_implementation.md
+    loc: FMC LPC pinout / Power & management pins
+    quote: D1 | PG_C2M | LDO PG output
   - doc: tps7a84a.pdf
     loc: PG
     quote: Power-good is an open-drain output
@@ -2449,10 +2435,10 @@ rules:
     role_spec: {}
     block: ldo_rail
   source:
-  - doc: design_requirements.md
-    loc: Notes / open questions
-    quote: "one TPS7A8401A feeding VDDD, VDDA1, VDDA2 through 3\xD71\xD72 jumpers\
-      \ (all three tap the same LDO output bus)"
+  - doc: design_implementation.md
+    loc: Design decisions / history
+    quote: "one TPS7A8401A feeds VDDD/VDDA1/VDDA2 through 3\xD71\xD72 jumpers, all\
+      \ tapping the same LDO output bus"
   fix_hint: "Keep one LDO \u2192 3 jumpers off the same bus; replicate the LDO block\
     \ to get independent rails."
   enabled: true
@@ -2475,8 +2461,8 @@ rules:
     block: loadsw
   source:
   - doc: design_requirements.md
-    loc: Parts to implement / Load switch
-    quote: "EN driven by FPGA with 10k\u03A9 pull-down"
+    loc: Load switch
+    quote: "Enable input from the FPGA with a 10 k\u03A9 pull-down"
   - doc: TPS22916CNYFPR.pdf
     loc: EN
     quote: Active-low/high enable; quick output discharge (QOD)
@@ -2500,8 +2486,8 @@ rules:
     block: loadsw
   source:
   - doc: design_requirements.md
-    loc: Specs
-    quote: "VADJ 1.2\u20133.3V (to Bobcat VDDIO via load switch)"
+    loc: Load switch
+    quote: "VADJ 1.2\u20133.3 V"
   - doc: TPS22916CNYFPR.pdf
     loc: Vin
     quote: "Input operating voltage range (VIN): 1 V\u20135.5 V"
@@ -2524,8 +2510,8 @@ rules:
     block: loadsw
   source:
   - doc: design_requirements.md
-    loc: Specs
-    quote: "VADJ 1.2\u20133.3V (to Bobcat VDDIO via load switch)"
+    loc: FMC interface
+    quote: "VADJ \u2192 Bobcat VDDIO through a load switch and a 1\xD72 jumper"
   fix_hint: Insert the load switch between VADJ and +VDDIO.
   enabled: true
   origin: generated
@@ -2547,8 +2533,8 @@ rules:
     block: vddio_pdn
   source:
   - doc: design_requirements.md
-    loc: Parts to implement / Bobcat
-    quote: Decoupling caps on VDDD, VDDIO, VDDA1, VDDA2.
+    loc: "Bobcat (DUT) \u2014 pinout & connections"
+    quote: Decoupling capacitors on VDDD, VDDIO, VDDA1, VDDA2.
   - doc: '[External] Bobcat Board Design.pdf'
     loc: Bobcat
     quote: Decoupling capacitors on VDDD, VDDIO, VDDA1, VDDA2
@@ -2577,8 +2563,8 @@ rules:
     block: vddd_pdn
   source:
   - doc: design_requirements.md
-    loc: Parts to implement / Bobcat
-    quote: Decoupling caps on VDDD, VDDIO, VDDA1, VDDA2.
+    loc: "Bobcat (DUT) \u2014 pinout & connections"
+    quote: Decoupling capacitors on VDDD, VDDIO, VDDA1, VDDA2.
   - doc: '[External] Bobcat Board Design.pdf'
     loc: Bobcat
     quote: Decoupling capacitors on VDDD, VDDIO, VDDA1, VDDA2
@@ -2607,8 +2593,8 @@ rules:
     block: vdda1_pdn
   source:
   - doc: design_requirements.md
-    loc: Parts to implement / Bobcat
-    quote: Decoupling caps on VDDD, VDDIO, VDDA1, VDDA2.
+    loc: "Bobcat (DUT) \u2014 pinout & connections"
+    quote: Decoupling capacitors on VDDD, VDDIO, VDDA1, VDDA2.
   - doc: '[External] Bobcat Board Design.pdf'
     loc: Bobcat
     quote: Decoupling capacitors on VDDD, VDDIO, VDDA1, VDDA2
@@ -2638,8 +2624,8 @@ rules:
     block: vdda2_pdn
   source:
   - doc: design_requirements.md
-    loc: Parts to implement / Bobcat
-    quote: Decoupling caps on VDDD, VDDIO, VDDA1, VDDA2.
+    loc: "Bobcat (DUT) \u2014 pinout & connections"
+    quote: Decoupling capacitors on VDDD, VDDIO, VDDA1, VDDA2.
   - doc: '[External] Bobcat Board Design.pdf'
     loc: Bobcat
     quote: Decoupling capacitors on VDDD, VDDIO, VDDA1, VDDA2
@@ -2667,8 +2653,8 @@ rules:
     block: vdda1_pdn
   source:
   - doc: design_requirements.md
-    loc: Parts to implement / Bobcat
-    quote: "Series 0\u03A9 on VDDA1, VDDA2."
+    loc: "Bobcat (DUT) \u2014 pinout & connections"
+    quote: "Series 0 \u03A9 on VDDA1, VDDA2."
   - doc: '[External] Bobcat Board Design.pdf'
     loc: Bobcat
     quote: "Series 0\u03A9 on VDDA1, VDDA2"
@@ -2692,8 +2678,8 @@ rules:
     block: vdda2_pdn
   source:
   - doc: design_requirements.md
-    loc: Parts to implement / Bobcat
-    quote: "Series 0\u03A9 on VDDA1, VDDA2."
+    loc: "Bobcat (DUT) \u2014 pinout & connections"
+    quote: "Series 0 \u03A9 on VDDA1, VDDA2."
   - doc: '[External] Bobcat Board Design.pdf'
     loc: Bobcat
     quote: "Series 0\u03A9 on VDDA1, VDDA2"
@@ -2716,8 +2702,8 @@ rules:
     block: eeprom
   source:
   - doc: design_requirements.md
-    loc: Parts to implement / EEPROM
-    quote: "8-Kbit, I\xB2C, 3.3V supply (for FMC IPMI / board ID)."
+    loc: EEPROM
+    quote: "3.3 V supply, I\xB2C, 8 Kbit"
   - doc: 20001710L.pdf
     loc: Vcc
     quote: VCC Range 1.7V-5.5V
@@ -2740,9 +2726,11 @@ rules:
     block: eeprom
   source:
   - doc: design_requirements.md
-    loc: "Assembly / provisioning notes / I\xB2C pull-ups (W4)"
-    quote: "R60 and R61 (2.2 k\u03A9 to +3V3 on EEPROM sheet) provide local SCL/SDA\
-      \ pull-ups"
+    loc: FMC interface
+    quote: "I\xB2C (SCL/SDA) \u2192 EEPROM and Bias"
+  - doc: design_implementation.md
+    loc: "Assembly / provisioning notes / I\xB2C pull-ups"
+    quote: "R60/R61 (2.2 k\u03A9 to +3V3) are local SCL/SDA pull-ups"
   fix_hint: "Add 2.2 k\u03A9 pull-ups to +3V3 on SCL and SDA (R60/R61)."
   enabled: true
   origin: generated
@@ -2764,9 +2752,8 @@ rules:
     block: ldo_rail
   source:
   - doc: design_requirements.md
-    loc: Specs
-    quote: "TPS7A8401A \u2026 ANY-OUT pin-programmable output 0.5\u20132.075 V at\
-      \ 25 mV resolution (covers Bobcat 0.6\u20131.0 V rails)"
+    loc: LDO
+    quote: TPS7A8401A (named in the deck).
   - doc: tps7a84a.pdf
     loc: ANY-OUT pin table / VOUT range
     quote: "TPS7A8400(01)A setpoint pins: 50 mV (25 mV), 100 mV (50 mV), 200 mV (100\
@@ -2799,9 +2786,9 @@ rules:
     role_spec: {}
     block: opa_bias
   source:
-  - doc: design_requirements.md
-    loc: Parts to implement
-    quote: MCP4728 (MSOP-10); OPA2388 dual (VSSOP-8); PMZ1200UPEYL (SOT883/DFN1006-3)
+  - doc: design_implementation.md
+    loc: Design-review findings / F-6
+    quote: "footprint vs datasheet \u2026 MSOP-10 / VSSOP-8 / SOT883"
   - doc: (per-part datasheets in Parts Library/)
     loc: Package
     quote: 'MCP4728 22187E: ''10-Lead MSOP Package''; OPA2388: ''Dual in SOIC-8 and
@@ -2832,9 +2819,10 @@ rules:
     role_spec: {}
     block: ldo_rail
   source:
-  - doc: design_requirements.md
-    loc: FMC LA-pair locations / pinout
-    quote: All other unlabeled pins on rows C/D/G/H are GND per the standard.
+  - doc: design_implementation.md
+    loc: "FMC LPC pinout \u2014 as wired"
+    quote: "All other C/D/G/H pins are GND per the standard \u2014 61 GND pins (all\
+      \ wired to the GND net"
   - doc: ASP-134606-01.pdf
     loc: VITA 57.1 LPC pinout
     quote: VITA 57.1 LPC has ~60 GND pins across rows C/D/G/H; all must tie to the
