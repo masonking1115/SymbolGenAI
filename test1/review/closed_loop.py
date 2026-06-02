@@ -899,6 +899,34 @@ async def run_loop(loop_id: str) -> None:
     # EVERY terminal state. Previously findings.json was never written by the
     # loop, so the panel looked empty/stale after any run.
     write_findings_json(L)
+
+    # Built-in real-Altium compile cross-check, ONCE at the end of the loop (never
+    # per round — _rebuild_project uses build_project directly so rounds stay fast
+    # and hang-free). Default-on; advisory (never changes the loop's final status).
+    # Skipped if the loop was cancelled or ended unbuildable (nothing valid to
+    # compile). Watchdog-guarded inside altium_compile.
+    _last_build_ok = (L.rounds[-1].build_status in ("ok", "", "skipped")) if L.rounds else True
+    if (not L.cancelled and L.status not in ("error", "reverted") and _last_build_ok):
+        try:
+            await emit(L, "altium_compile_start")
+            import asyncio
+            proc = await asyncio.create_subprocess_exec(
+                str(_VENV_PY), "-m", "test1.altium.verify.altium_compile_check",
+                cwd=str(REPO_ROOT),
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+            )
+            count = None
+            assert proc.stdout is not None
+            async for raw in proc.stdout:
+                line = raw.decode("utf-8", "replace").rstrip()
+                if "violation_count=" in line:
+                    count = line.split("violation_count=", 1)[1].strip()
+                await emit(L, "altium_compile_log", line=line)
+            await proc.wait()
+            await emit(L, "altium_compile_end", violation_count=count)
+        except Exception as _ace:  # noqa: BLE001
+            await emit(L, "altium_compile_end", error=str(_ace))
+
     # NOTE: we deliberately do NOT write a plateau report into the changelog.
     # The changelog is the ACTIONABLE queue (items an apply pass implements); a
     # plateau is a status, not an action, so it would linger forever unconsumed.

@@ -43,6 +43,9 @@ def main() -> int:
                         "(pullup_pulldown + decoupling) without prompting")
     p.add_argument("--non-interactive", action="store_true",
                    help="never prompt; print proposals only")
+    p.add_argument("--no-altium-compile", action="store_true",
+                   help="skip the built-in end-of-review real-Altium compile "
+                        "cross-check (default: run it once at the end)")
     args = p.parse_args()
 
     print("===== Design Review =====")
@@ -111,6 +114,24 @@ def main() -> int:
             non_interactive=args.non_interactive,
             apply_trivial=args.apply_trivial,
         )
+
+    # Phase 5: built-in real-Altium compile cross-check, ONCE at the end of the
+    # review (not per loop round — the compile is slow/hang-prone, so it runs once
+    # here after all fixes settle). Default-on; advisory (never fails the review).
+    # Run as a SUBPROCESS from the repo root: altium_compile reads sys.argv for the
+    # project path, so an in-process call would mis-read run_review's own argv
+    # (e.g. "--no-semantic") as the project. A clean subprocess avoids that.
+    if not args.no_altium_compile:
+        print()
+        print("===== Phase 5: Altium compile cross-check (built-in) =====")
+        import subprocess
+        repo_root = PROJECT_DIR.parent
+        try:
+            subprocess.run(
+                [sys.executable, "-m", "test1.altium.verify.altium_compile_check"],
+                cwd=str(repo_root), check=False)
+        except Exception as e:  # noqa: BLE001
+            print(f"  (Altium compile step did not complete: {type(e).__name__}: {e})")
 
     return 0
 

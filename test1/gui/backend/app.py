@@ -1070,10 +1070,12 @@ class ReviewOpts(BaseModel):
 @app.post("/api/run/generate")
 async def run_generate(opts: GenerateOpts = GenerateOpts()) -> dict:
     if BACKEND == "altium":
-        # Build every sheet + the project via the Altium backend. Run as a
-        # module from the repo root so `test1.altium...` imports resolve, using
-        # this server's interpreter (the venv that has altium_monkey + pyyaml).
-        cmd = [sys.executable, "-m", "test1.altium.build_project"]
+        # Build every sheet + the project, THEN (on a clean build) run a real-Altium
+        # compile + cross-reference as a built-in final step — so "Generate" is one
+        # click = build + Altium compile, no separate button/checkbox. The compile
+        # runs once here after the build (not in the review loop) and is watchdog-
+        # guarded. Run as a module from the repo root so `test1.altium...` resolve.
+        cmd = [sys.executable, "-m", "test1.altium.build_and_compile"]
         return {"run_id": await _start_run("generate", cmd, cwd=str(REPO_ROOT))}
     if not GEN_SCRIPT.exists():
         raise HTTPException(500, "gen_schematic.py missing")
