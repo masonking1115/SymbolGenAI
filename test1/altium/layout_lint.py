@@ -76,6 +76,10 @@ RULES: list[dict] = [
     {"id": "port_direction_conflict", "severity": "ERROR", "scope": "project",
      "summary": "Same-named ports on different sheets have conflicting IO types "
                 "(Altium 'Output Port and <other> Port objects' / multiple drivers)"},
+    {"id": "single_pin_net", "severity": "ERROR", "scope": "project",
+     "summary": "A net resolves to a single pin project-wide (genuinely unconnected; "
+                "Altium 'Net has only one pin'). Lone connector/test-point pins are "
+                "INFO (expected board edge)."},
     {"id": "diagonal_wire", "severity": "ERROR", "scope": "sheet",
      "summary": "Non-orthogonal (diagonal) wire"},
     {"id": "out_of_bounds", "severity": "ERROR", "scope": "sheet",
@@ -1530,6 +1534,56 @@ def lint_library(lib_path):
                         f"pin names overlap (body half_x={int(half)}, need {need})",
                         [nm]))
                     break
+    return out
+
+
+def lint_single_pin_nets(netlists: dict):
+    """PROJECT-WIDE check: a net that resolves to exactly ONE pin across the whole
+    design is genuinely unconnected -- real Altium ERRORs "Net <n> has only one pin".
+
+    MUST be project-wide, not per-sheet: in this flat design most inter-sheet nets
+    appear single-pin on each sheet but merge (by matching name) into a 2+-pin net
+    across sheets. So we union same-named nets' pin members across ALL sheets'
+    netlists and flag only those still at 1 pin -- which is what Altium actually
+    reports at the project level. (Mirrors the Altium 'single-pin'/'floating'/
+    'unconnected' compile-error class; this is the rule the compile_crossref
+    comparator flagged as referenced-but-missing.)
+
+    `netlists` maps sheet name -> gen.netlist.Netlist. Power/GND rails and nets that
+    are intentionally one-ended off-BOARD (a single connector/test-point pin whose
+    other end leaves the board) are NOT flagged when declared as such -- a net whose
+    sole pin is on a connector/test-point ref (J/TP/SMA) is treated as an off-board
+    termination (INFO), not an ERROR, so genuine single-IC-pin danglers still error."""
+    from collections import defaultdict
+    out = []
+    glob: dict[str, list] = defaultdict(list)
+    try:
+        for nl in netlists.values():
+            for name, net in getattr(nl, "nets", {}).items():
+                for m in net.members:
+                    if "." in m:           # ref.pin member (skip bare refs)
+                        glob[name].append(m)
+    except Exception:
+        return out
+
+    for name, members in glob.items():
+        if len(members) != 1:
+            continue
+        pin = members[0]
+        ref = pin.split(".")[0].split(":")[0]
+        # Off-board termination heuristic: a lone pin on a connector / test point /
+        # SMA is an expected board edge, not a wiring bug -> INFO, not ERROR.
+        # (No regex import in this module; prefix-match the designator letters.)
+        _pfx = ref[:3].rstrip("0123456789")
+        off_board = _pfx in ("J", "TP", "SMA") and ref[len(_pfx):len(_pfx)+1].isdigit()
+        if off_board:
+            out.append(LintIssue("INFO", "single_pin_net",
+                f"net {name!r} terminates at a single off-board pin {pin} "
+                f"(expected board edge; Altium will note 'one pin')", [ref]))
+        else:
+            out.append(LintIssue("ERROR", "single_pin_net",
+                f"net {name!r} has only one pin ({pin}) project-wide — genuinely "
+                f"unconnected (Altium 'Net has only one pin')", [ref]))
     return out
 
 

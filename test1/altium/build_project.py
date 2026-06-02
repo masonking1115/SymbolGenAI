@@ -20,7 +20,8 @@ from .build_all import BUILDERS
 from .build_symbols import get_library
 from .config import OUT_DIR, RENDER_DIR
 from .layout_lint import counts as lint_counts
-from .layout_lint import lint, lint_library, lint_netlist_semantics, lint_port_directions
+from .layout_lint import (lint, lint_library, lint_netlist_semantics,
+                          lint_port_directions, lint_single_pin_nets)
 from .shared import build_centered
 
 PROJECT = "test1"
@@ -192,6 +193,7 @@ def main() -> int:
     fails = 0
     docs: list[str] = []
     built_sheets: dict = {}   # name -> AltiumSheet, for cross-sheet (project) lint
+    built_netlists: dict = {} # name -> Netlist, for project-wide net checks
 
     # Child sheets: builder validates connectivity; layout linter checks
     # quality (overlaps, shorts, off-grid, containment). ERROR fails the build.
@@ -232,6 +234,7 @@ def main() -> int:
             s.render_svg(RENDER_DIR / f"{name}.svg")
             docs.append(f"{name}.SchDoc")
             built_sheets[name] = s   # for the cross-sheet port-direction check
+            built_netlists[name] = nl  # for the project-wide single-pin-net check
             issues = lint(s)
             # Advisory semantic intent checks over the netlist (WARNING/INFO only;
             # never ERROR → never fails the build). Surfaces decoupling/DNP-path
@@ -277,6 +280,10 @@ def main() -> int:
     except Exception as _pd_e:  # noqa: BLE001
         pd_issues = []
         print(f"             ~ (port-direction check skipped: {_pd_e})")
+    try:
+        pd_issues += lint_single_pin_nets(built_netlists)
+    except Exception as _sp_e:  # noqa: BLE001
+        print(f"             ~ (single-pin-net check skipped: {_sp_e})")
     for i in pd_issues:
         if i.severity == "ERROR":
             fails += 1

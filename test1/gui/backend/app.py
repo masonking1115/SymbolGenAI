@@ -1111,6 +1111,18 @@ async def run_autofix() -> dict:
     return {"run_id": await _start_run("autofix", cmd)}
 
 
+@app.post("/api/run/altium-compile")
+async def run_altium_compile() -> dict:
+    """OPT-IN: drive REAL Altium to compile the current project and cross-reference
+    its violations against our lint. Slow (~30-90s, launches X2.EXE) and never
+    auto-runs in the generate/review loop — the user triggers it for a spot-check
+    that our pipeline predicts Altium's compile. Streams via the usual run SSE."""
+    if BACKEND != "altium":
+        raise HTTPException(400, "altium-compile is only available on the Altium backend")
+    cmd = [sys.executable, "-m", "test1.altium.verify.altium_compile_check"]
+    return {"run_id": await _start_run("altium-compile", cmd, cwd=str(REPO_ROOT))}
+
+
 # NOTE: static "/api/run/latest" must be registered BEFORE the dynamic
 # "/api/run/{run_id}" route — FastAPI matches in declaration order.
 @app.get("/api/run/latest")
