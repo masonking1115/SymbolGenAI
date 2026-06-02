@@ -139,9 +139,16 @@ nets:
   CS_L:        { type: global, direction: input,  members: [U20.17, R24.2] }
   SPI_DMODE:   { type: global, direction: input,  members: [U20.18, R25.1] }
   RESET_N:     { type: global, direction: input,  members: [U20.19, R26.2] }
-  OSC_EN:      { type: global, direction: output, members: [U20.23, R27.1] }
-  WEIGHT_EN:   { type: global, direction: output, members: [U20.24, R28.1] }
-  SAMPLE_TRIG: { type: global, direction: output, members: [U20.25, R29.1] }
+  # OSC_EN/WEIGHT_EN/SAMPLE_TRIG are Bobcat INPUTS — control signals driven INTO
+  # the chip (osc enable / weight enable / sample trigger). Source: Bobcat Pin List
+  # & Electrical Specs §1 (pins 23/24/25 = Digital Input) + deck block diagram (the
+  # switch on these nets selects an SMA or the FMC/FPGA as the driver, feeding INTO
+  # Bobcat). The DRIVER lives on the source leg (SMA default, R50/51/52 in
+  # connectors.yaml); here Bobcat is the sink. (Was 'output' from a misread that
+  # the DUT drives these — corrected 2026-06-01 against the pin-list datasheet.)
+  OSC_EN:      { type: global, direction: input, members: [U20.23, R27.1] }
+  WEIGHT_EN:   { type: global, direction: input, members: [U20.24, R28.1] }
+  SAMPLE_TRIG: { type: global, direction: input, members: [U20.25, R29.1] }
   SAMPLE_OUTV: { type: global, direction: output, members: [U20.2]  }
   SAMPLE_OUT0: { type: global, direction: output, members: [U20.3]  }
   SAMPLE_OUT1: { type: global, direction: output, members: [U20.4]  }

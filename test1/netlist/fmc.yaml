@@ -176,11 +176,13 @@ nets:
   MOSI:        { type: global, direction: output, members: [R111.1] }
   SPI_DMODE:   { type: global, direction: output, members: [R113.1] }
   RESET_N:     { type: global, direction: output, members: [R114.1] }
-  # DUT-driven (Bobcat U20.23-25 are the OUTPUT drivers; see Bobcat Board Design
-  # deck p3 block diagram + p5 "OSC_EN, WEIGHT_EN, SAMPLE_TRIG with 0Ω resistor
-  # options to SMA connectors"). The FMC LA bank is an alternate DESTINATION, not a
-  # second driver — so input here (was output, which made 2 drivers on the net and
-  # tripped Altium's 'multiple drivers' + our port_direction_conflict lint).
+  # Bobcat U20.23-25 are INPUTS (Bobcat Pin List §1: OSC_EN/WEIGHT_EN/SAMPLE_TRIG =
+  # Digital Input). The deck block-diagram switch on these nets selects the SMA or
+  # the FMC/FPGA as the source feeding Bobcat. The SMA is the as-built default
+  # DRIVER (output, connectors.yaml); the FMC LA bank is the depopulated alternate
+  # source — so input here keeps exactly one driver on the net. (Corrected
+  # 2026-06-01: the old note claiming the DUT drives these was a misread of the
+  # deck; the pin-list datasheet shows pins 23-25 are chip inputs.)
   OSC_EN:      { type: global, direction: input, members: [R115.1] }
   WEIGHT_EN:   { type: global, direction: input, members: [R116.1] }
   SAMPLE_TRIG: { type: global, direction: input, members: [R117.1] }

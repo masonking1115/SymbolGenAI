@@ -909,7 +909,10 @@ async def run_loop(loop_id: str) -> None:
     if (not L.cancelled and L.status not in ("error", "reverted") and _last_build_ok):
         try:
             await emit(L, "altium_compile_start")
-            import asyncio
+            # (asyncio is imported at module scope; a local re-import here would
+            # make `asyncio` function-local and shadow it for the WHOLE run_loop
+            # body, breaking the asyncio.to_thread calls above — that bug errored
+            # review_only runs in <1s. Use the module-level import.)
             proc = await asyncio.create_subprocess_exec(
                 str(_VENV_PY), "-m", "test1.altium.verify.altium_compile_check",
                 cwd=str(REPO_ROOT),

@@ -60,9 +60,14 @@ nets:
   # OSC_EN / WEIGHT_EN / SAMPLE_TRIG: only the LABELED side (R5x.2) is on the
   # global net. R5x.1 + J5x.1 form an unnamed SMA-side stub — NOT enumerated
   # here on purpose (see comment at top).
-  OSC_EN:      { type: global, direction: input, members: [R50.2] }
-  WEIGHT_EN:   { type: global, direction: input, members: [R51.2] }
-  SAMPLE_TRIG: { type: global, direction: input, members: [R52.2] }
+  # DRIVER side: these are Bobcat INPUTS (pin-list §1), so a SOURCE must drive the
+  # net. The deck block diagram shows a switch picking the SMA or the FMC/FPGA; the
+  # SMA is the as-built default (R50/51/52 fitted; depop to hand the net to the FMC
+  # LA side — see R50 note). So this labeled SMA leg is the net's OUTPUT; the FMC
+  # leg (fmc.yaml) stays input as the depopulated alternate. Exactly one driver.
+  OSC_EN:      { type: global, direction: output, members: [R50.2] }
+  WEIGHT_EN:   { type: global, direction: output, members: [R51.2] }
+  SAMPLE_TRIG: { type: global, direction: output, members: [R52.2] }
 
   # GPIO breakout — each header pin to a hier_label.
   GPIO0: { type: hier, direction: input, members: [J57.1] }

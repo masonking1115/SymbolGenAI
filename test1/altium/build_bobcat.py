@@ -366,7 +366,10 @@ def build_bobcat() -> tuple[AltiumSheet, object]:
     for pn, net, pull_ref, pull_x in OWT:
         px, py = U[pn]
         s.wire(px, py, OWT_PORT_X, py)                 # chip pin -> port (horizontal)
-        s.port(net, OWT_PORT_X, py, io=PortIOType.OUTPUT, style=PortStyle.LEFT_RIGHT)
+        # INPUT: Bobcat pins 23/24/25 are chip INPUTS (Pin List §1) — the enable/
+        # trigger source (SMA default, or FMC alt) drives INTO Bobcat. The driver
+        # lives on the source leg (connectors.yaml OUTPUT), so this port is the sink.
+        s.port(net, OWT_PORT_X, py, io=PortIOType.INPUT, style=PortStyle.LEFT_RIGHT)
         # Pull drops as a T-branch off this horizontal at pull_x.
         place(pull_ref, pull_x, OWT_PULL_ROW_Y + 100)  # R vertical, pin1 top
         s.wire(pull_x, py, pull_x, OWT_PULL_ROW_Y + 200)   # tap down to R pin1

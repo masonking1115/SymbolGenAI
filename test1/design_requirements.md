@@ -2,12 +2,15 @@
 
 > **Ground truth + scope.** This document captures ONLY the customer's requirements,
 > from (1) the slide deck `[External] Bobcat Board Design.pdf` (Unconventional AI,
-> 2026-05-15) and (2) the Deliverables list below. It is intentionally **agnostic to
-> our implementation** — no chosen part numbers, circuit topology beyond what the deck
-> specifies, reference designators, or exact connector pin assignments appear here.
-> Those live in `design_implementation.md` (how we built it) and the design-review
-> notes. Where the deck's block diagram shows a single nominal (VADJ "1.8 V", LDO
-> "0.8 V"), the governing values are the ranges on the dedicated slides.
+> 2026-05-15), (2) the **`Bobcat Pin List and Electrical Specifications.pdf`** datasheet
+> (pin table + supply/IO electrical limits), (3) the customer **FAQs** (§FAQs below,
+> from Unconventional AI / Jason Hou), and (4) the Deliverables list below. It is
+> intentionally **agnostic to our implementation** — no chosen part numbers, circuit
+> topology beyond what the deck specifies, reference designators, or exact connector pin
+> assignments appear here. Those live in `design_implementation.md` (how we built it) and
+> the design-review notes. Where the deck's block diagram shows a single nominal (VADJ
+> "1.8 V", LDO "0.8 V"), the governing values are the ranges on the dedicated slides; for
+> Bobcat's own rails and IO levels, the **pin-list datasheet** ranges govern.
 
 ## Application
 A carrier board for the **Bobcat** test chip. It plugs into the **FMC connector of a
@@ -50,15 +53,31 @@ back to the FMC for SPI / RESET_N / SAMPLE_OUT and I²C.
 
 ## Power
 - **From the FMC:** 3.3 V (3P3V); **VADJ, 1.2–3.3 V**; 12 V available but unused.
-- **Bobcat rails:** VDDD, VDDA1, VDDA2 = **0.6–1.0 V** (from the on-board LDO); VDDIO = VADJ
-  (through the load switch and a 1×2 jumper).
+- **Bobcat rails:** VDDD, VDDA1, VDDA2 = **0.6–1.0 V** (LDO-capable range from the on-board
+  LDO); VDDIO = VADJ (through the load switch and a 1×2 jumper).
+- **Bobcat operating supply limits** (pin-list datasheet §2 — these govern the rails the
+  board must deliver): VDDD / VDDA1 / VDDA2 = **0.72 / 0.80 / 0.88 V** (min/typ/max);
+  VDDIO = **1.62 / 1.80 / 1.98 V** (min/typ/max). So the LDO set-point and the VADJ jumper
+  must land inside these windows (typ 0.80 V cores, 1.80 V IO).
+- **Power budget (FAQ — conservative ceilings):** VDDA1 **< 100 mA**, VDDA2 **< 100 mA**,
+  VDDD **< 20 mA**, VDDIO **< 50 mA**. VADJ draw (sizes the load switch) = the VDDIO budget,
+  i.e. **< 50 mA**.
+
+### Digital IO electrical characteristics (pin-list datasheet §3)
+Referenced to VDDIO. Used when checking level compatibility with the 1.8 V VADJ/VDDIO IO
+and any series/pull resistors on FMC-facing signals.
+- **VIH** ≥ 0.65 × VDDIO; **VIL** ≤ 0.35 × VDDIO.
+- **VOH** ≥ VDDIO − 0.45 V; **VOL** ≤ 0.45 V.
+- Absolute input range: −0.3 V … VDDIO + 0.3 V.
 
 ## Functional blocks (required behavior)
 
 ### Bobcat (DUT) — pinout & connections
 40-QFN, exposed pad (pin 41) = GND. Required passives / connections:
-- **Decoupling capacitors** on VDDD, VDDIO, VDDA1, VDDA2.
-- **Series 0 Ω** on VDDA1, VDDA2.
+- **Decoupling capacitors** on VDDD, VDDIO, VDDA1, VDDA2 — **1× 10 µF + 1× 0.1 µF per rail**
+  (FAQ).
+- **Series 0 Ω** on VDDA1, VDDA2 — placeholders for optional passive filtering of the
+  analog rails if needed (FAQ; no isolation/filtering is *required*, sequencing unknown).
 - **10 kΩ pull-downs** on GPIO0–3, SPI_DMODE, SCLK, MOSI, OSC_EN, WEIGHT_EN, SAMPLE_TRIG.
 - **10 kΩ pull-ups** on CS_L, RESET_N.
 - **CLK_OUT0–3** to SMA connectors.
@@ -70,6 +89,31 @@ VDDA1, VDDA2 (multiple), exposed-pad GND; bias — BIAS0, BIAS1; clocks — CLK_
 SPI — CS_L, SCLK, MOSI, MISO, SPI_DMODE; control — RESET_N, OSC_EN, WEIGHT_EN,
 SAMPLE_TRIG, GPIO0–3; sampling — SAMPLE_OUTV, SAMPLE_OUT0–7.
 
+**Pin numbers & directions (deck pinout drawing — authoritative for the pin map; directions
+from the pin-list datasheet §1).** Direction is from Bobcat's point of view. The **package
+drawing in the deck is the governing pin map** (it resolves the pin-7 ambiguity below):
+- **Power/ground:** VDDA1 (1), VDDA2 (26, 27), VDDD (12, 20), VDDIO (**7**, 13, 22, 33, 34),
+  GND = exposed pad (41).
+- **No-connect:** NC (21), NC (30).
+- **Bobcat outputs** (drive *into* the board / FMC): MISO (15); SAMPLE_OUTV (2),
+  SAMPLE_OUT0–3 (3–6), **SAMPLE_OUT4–7 (8, 9, 10, 11)**; CLK_OUT0–3 (36, 35, 32, 31).
+- **Bobcat inputs** (driven *by* the board / FMC): MOSI (14), SCLK (16), CS_L (17),
+  SPI_DMODE (18), RESET_N (19), OSC_EN (23), WEIGHT_EN (24), SAMPLE_TRIG (25).
+- **Bidirectional:** GPIO0–3 (40, 39, 38, 37).
+- **Analog inputs:** BIAS0 (28), BIAS1 (29) — bias current, **320 µA at 0.5 V nominal**.
+
+> ℹ **Resolved — pin-7 discrepancy (pin map taken from the deck drawing).** The pin-list
+> PDF *table* lists pin 7 under BOTH VDDIO ("7,13,22,33,34 = VDDIO") **and** SAMPLE_OUT4
+> ("7 = SAMPLE_OUT4") — a contradiction. The **deck's package pinout drawing resolves it:
+> pin 7 = VDDIO**, and the SAMPLE_OUTn block is **not** contiguous — it skips pin 7 and
+> resumes at pin 8, so **SAMPLE_OUT4–7 = pins 8, 9, 10, 11**. The drawing is the governing
+> pin map. (The datasheet table's "7 = SAMPLE_OUT4" row is the erroneous entry.) Worth a
+> one-line note to Unconventional AI that the table and drawing disagree, but the drawing
+> is unambiguous so no work is blocked.
+
+Net **direction** above is what the `port_direction_conflict` lint rule and the FMC port
+modeling must match.
+
 ### FMC interface
 - **Mating connector:** VITA 57.1 **LPC** (per the Genesys 2 host).
 - **VADJ** → Bobcat VDDIO through a **load switch** and a **1×2 jumper**.
@@ -79,7 +123,8 @@ SAMPLE_TRIG, GPIO0–3; sampling — SAMPLE_OUTV, SAMPLE_OUT0–7.
   - OSC_EN, WEIGHT_EN, SAMPLE_TRIG — with 0 Ω options to SMA connectors
   - ANY-OUT and EN inputs for the LDO
   - Enable signal for the load switch
-- **I²C (SCL/SDA)** → EEPROM and Bias.
+- **I²C (SCL/SDA)** → EEPROM and Bias. Use the **FMC I²C *system* pins** (the 3.3 V FMC
+  SCL/SDA the Genesys 2 schematic dedicates to FMC) — **not** a dedicated FPGA GPIO (FAQ).
 
 ### LDO
 - **TPS7A8401A** (named in the deck).
@@ -92,6 +137,7 @@ SAMPLE_TRIG, GPIO0–3; sampling — SAMPLE_OUTV, SAMPLE_OUT0–7.
 - Two **independent programmable current sources** for BIAS0 and BIAS1; nominally
   **320 µA at 0.5 V**.
 - Programmable range **0–640 µA**, step size **~1 µA**.
+- **No DAC settling-speed requirement** (FAQ) — sizing is set by resolution/accuracy, not rate.
 - **3.3 V supply.**
 - **Off by default.**
 - **Preferred option:** an I²C **current** DAC (default off) connected to the BIASx pin
@@ -106,6 +152,9 @@ SAMPLE_TRIG, GPIO0–3; sampling — SAMPLE_OUTV, SAMPLE_OUT0–7.
 ### Load switch
 - **VADJ 1.2–3.3 V.**
 - **Enable** input from the FPGA with a **10 kΩ pull-down**.
+- **Size for VADJ ≤ 50 mA** (FAQ — VADJ is just the Bobcat IO supply / VDDIO).
+- **Independent FPGA control** (FAQ — no power-sequencing lockout in hardware; the FPGA
+  controls the load switch and the LDO independently).
 
 ### Socket
 - **Ironwood Electronics CG25-QFN-2003.** The drawing defines screw holes and keep-out areas.
@@ -117,6 +166,31 @@ SAMPLE_TRIG, GPIO0–3; sampling — SAMPLE_OUTV, SAMPLE_OUT0–7.
 - **Silkscreen** for all reference designators.
 - **Target 4–6 layers**, at least **1.6 mm** total thickness.
 - **Test clips for GND.**
+- **Double-side component placement is acceptable** (FAQ).
+- **No socket thermal requirement** — primarily room-temperature testing (FAQ).
+
+## FAQs (customer clarifications)
+Direct Q&A. These **refine** the requirements
+above; where a FAQ tightens a value, the body sections already reflect it and cite "(FAQ)".
+
+1. **I²C source for Bobcat — FMC system pins or a dedicated GPIO?** → **FMC I²C system pins.**
+   The Genesys 2 schematic dedicates 3.3 V FMC SCL/SDA to the FMC; use those. *(→ FMC interface)*
+2. **Any speed requirement for the DAC setting?** → **No.** *(→ Bias)*
+3. **VADJ expected current, to size the load switch?** → **< 50 mA** — it is just the Bobcat
+   IO supply. *(→ Load switch / Power)*
+4. **Single- or double-side components acceptable?** → **Yes, double-side is acceptable.**
+   *(→ Mechanical)*
+5. **Thermal requirements for the selected Bobcat socket?** → **No** — primarily room-temperature
+   testing. *(→ Mechanical / Socket)*
+6. **Power budget for the Bobcat rails?** → **< 100 mA VDDA1, < 100 mA VDDA2, < 20 mA VDDD,
+   < 50 mA VDDIO** ("should be conservative"). *(→ Power)*
+7. **Decoupling values for the Bobcat rails?** → **1× 10 µF and 1× 0.1 µF for each rail.**
+   *(→ Bobcat decoupling)*
+8. **Power-sequencing lockouts to fix in hardware?** → **Unknown / none** — intent is for the
+   FPGA to have **independent control** of the load switch and the LDO. *(→ Load switch)*
+9. **Filtering/isolation for VDDA generation from the VDDD rail?** → **Unknown** — the **0 Ω
+   series resistors on VDDA1 and VDDA2 are placeholders** for passive filtering if needed.
+   *(→ Bobcat / VDDA series-R)*
 
 ## Reference links (from the customer deck)
 - Genesys 2 platform — <https://digilent.com/reference/programmable-logic/genesys-2/start>
@@ -124,3 +198,12 @@ SAMPLE_TRIG, GPIO0–3; sampling — SAMPLE_OUTV, SAMPLE_OUT0–7.
 - TPS7A84x LDO datasheet — <https://www.ti.com/lit/ds/symlink/tps7a84a.pdf>
 - Ironwood CG25-QFN-2003 socket drawing — <https://www.ironwoodelectronics.com/wp-content/uploads/2021/09/CG25-QFN-2003Dwg.pdf>
 - Unconventional AI — <https://unconv.ai>
+
+## Source documents (requirements ground truth)
+The local documents this spec is derived from (all reviewed against during design review):
+- `[External] Bobcat Board Design.pdf` — customer slide deck (Unconventional AI, 2026-05-15);
+  system block diagram, deck pinout, mechanical drawings, reference links.
+- `resources/requirements/Bobcat Pin List and Electrical Specifications.pdf` — Bobcat
+  datasheet: pin table (number/name/type/direction), supply ranges (§2), digital-IO
+  electrical limits (§3). **Governs** Bobcat's rail windows, IO levels, and pin directions.
+- **FAQs** (§FAQs above) — Unconventional AI / Jason Hou, 2026-05-20.

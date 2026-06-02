@@ -32,17 +32,26 @@ from ..config import OUT_DIR
 # Altium message CLASS (regex on the normalized text) -> our lint rule id (or None
 # if we intentionally don't mirror it, e.g. footprints = no PCB lib in this flow).
 # This is the living "common compile errors -> rules" table the user asked for.
+# Patterns match EITHER the per-instance Long string (Messages-panel export, e.g.
+# "Net X has only one pin (Pin Y)") OR the class-level Short string from
+# IViolation.DM_ShortDescriptorString (headless altium_compile export, e.g.
+# "Nets with only one pin", "Missing component models"). Keep both wordings.
 KNOWN_MAP: list[tuple[str, str | None, str]] = [
-    (r"has only one pin",                 "single_pin_net",        "single-pin net"),
-    (r"contains floating input pins",     "single_pin_net",        "floating input"),
-    (r"Off grid",                          "off_grid",              "off-grid object/port"),
-    (r"multiple drivers|Output Port and Bidirectional",
+    (r"has only one pin|Nets with only one pin",
+                                           "single_pin_net",        "single-pin net"),
+    (r"contains floating input pins|floating input",
+                                           "single_pin_net",        "floating input"),
+    (r"Off[- ]?grid",                      "off_grid",              "off-grid object/port"),
+    (r"multiple drivers|Output Port and Bidirectional|Nets with multiple drivers",
                                            "port_direction_conflict", "port direction / multi-driver"),
     (r"Output Port and .* Port objects",  "port_direction_conflict", "port IO conflict"),
     (r"Power Pin and Input Port",         None,                    "power-pin meets port (benign here)"),
-    (r"no driving source",                 None,                   "no driver (follows single-pin)"),
-    (r"unused sub-part",                   None,                    "multi-unit partial use (accepted)"),
-    (r"Footprint .* cannot be found",      None,                   "no PCB footprint lib (schematic-only flow)"),
+    (r"no driving source|Nets with no driving source",
+                                           None,                    "no driver (follows single-pin)"),
+    (r"unused sub-part|Unused sub-part in component",
+                                           None,                    "multi-unit partial use (accepted)"),
+    (r"Footprint .* cannot be found|Missing component models|Component .* has no model",
+                                           None,                    "no PCB footprint/model lib (schematic-only flow)"),
     (r"Unconnected (Pin|Port)",            "single_pin_net",        "unconnected pin/port"),
     (r"Duplicate",                         None,                    "duplicate (review case-by-case)"),
 ]
@@ -121,7 +130,14 @@ def main() -> int:
 
     nerr = sum(1 for m in msgs if m["severity"].lower() == "error")
     nwarn = sum(1 for m in msgs if m["severity"].lower() == "warning")
-    print(f"Altium messages: {len(msgs)}  ({nerr} error, {nwarn} warning)")
+    # The headless altium_compile export tags every row "[Violation]" (IViolation's
+    # DM_*DescriptorString accessors don't expose severity), so error/warning split
+    # is only meaningful for a real Messages-panel export. Suppress the misleading
+    # "0 error, 0 warning" when no row carried a true Error/Warning severity.
+    if nerr or nwarn:
+        print(f"Altium messages: {len(msgs)}  ({nerr} error, {nwarn} warning)")
+    else:
+        print(f"Altium violations: {len(msgs)}  (severity not exposed by headless compile)")
     print(f"Our lint.json: status={lint.get('status')} rules_hit={sorted(lint_rules_hit)}\n")
 
     print("=== Altium message classes -> our lint mapping ===")
