@@ -563,11 +563,16 @@ async def _dispatch_action(L: Loop, action: Action) -> None:
         action.summary = f"apply pass: {run.status} ({len(action.targets)} targets)"
 
     elif action.kind == "lint_fix":
-        # Read current lint failures + dispatch lint_fix agent
+        # Read current lint failures + dispatch lint_fix agent. Thread the loop's
+        # severity scope through so the fix pass's prompt matches what the loop is
+        # clearing this run: ERROR-only by default, ERROR+WARNING under "Fix errors
+        # + warnings" (fix_warnings). (Was omitted → the lint_fix sub-pass always
+        # ran ERROR-only even in errors+warnings mode.)
         from .closed_loop_helpers import _read_lint_failures
         failures = _read_lint_failures()
         run = await agent_mod.start_lint_fix_pass(failures, round_no=L.round,
-                                                  max_rounds=L.max_rounds)
+                                                  max_rounds=L.max_rounds,
+                                                  fix_warnings=L.fix_warnings)
         action.agent_run_id = run.run_id
         L.sub_runs.append(run.run_id)
         disp = await _await_subrun(L, run, action)
@@ -784,14 +789,22 @@ async def run_loop(loop_id: str) -> None:
                 await emit(L, "build_end", round=r,
                            status=R.build_status, lint=R.lint_summary)
 
-                # If the rebuild left cosmetic lint ERRORs, run the lint_fix agent
-                # to clear them, then rebuild once more. (Previously plan_actions
-                # never emitted a lint_fix action, so the "Lint fix" stage was dead
-                # code — the build's own auto_fix_* handled most nits but loop-level
-                # lint ERRORs were never addressed.) Bounded to one pass/round.
-                lint_err = (R.lint_summary or {}).get("ERROR", 0)
-                if lint_err and not L.cancelled:
-                    lf = Action(kind="lint_fix", targets=[f"{lint_err} lint ERROR(s)"])
+                # If the rebuild left cosmetic lint findings in scope, run the
+                # lint_fix agent to clear them, then rebuild once more. (Previously
+                # plan_actions never emitted a lint_fix action, so the "Lint fix"
+                # stage was dead code — the build's own auto_fix_* handled most nits
+                # but loop-level lint findings were never addressed.) Bounded to one
+                # pass/round. SCOPE follows the loop: ERROR-only by default, ERROR+
+                # WARNING when fix_warnings — so "Fix errors + warnings" also triggers
+                # on (and clears) cosmetic lint WARNINGs, not just ERRORs.
+                _ls = R.lint_summary or {}
+                lint_err = _ls.get("ERROR", 0)
+                lint_warn = _ls.get("WARNING", 0) if L.fix_warnings else 0
+                lint_in_scope = lint_err + lint_warn
+                if lint_in_scope and not L.cancelled:
+                    _tgt = (f"{lint_err} lint ERROR(s)"
+                            + (f" + {lint_warn} WARNING(s)" if lint_warn else ""))
+                    lf = Action(kind="lint_fix", targets=[_tgt])
                     R.actions.append(lf)
                     await emit(L, "action_start", round=r, kind="lint_fix",
                                targets=lf.targets)

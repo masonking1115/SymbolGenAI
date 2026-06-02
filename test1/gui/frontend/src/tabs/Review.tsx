@@ -9,6 +9,7 @@ import { PageHeader } from "../components/PageHeader";
 import { RoundsPicker } from "../components/RoundsPicker";
 import { WorkflowSection } from "../components/WorkflowSection";
 import { RulesSection } from "../components/RulesSection";
+import { StatusGroup, StatCard } from "../components/StatusGroup";
 import type { Finding, FindingAction, FindingsReport, FixQueueEntry,
   LoopSummary, Severity } from "../types";
 
@@ -86,6 +87,9 @@ export function Review({
   //   "errors_warnings" — auto-fix loop until ERROR + WARNING findings clear.
   const [reviewMode, setReviewMode] = useState<"review_only" | "errors" | "errors_warnings">("errors");
   const [queue, setQueue] = useState<Map<string, FixQueueEntry>>(new Map());
+  // Which severity's finding list is expanded under the count cards (mirrors the
+  // Generator's lint dropdown). Click a card to open/close that severity's list.
+  const [openSev, setOpenSev] = useState<"ERROR" | "WARNING" | "INFO" | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -215,28 +219,68 @@ export function Review({
           title="Cross-reference schematic against datasheets + requirements"
         />
 
-        <div className="mt-4 grid grid-cols-4 gap-3">
-          <Stat label="ERRORs" v={sum.ERROR} tone={sum.ERROR ? "err" : "ok"} />
-          <Stat label="WARNINGs" v={sum.WARNING} tone={sum.WARNING ? "warn" : "ok"} />
-          <Stat label="INFOs" v={sum.INFO} tone="neutral" />
-          <div
-            className={
-              "rounded-md border px-3 py-2 flex items-center gap-2 " +
-              (isHealthy
-                ? "border-ok/30 bg-ok/[0.05] text-ok"
-                : "border-edge bg-rail text-ink-700")
-            }
+        <div className="mt-4">
+          <StatusGroup
+            title="Design review findings"
+            caption="Correctness of the design vs requirements + datasheets + simulation — wrong values, missing pull-ups, topology, sim verdicts. Answers “is the design right?” (separate from the Generator's layout-lint geometry.)"
           >
-            <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-white/70">
-              {isHealthy ? <I.Check size={12} /> : <I.Dot size={12} />}
-            </span>
-            <div>
-              <div className="text-[11px] uppercase tracking-wide" title="Status of the design-review rules/findings — separate from the Generator's layout-lint">Review findings</div>
-              <div className="text-sm font-medium">
-                {isHealthy ? "all clear" : "needs review"}
+            <div className="grid grid-cols-4 gap-3">
+              <StatCard
+                label="ERRORs"
+                value={sum.ERROR}
+                tone={sum.ERROR ? "err" : "ok"}
+                active={openSev === "ERROR"}
+                onClick={() => setOpenSev((s) => (s === "ERROR" ? null : "ERROR"))}
+              />
+              <StatCard
+                label="WARNINGs"
+                value={sum.WARNING}
+                tone={sum.WARNING ? "warn" : "ok"}
+                active={openSev === "WARNING"}
+                onClick={() => setOpenSev((s) => (s === "WARNING" ? null : "WARNING"))}
+              />
+              <StatCard
+                label="INFOs"
+                value={sum.INFO}
+                tone="neutral"
+                active={openSev === "INFO"}
+                onClick={() => setOpenSev((s) => (s === "INFO" ? null : "INFO"))}
+              />
+              <div
+                className={
+                  "rounded-md border px-3 py-2 flex items-center gap-2 " +
+                  (isHealthy
+                    ? "border-ok/30 bg-ok/[0.05] text-ok"
+                    : "border-edge bg-rail text-ink-700")
+                }
+              >
+                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-white/70">
+                  {isHealthy ? <I.Check size={12} /> : <I.Dot size={12} />}
+                </span>
+                <div>
+                  <div className="text-[11px] uppercase tracking-wide">Status</div>
+                  <div className="text-sm font-medium">
+                    {isHealthy ? "all clear" : "needs review"}
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
+
+            {openSev && (
+              <ReviewSeverityDetail
+                severity={openSev}
+                findings={items.filter(
+                  (f) => String(f.severity).toUpperCase().includes(openSev)
+                )}
+                onClose={() => setOpenSev(null)}
+                queue={queue}
+                loopRunning={runState === "running"}
+                onApply={onApply}
+                onDismiss={onDismiss}
+                onApplyToChangelog={onApplyToChangelog}
+              />
+            )}
+          </StatusGroup>
         </div>
 
         <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -345,29 +389,64 @@ export function Review({
   );
 }
 
-function Stat({
-  label,
-  v,
-  tone,
+/** Expandable list of the findings at one severity — the Review-tab analogue of
+ *  the Generator's lint dropdown. Renders the SAME actionable FindingRow used in
+ *  the Findings list below, so each row carries its "Suggested fix" + "Apply
+ *  suggested fix" control here too (not just a read-only summary). It's a filtered
+ *  view of the same findings, so applying from here behaves identically. */
+function ReviewSeverityDetail({
+  severity,
+  findings,
+  onClose,
+  queue,
+  loopRunning,
+  onApply,
+  onDismiss,
+  onApplyToChangelog,
 }: {
-  label: string;
-  v: number;
-  tone: "ok" | "warn" | "err" | "neutral";
+  severity: "ERROR" | "WARNING" | "INFO";
+  findings: Finding[];
+  onClose: () => void;
+  queue: Map<string, FixQueueEntry>;
+  loopRunning: boolean;
+  onApply: (f: Finding, a: FindingAction, idx: number) => void;
+  onDismiss: (f: Finding) => void;
+  onApplyToChangelog: (f: Finding, fix: string) => Promise<void>;
 }) {
-  const ring =
-    tone === "ok" ? "border-ok/30 bg-ok/[0.05]" :
-    tone === "warn" ? "border-warn/30 bg-warn/[0.05]" :
-    tone === "err" ? "border-err/30 bg-err/[0.05]" :
-    "border-edge bg-rail";
-  const num =
-    tone === "ok" ? "text-ok" :
-    tone === "warn" ? "text-warn" :
-    tone === "err" ? "text-err" :
-    "text-ink-900";
+  const accent =
+    severity === "ERROR" ? "text-err" : severity === "WARNING" ? "text-warn" : "text-ink-700";
   return (
-    <div className={"rounded-md border px-3 py-2 " + ring}>
-      <div className="text-[11px] uppercase tracking-wide text-ink-500">{label}</div>
-      <div className={"text-2xl font-semibold mt-0.5 " + num}>{v}</div>
+    <div className="mt-3 rounded-md border border-edge bg-white">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-edge">
+        <div className={"text-sm font-medium " + accent}>
+          {severity} — {findings.length} finding{findings.length === 1 ? "" : "s"}
+        </div>
+        <button
+          onClick={onClose}
+          className="text-[12px] text-ink-500 hover:text-ink-800 inline-flex items-center gap-1"
+        >
+          <I.X size={12} /> close
+        </button>
+      </div>
+      {findings.length === 0 ? (
+        <div className="px-3 py-3 text-[13px] text-ink-500">
+          No {severity.toLowerCase()} findings in the latest review.
+        </div>
+      ) : (
+        <div className="p-2 space-y-2">
+          {findings.map((f, i) => (
+            <FindingRow
+              key={f.id ?? f.rule_id ?? i}
+              f={f}
+              queued={f.id ? queue.get(f.id) : undefined}
+              loopRunning={loopRunning}
+              onApply={onApply}
+              onDismiss={onDismiss}
+              onApplyToChangelog={onApplyToChangelog}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

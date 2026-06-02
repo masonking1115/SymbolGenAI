@@ -168,6 +168,10 @@ blocks:
       since in normal operation the LDO sets the rail the load switch passes.
       LDO_SET_* are not stubbed individually; the selected setpoint is the
       VOUT_SET parameter.
+      The +VDDIO bank modeled is C16 (1uF bulk at U11 VOUT, on power.yaml's
+      +VDDIO net) plus the bobcat-side C24-C29 — design_extract reads both. (The
+      former needs_clarification about C16 being absent from power.yaml's +VDDIO
+      members was resolved 2026-06-02 when C16.1 was added to that net.)
 
   # --------------------------------------------------------------------------
   - id: opa_bias

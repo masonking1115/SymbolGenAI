@@ -118,8 +118,12 @@ def build_deck(*, mode: str, vout_set: float = 1.8,
     sim_type = _MODE_TO_SIMTYPE[mode]
 
     # Decoupling caps come straight from the as-built netlist (design_extract):
-    # input on +3V3, OUT bulk on the internal LDO_OUT bus, the VADJ cap, and the
-    # +VDDIO bank spread across power.yaml (C16) + bobcat.yaml (C24-29).
+    # input on +3V3 (C10/C11 + C17 BIAS bypass), OUT bulk + HF on the internal
+    # LDO_OUT bus (C13/C18 22uF bulk, C14 0.1uF, C19 10nF CFF-form), the VADJ cap
+    # (C15), and the +VDDIO bank (power-side C16 1uF bulk at U11 VOUT + bobcat
+    # C24-C29). power.yaml's +VDDIO net now lists C16.1 alongside U11.A1, so the
+    # power-sheet read picks up the 1uF +VDDIO bulk automatically (this resolves
+    # the former netlist-YAML/builder mismatch where C16 was omitted).
     in_caps = design_extract.caps_on_net("power", "+3V3")
     out_caps = design_extract.caps_on_net("power", "internal_LDO_OUT_bus")
     vadj_caps = design_extract.caps_on_net("power", "VADJ")

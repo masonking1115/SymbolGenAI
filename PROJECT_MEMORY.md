@@ -172,6 +172,13 @@ runs `claude -p` for chat/apply/sim (`backend/agent.py`). React+Vite+TS frontend
   sim_review) then runs a fix loop — Plan → Apply → Sim → Missing → Lint fix →
   Build → Re-eval (`review/closed_loop.py`), max 10 rounds — and surfaces a
   **Diff & Accept** (snapshot vs current, roll-forward-guarded reject). The
+  semantic + sim_review **judges run on OPUS by default** (the `review_judge`
+  agent kind, configurable in Design Resources → Agent Models; env override
+  `TEST1_AGENT_MODEL`) and are each handed `design_intent.md` so find-side reasons
+  from the same cross-sheet intent as the apply agent. **Scope** is chosen at
+  start: *Run review* (eval only) · *Fix errors* (ERROR-only) · *Fix errors +
+  warnings* (`fix_warnings` — WARNINGs also drive apply, the all-clear test, AND
+  the cosmetic lint_fix). The
   round/stage UI is the **Workflow** panel (`WorkflowSection.tsx`, formerly
   "Iteration") with a Steps|Raw console toggle. Rules are managed MANUALLY in
   the GUI (add/edit/delete); the loader is lenient (one bad rule → reported,

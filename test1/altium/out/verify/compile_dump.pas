@@ -8,7 +8,7 @@ Var
     PrjPath : String;
     ResPath : String;
     sShort  : String;
-    sLong   : String;
+    sDetail : String;
     i, n    : Integer;
 Begin
     PrjPath := 'C:\\Users\\mking\\Downloads\\HW-SW_CoDesigner\\SymbolGenAI\\test1\\altium\\out\\test1.PrjPcb';
@@ -43,9 +43,9 @@ Begin
         For i := 0 To n - 1 Do
         Begin
             V := Prj.DM_Violations(i);
-            sShort := StringReplace(V.DM_ShortDescriptorString, '|', '/', MkSet(rfReplaceAll));
-            sLong  := StringReplace(V.DM_LongDescriptorString,  '|', '/', MkSet(rfReplaceAll));
-            SL.Add('viol|' + sShort + '|' + sLong);
+            sShort  := StringReplace(V.DM_ShortDescriptorString, '|', '/', MkSet(rfReplaceAll));
+            sDetail := StringReplace(V.DM_DetailString,          '|', '/', MkSet(rfReplaceAll));
+            SL.Add('viol|' + sShort + '|' + sDetail);
         End;
         SL.SaveToFile(ResPath);
     Except

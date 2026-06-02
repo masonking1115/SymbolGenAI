@@ -1048,13 +1048,23 @@ function ModelLifecycle({ block, setHealth, onChanged }: {
             className="h-8 px-3 inline-flex items-center gap-1.5 rounded-md bg-ink-900 text-white text-xs font-medium hover:bg-black shrink-0">
             <I.Play size={13} /> Generate SPICE model
           </button>
-        ) : (
+        ) : stale ? (
+          // Only offer Update while the model is ACTUALLY out of date. After a
+          // successful Update the block re-fetches fresh (stale=false), so this
+          // button disappears — previously it rendered in the unconditional else
+          // branch and lingered even when the block was already in sync (the
+          // banner stays open to show the "model updated" log via `done`).
           <button onClick={() => run("update")}
             title="Re-sync this block's sim, device params, and SPICE model to the current schematic"
             className="h-8 px-3 inline-flex items-center gap-1.5 rounded-md border border-amber-400 bg-white text-amber-700 text-xs font-medium hover:bg-amber-50 shrink-0">
             <I.Refresh size={13} /> Update to match schematic
           </button>
-        )}
+        ) : done ? (
+          // Fresh + just finished an update: confirm in-sync, no action needed.
+          <span className="h-8 px-3 inline-flex items-center gap-1.5 rounded-md border border-ok/40 bg-ok/[0.06] text-ok text-xs font-medium shrink-0">
+            <I.Check size={13} /> up to date
+          </span>
+        ) : null}
       </div>
       {(running || lines.length > 0) && (
         <ModelAgentLog lines={lines} running={!!running} />

@@ -41,7 +41,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import AsyncIterator
+from typing import AsyncIterator, Callable
 
 
 # ---------------------------------------------------------------------------
@@ -171,6 +171,7 @@ AGENT_KINDS: dict[str, dict] = {
     "sim_chat_edit": {"label": "Sim chat-edit agent",        "group": "Simulation",   "default": "claude-sonnet-4-6"},
     # --- Design review ---
     "rule_gen":      {"label": "Rule generator",             "group": "Design review", "default": "claude-opus-4-8"},
+    "review_judge":  {"label": "Rule / sim judge",           "group": "Design review", "default": "claude-opus-4-8"},
     # --- Chat ---
     "chat":          {"label": "Chat / thinking-partner",    "group": "Chat",         "default": "claude-opus-4-8"},
 }
@@ -903,6 +904,13 @@ class AgentRun:
     subscribers: list[asyncio.Queue] = field(default_factory=list)
     proc: asyncio.subprocess.Process | None = None   # the claude -p process
     cancelled: bool = False
+    # Optional backend-side hook run ONCE after the run finishes (status set), for
+    # work the sandboxed agent can't do itself. The sim model agents are headless
+    # with Bash DENIED, so they cannot run the `deck_provenance --stamp` shell step
+    # their contract lists — leaving the block stuck "stale" after a successful
+    # update. The backend stamps here instead (direct Python, no shell). Receives
+    # the finished AgentRun; only fired on status=="ok". Best-effort.
+    on_complete: "Callable[[AgentRun], None] | None" = None
 
 
 _RUNS: dict[str, AgentRun] = {}
@@ -1206,6 +1214,13 @@ async def _run_subprocess(run: AgentRun, proc: asyncio.subprocess.Process) -> No
     # The final assistant text is the canonical user-visible answer.
     if final_text:
         run.text = "\n".join(final_text)
+    # Backend-side completion hook (e.g. stamp sim provenance — the agent can't
+    # shell out to do it). Fire only on success; never let it break the run.
+    if run.status == "ok" and run.on_complete is not None:
+        try:
+            run.on_complete(run)
+        except Exception:
+            pass
     # Persist the full concise stream (reasoning included) so a run — especially a
     # "leave-the-design-unchanged" run — is auditable after the fact, not just live.
     try:
@@ -2038,13 +2053,17 @@ runnable + renderable it MUST:
      group, status: implemented, sim_types with rationale + a concrete `pass`,
      boundaries). Use sim/catalog_edit.py for surgical, comment-preserving
      blocks.yaml edits where possible.
-  6. After the model matches the schematic, RECORD provenance so staleness
-     tracking works:  python sim/deck_provenance.py --stamp <block_id>
-  7. VERIFY before finishing: run the sim through the service, e.g.
+  6. Provenance stamping is handled by the BACKEND automatically when this run
+     finishes successfully — you do NOT need to run `deck_provenance --stamp`
+     yourself (and shouldn't: a `cd … && python …` compound may be denied in this
+     headless session, which only wastes a turn). Just make the model correct.
+  7. VERIFY before finishing if you can: run the sim through the service —
        python -c "import sys; sys.path.insert(0,'.'); from test1.sim import service; \\
                   print(service.run_block_sim('<block_id>', '<sim_type>')['status'])"
-     (cwd is test1/). status must be 'ran' (or 'no_simulator' if ngspice is
-     absent — acceptable; means the deck built + dispatched).
+     (cwd is test1/; use a BARE `python`, no `cd &&` prefix, so it matches the
+     allow-list). status should be 'ran' (or 'no_simulator' if ngspice is absent).
+     If the command is denied, don't block on it — finish with your summary; the
+     backend re-checks. Never end with status=BLOCKED asking the user to run it.
 
 GUARDRAILS — stay in the SIM LAYER. You MAY write sim/decks/*.py and edit
 sim/blocks.yaml + sim/service.py. Do NOT touch netlist/*.yaml, altium/*, gen/*,
@@ -2053,6 +2072,25 @@ models only: model device BEHAVIOR (regulation, gain, droop), not a transistor-
 level transcription. If a value/intent is genuinely ambiguous, record it as a
 needs_clarification note rather than guessing.
 """
+
+
+def _stamp_block_provenance(block_id: str) -> None:
+    """Record the block's current netlist fingerprint so staleness tracking reads
+    FRESH after a generate/update. Done in the backend because the headless sim
+    agent has Bash denied and can't run `deck_provenance --stamp` itself (its
+    contract lists the step, but the command is blocked → block stayed stuck
+    stale after a clean update; this is the fix). Best-effort; never raises."""
+    try:
+        import sys as _sys
+        proj = str(PROJECT_DIR.parent)        # repo root, so `import test1...` works
+        if proj not in _sys.path:
+            _sys.path.insert(0, proj)
+        from test1.sim import service as _svc, deck_provenance as _dp
+        block = {b["id"]: b for b in _svc.list_blocks()}.get(block_id)
+        if block:
+            _dp.stamp(block)
+    except Exception:
+        pass
 
 
 async def start_sim_generate_model(
@@ -2115,6 +2153,9 @@ Steps:
         kind="sim_generate",
     )
     run = _register("Sim generate-model")
+    # Stamp provenance on success from the backend (agent has Bash denied) — a
+    # freshly generated model should read fresh. See _stamp_block_provenance.
+    run.on_complete = lambda r: _stamp_block_provenance(block_id)
     asyncio.create_task(_run_subprocess(run, proc))
     return run
 
@@ -2173,6 +2214,11 @@ Steps:
         kind="sim_update",
     )
     run = _register("Sim update-model")
+    # Stamp provenance on success from the BACKEND — the headless agent has Bash
+    # denied, so it cannot run the `deck_provenance --stamp` step its contract
+    # lists (the block would stay stuck "stale" after a clean update). See
+    # _stamp_block_provenance.
+    run.on_complete = lambda r: _stamp_block_provenance(block_id)
     asyncio.create_task(_run_subprocess(run, proc))
     return run
 

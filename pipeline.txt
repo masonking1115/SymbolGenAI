@@ -6,7 +6,7 @@
  emphasis on the parts the .tex doesn't: the SIMULATION subsystem and the AI-
  AGENT workflows that drive the GUI. Keep both in sync when the pipeline changes.
 
- Two pipelines share one set of inputs (the YAML netlists + per-MPN symbols):
+ Three pipelines share one set of inputs (the YAML netlists + per-MPN symbols):
 
    A. GENERATION pipeline — deterministic Python compiler: YAML + symbols
       -> validated Altium schematic project (.SchDoc/.PrjPcb/.svg).  No AI.
@@ -14,6 +14,9 @@
       run via ngspice, with AI agents for datasheet extraction, result
       interpretation, an iteration loop, and SPICE-model lifecycle
       (generate / update-to-match-schematic / chat-edit).
+   C. DESIGN-REVIEW pipeline — a rule set (113 rules) evaluated structural +
+      semantic (claude-judged) + sim_review, driving a closed loop that FINDS
+      and then FIXES issues, ending in Diff & Accept.
 
  Everything runs through the Altium spike venv (has altium_monkey, PyMuPDF,
  fastapi, ngspice on PATH):
@@ -37,7 +40,8 @@
    └─────────────────────────────────────────────────────────────────┘
         │                                                  │
         ▼                                                  ▼
-   out/*.SchDoc  out/test1.PrjPcb  out/render/*.svg   out/lint.json
+   altium/out/*.SchDoc  altium/out/test1.PrjPcb  altium/out/render/*.svg  altium/out/lint.json
+   (all build artifacts live under test1/altium/out/ — paths below are test1/-relative)
         │                                                  │
         └──────────────────────┬───────────────────────────┘
                                ▼
@@ -45,18 +49,23 @@
    │  GUI   FastAPI :8765  +  Vite :5173                               │
    │  Tabs: Resources · Library · Generator · Simulation · Review      │
    └─────────────────────────────────────────────────────────────────┘
-                               │  (Simulation tab)
-                               ▼
-   ┌─────────────────────────────────────────────────────────────────┐
-   │  B.  SIMULATION   (sim/ + ngspice + claude -p agents)            │
-   │  block catalog → behavioral deck → ngspice → analyze →           │
-   │  AI setup/interpret + iterate loop + model lifecycle             │
-   └─────────────────────────────────────────────────────────────────┘
+              (Simulation tab) │                  │ (Review tab)
+                               ▼                  ▼
+   ┌──────────────────────────────┐  ┌──────────────────────────────────┐
+   │  B.  SIMULATION              │  │  C.  DESIGN REVIEW               │
+   │  (sim/ + ngspice + agents)   │  │  (review/ + ngspice + agents)    │
+   │  block catalog → behavioral  │  │  rules.yaml → eval (structural + │
+   │  deck → ngspice → analyze →  │  │  semantic + sim_review) → closed │
+   │  AI setup/interpret + iterate│  │  loop (Plan/Apply/Sim/Missing/   │
+   │  loop + model lifecycle      │  │  Lint-fix/Build/Re-eval) → Diff  │
+   └──────────────────────────────┘  └──────────────────────────────────┘
 
- The netlist is the single source of truth for BOTH pipelines. The generation
- pipeline renders it to a schematic; the simulation pipeline reads as-built
- component values from it (via sim/design_extract.py) so a design change flows
- into the sims with no hand-editing.
+ The netlist is the single source of truth for all three pipelines. The
+ generation pipeline renders it to a schematic; the simulation pipeline reads
+ as-built component values from it (via sim/design_extract.py) so a design change
+ flows into the sims with no hand-editing; the design-review pipeline evaluates
+ the netlist + built schematic + datasheets and can edit the netlist/builders to
+ FIX what it finds.
 
 
 ===============================================================================
@@ -76,7 +85,7 @@
  Stages:
    1. Symbol library build  (altium/build_symbols.py)
         merge every Parts Library/<MPN>/<MPN>.SchLib (+ auto-authored passives)
-        -> out/lib/parts.SchLib.  Standard body glyphs via altium/glyphs.py
+        -> altium/out/lib/parts.SchLib.  Standard body glyphs via altium/glyphs.py
         (R zig-zag, cap plates, MOSFET w/ body diode, op-amp triangle); pins
         (hot-spots) untouched so routing/validator/linter are unaffected.
    2. Sheet building  (altium/shared.py : AltiumSheet)
@@ -88,9 +97,10 @@
         union-find over pins + wires (T-intersections auto-connect) + labels;
         each YAML net must resolve to one connected component.
    4. Layout lint  (altium/layout_lint.py)  — QUALITY GATE
-        text-as-2D-boxes geometry checks; RULES registry is the single source
-        shared by checks + build report + GUI checklist.  ERROR fails the
-        build; WARN/INFO advisory.  (Full rule table in pipeline.tex.)
+        text-as-2D-boxes geometry checks; RULES registry (35 rules: 6 ERROR /
+        26 WARNING / 3 INFO) is the single source shared by checks + build report
+        + GUI checklist.  ERROR fails the build; WARN/INFO advisory.  (Full rule
+        table in pipeline.tex.)
    5. Centering + project assembly  (altium/build_project.py)
         build each sheet twice (measure bbox, then grid-snapped centered shift),
         write *.SchDoc + root + test1.PrjPcb, print per-sheet E/W/I summary.
@@ -141,13 +151,16 @@
  Block status:  implemented (deck runs) · planned (curated, no deck yet) ·
                 not_simulatable (no useful SPICE behavior, documented).
 
- Current blocks:
+ Current blocks (6 implemented blocks → 14 implemented sims, all 14 PASS):
    ldo_rail        power_generation     implemented   (TPS7A8401A + TPS22916)
+       dc_op_point · transient_powerup · transient_load_step · line_regulation
+       · setpoint_coverage   (5)
    opa_bias        analog_bias          implemented   (OPA2388 V-to-I loop)
-   vddio_pdn       power_distribution   implemented   (VDDIO decap bank)
-   vddd_pdn        power_distribution   implemented   (VDDD decap bank)
-   vdda1_pdn       power_distribution   implemented   (VDDA1 decap)
-   vdda2_pdn       power_distribution   implemented   (VDDA2 decap)
+       dc_sweep · dc_compliance · ac_stability · transient_settling · por_failsafe (5)
+   vddio_pdn       power_distribution   implemented   (VDDIO decap bank)   transient_load_step
+   vddd_pdn        power_distribution   implemented   (VDDD decap bank)    transient_load_step
+   vdda1_pdn       power_distribution   implemented   (VDDA1 decap)        transient_load_step
+   vdda2_pdn       power_distribution   implemented   (VDDA2 decap)        transient_load_step
    system_sequencing  system_integration  planned     (whole-board bring-up)
    eeprom / fmc / connectors            not_simulatable
 
@@ -240,7 +253,12 @@
 
  RESILIENCE: the interpret SSE has a watchdog + settles-on-error so a dropped
  stream / backend restart can't hang the Run; a Cancel button terminates the
- live claude -p; persisted state never shows phantom "running" on reload.
+ live claude -p; persisted state never shows phantom "running" on reload. All
+ sim-cache I/O (sim_config.json / datasheet_params.json) is UTF-8 (ensure_ascii=
+ false) so a µ/Ω/° in a datasheet-derived note no longer crashes the writer on
+ the Windows cp1252 default. A NEEDS_CLARIFICATION that can't be resolved no
+ longer loops setup forever: once acknowledged (clarification_acknowledged) the
+ entry counts as fresh, so the run proceeds on the analyst's stated assumption.
 
 -------------------------------------------------------------------------------
  B.5  SPICE-MODEL LIFECYCLE AGENTS  (generate / update / chat-edit)
@@ -263,11 +281,10 @@
      schematic" button.  Staleness = live netlist fingerprint != stamped one
      (sim/deck_provenance.py).
 
-   CHAT-EDIT  (foundation; live chat UI gated on the forthcoming chat API)
+   CHAT-EDIT
      POST /api/sim/chat-edit -> start_sim_chat_edit
      Applies a natural-language request to a block's pass criteria / boundary
      params / model / functions (smallest change; CLARIFY if ambiguous).
-     Agent + endpoint are wired so the chat hook is a thin wire-up later.
 
 -------------------------------------------------------------------------------
  B.6  PER-AGENT MODEL SELECTION  (which Claude model each agent runs on)
@@ -306,6 +323,24 @@
  The Simulation panel stays MOUNTED across tab switches (hidden via CSS), so a
  running sim's run() loop + SSE subscriptions survive navigating away.
 
+ AGENT RAIL — LIVE chat thinking-partner (gui/frontend/.../AgentRail.tsx):
+   A right-hand rail with a multi-session `claude -p` chat (default model Opus
+   4.8, markdown-rendered via react-markdown + remark-gfm) over a changelog
+   panel. The chat is ADVISORY on a turn (acks + appends a one-line changelog
+   bullet; it does NOT edit netlist/code until "apply changelog" time). It carries
+   a "/" COMMAND PALETTE that can actually drive the other pipelines:
+     /sim      pick a block + sim_type, then runs it (api.simRun) and shows a
+               pass/fail card inline
+     /review   pick a mode (review-only / fix errors / fix errors+warnings),
+               then starts the closed loop (api.loopStart)
+     /effort   set the chat thinking effort off|low|medium|high (persisted)
+     /thinking toggle extended thinking on|off
+     /compact  summarize + collapse the session
+     /refresh  clear to a fresh session;  /default make this the default session
+     /help     list the commands
+   Multi-turn context (transcript + compacted summary) is replayed each turn from
+   state/chats.json.
+
  Key Simulation endpoints (gui/backend/app.py):
    GET  /api/sim/blocks            catalog + groups + has_model/model_status
    GET  /api/sim/circuit           parsed deck node-graph (no ngspice) for the
@@ -317,20 +352,37 @@
    POST /api/sim/interpret         run + stage 3 agent
    POST /api/sim/generate-model    author a new SPICE model (agent)
    POST /api/sim/update-model      re-sync a stale model (agent)
-   POST /api/sim/chat-edit         NL edit of a block's sim (agent; foundation)
+   POST /api/sim/chat-edit         NL edit of a block's sim (agent)
    GET/POST /api/sim/agent-models  per-agent model selection
+   POST /api/sim/agent-effort      per-agent thinking-effort (off|low|med|high;
+                                   the chat rail's /effort drives this)
    GET/POST /api/sim/requirements  edit pass criteria + boundary params
    POST /api/sim/cache/clear       drop scenario / params / counters per block
    POST /api/agent/{run_id}/cancel terminate a live claude -p
    GET  /api/agent/{run_id}/stream SSE of an agent run
 
  AGENT MECHANICS (gui/backend/agent.py):
-   Agents are `claude -p` subprocesses (stream-json, --permission-mode
-   acceptEdits, cwd=test1/, reuse the user's claude auth — no API key). The spike
-   venv's python dir is prepended to the agent PATH (so plain `python
-   sim/read_pdf.py` = the fitz-having interpreter) + PYTHONUTF8=1. Tool allow-
-   lists are sim-scoped. Sim agents auto-discover test1/.claude/skills/
-   (e.g. sim-datasheet-extraction).
+   Agents are `claude -p` subprocesses (stream-json, cwd=test1/, reuse the user's
+   claude auth — no API key). They spawn with:
+     --permission-mode dontAsk      a tool call matching the merged allow-list
+       runs; ANYTHING else is auto-DENIED (not prompted). This replaced
+       acceptEdits, which still PROMPTED on a non-whitelisted Bash command — and
+       with the headless child's stdin closed that prompt hung forever (the
+       original sim-setup stall). Edits keep working because Edit/Write are in
+       the floor.
+     --strict-mcp-config (+ no --mcp-config)   boots ZERO MCP servers, so the
+       user's global plugin servers (e.g. context7's npx fetch) aren't launched
+       — they were stalling every agent for minutes at startup before any output.
+     _BASELINE_TOOLS allow-list    the universal permission FLOOR merged into
+       every spawn: Read/Edit/Write/Glob/Grep + read-only git + `python`/`python3`
+       + the spike-venv interpreter by ABSOLUTE PATH (bare + quoted + glob form),
+       so `C:\…\.venv\Scripts\python.exe sim/read_pdf.py …` and `… -m
+       test1.altium.author_symbol` run without a gate regardless of quoting. Per-
+       site allowed_tools extend the floor.
+   The spike venv's python dir is also prepended to the agent PATH (so a plain
+   `python sim/read_pdf.py` = the fitz-having interpreter) + PYTHONUTF8=1, and
+   MAX_THINKING_TOKENS carries the per-agent effort budget. Sim agents auto-
+   discover test1/.claude/skills/ (e.g. sim-datasheet-extraction).
 
 
 ===============================================================================
@@ -355,25 +407,63 @@
    gui/state/loops/<id>.json (audit)                         (snapshot vs current)
 
  RULE MODEL (review/rule_schema.py, persisted in review/rules.yaml):
-   Families: schematic ("general checks") · design ("components") · block
-   ("blocks", per functional block). The "simulation" family is RETIRED.
-   Evaluation: structural (Python predicate over the netlist) · semantic
-   (claude -p judges cited sources + design) · sim_review (a structural kind
-   that RUNS ngspice then has claude -p judge the result — shown with a
-   "simulated" tag). Rules are managed MANUALLY in the GUI (add / edit / delete);
-   doc-driven generation was retired. load_rules is LENIENT — one malformed rule
-   is reported under `rejected`, it no longer 500s the whole Rules panel.
+   113 rules today, all enabled (59 ERROR / 38 WARNING / 16 INFO).
+   Families: schematic ("general checks", 78) · design ("components", 7) · block
+   ("blocks", per functional block, 28). The "simulation" family is RETIRED.
+   Evaluation: structural (Python predicate over the netlist — e.g.
+   pullup_pulldown ×14, connector_pin ×20, net_routing ×15, power_rail_membership
+   ×8, decoupling_count ×6, no_connect ×5, value_in_range ×2, present ×4) ·
+   semantic (claude -p judges cited sources + design) · sim_review (×11 — a
+   structural kind that RUNS ngspice then has claude -p judge the result, shown
+   with a "simulated" tag). A full PASS = structural + semantic + sim_review all
+   PASS.
+   THE JUDGE (the ≈28 semantic + 11 sim_review verdicts): a read-only claude -p
+   call per rule (rule_eval.py::_eval_semantic_rule / _judge_sim_result, perm-mode
+   `plan`). Model = the `review_judge` agent kind (DEFAULT OPUS — the FINDERS get
+   the same tier as the apply agent that fixes what they find; configurable in
+   Design Resources → Agent Models, env override TEST1_AGENT_MODEL, thinking budget
+   from the agent's effort). Each judge is a FRESH stateless call; its context is
+   purpose-built by _netlist_context_for: the rule's cited source quotes + the
+   subject part + the FULL membership of every net the subject touches (so a pull-
+   up via a series-R is visible) + the whole sheet's parts + a deterministic
+   MPN→value decode + the POPULATED-part datasheet facts + design_intent.md (the
+   cross-sheet gotchas — same doc the apply agent reads, so find- and fix-side
+   reason from the same intent). Fail-safe: any error/timeout/unparseable verdict
+   → PASS (never fabricates a finding). Rules are managed MANUALLY in the GUI (add / edit / delete). Doc-driven
+   rule GENERATION still exists in the backend (review/rule_gen.py + the rule_gen
+   agent + POST /api/review/rules/generate) — it reads design_requirements.md +
+   datasheets and proposes a rule set — but it is NO LONGER SURFACED in the GUI
+   (the frontend has no generate button); the manual add/edit/delete path is the
+   exposed workflow. load_rules is LENIENT — one malformed rule is reported under
+   `rejected`, it no longer 500s the whole Rules panel.
+
+ SEVERITY SCOPE (POST /api/loop/start → start_loop):
+   review_only=True   → evaluate + report findings, run NO fix rounds ("Run review").
+   fix_warnings=False → the loop clears ERROR findings only (WARNING/INFO advisory).
+   fix_warnings=True  → "Fix errors + warnings": ERROR **and** WARNING findings are
+                        in scope — they drive apply passes, the all-clear predicate
+                        counts them, AND the post-build lint_fix triggers on (and is
+                        prompted to clear) cosmetic lint WARNINGs too, not just
+                        ERRORs. (in_scope() is the one gate; INFO never blocks.)
 
  THE CLOSED LOOP (review/closed_loop.py::run_loop), each round:
-   Plan      plan_actions() buckets findings → actions by required fix kind.
-   Apply     a claude -p agent edits altium/build_*.py + netlist for the fixes.
+   Plan      plan_actions() buckets the IN-SCOPE findings → actions by fix kind.
+   Apply     a claude -p agent (OPUS) edits altium/build_*.py + netlist. It's
+             handed a rich changelog item PER finding (title · subject · refs ·
+             Observed · the rule's fix_hint), the live-from-registry gate briefing
+             (_lint_expectations: every lint rule + the anti-short idioms), and
+             reads design_intent.md first. So apply gets the finding's actual
+             detail, not "address rule X".
    Sim       ngspice re-checks affected blocks (only if a finding needs it).
    Missing   a referenced component with no library symbol → missing_part.py
              (search → rank → identity-check → author/install .SchLib → place →
              build → sim-verify → topology-adapt → impasse). build_project also
              FAILS GRACEFULLY on a missing symbol (lists the MPNs; no crash).
-   Lint fix  if the rebuild left cosmetic lint ERRORs, a lint_fix agent clears
-             them, then rebuilds once more.
+   Lint fix  if the rebuild left in-scope cosmetic lint findings (ERRORs always;
+             +WARNINGs under fix_warnings), a lint_fix agent clears them — scope
+             threaded through so its prompt matches the loop — then rebuilds once
+             more. (lint.json is read via _read_lint_failures into the {issues,
+             counts,status} shape the fix prompt consumes.)
    Build     python -m test1.altium.build_project (subprocess).
    Re-eval   SCOPED to the impacted area: only rules whose subject is on a
              CHANGED sheet (or whose refdes changed, or can't be localized) are
@@ -382,7 +472,7 @@
              rounds with no explaining edit are flagged as FLAPPING.
 
  DIFF & ACCEPT (review/diff.py + the Diff panes):
-   Pre-loop SNAPSHOT (out/render_snapshots/<id>/) vs current. Content-aware
+   Pre-loop SNAPSHOT (altium/out/render_snapshots/<id>/) vs current. Content-aware
    refdes-level diff (added/removed/changed with anchor boxes) — rebuild noise
    shows nothing. When a change is too substantial to box meaningfully
    (re-layout / many adds-removes / unanchorable), renderable=false and the UI

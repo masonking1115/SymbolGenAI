@@ -70,7 +70,7 @@ nets:
   +VDDD:  { type: power, members: [J10.2] }
   +VDDA1: { type: power, members: [J11.2] }
   +VDDA2: { type: power, members: [J12.2] }
-  +VDDIO: { type: power, members: [U11.A1] }   # load-switch output
+  +VDDIO: { type: power, members: [U11.A1, C16.1] }   # load-switch output + W7 1µF bulk (build_power wires C16.1 onto VOUT; was missing here, so design_extract under-counted VDDIO decoupling)
 
   # ===== Hier-label nets (parent ↔ this sheet) =====
   LDO_EN: { type: hier, direction: input, members: [U10.14, R10.1] }

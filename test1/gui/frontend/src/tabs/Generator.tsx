@@ -6,6 +6,7 @@ import { I } from "../components/Icon";
 import { LoopTick } from "../components/LoopTick";
 import { PageHeader } from "../components/PageHeader";
 import { RoundsPicker } from "../components/RoundsPicker";
+import { StatusGroup, StatCard } from "../components/StatusGroup";
 import type {
   AgentDecision,
   Freshness,
@@ -424,28 +425,35 @@ export function Generator({
           title="Build, render, and lint the schematic from the YAML netlists"
         />
 
-        <div className="mt-4 grid grid-cols-3 gap-3">
-          <StatCard
-            label="ERRORs"
-            value={counts.ERROR}
-            tone={counts.ERROR ? "err" : "ok"}
-            active={openSev === "ERROR"}
-            onClick={() => setOpenSev((s) => (s === "ERROR" ? null : "ERROR"))}
-          />
-          <StatCard
-            label="WARNINGs"
-            value={counts.WARNING}
-            tone={counts.WARNING ? "warn" : "ok"}
-            active={openSev === "WARNING"}
-            onClick={() => setOpenSev((s) => (s === "WARNING" ? null : "WARNING"))}
-          />
-          <StatCard
-            label="INFOs"
-            value={counts.INFO}
-            tone="neutral"
-            active={openSev === "INFO"}
-            onClick={() => setOpenSev((s) => (s === "INFO" ? null : "INFO"))}
-          />
+        <div className="mt-4">
+          <StatusGroup
+            title="Layout lint"
+            caption="Geometry of the drawn schematic — off-grid pins, overlaps, shorts, clearance. Answers “is the drawing clean?” (separate from Design Review's correctness findings.)"
+          >
+            <div className="grid grid-cols-3 gap-3">
+              <StatCard
+                label="ERRORs"
+                value={counts.ERROR}
+                tone={counts.ERROR ? "err" : "ok"}
+                active={openSev === "ERROR"}
+                onClick={() => setOpenSev((s) => (s === "ERROR" ? null : "ERROR"))}
+              />
+              <StatCard
+                label="WARNINGs"
+                value={counts.WARNING}
+                tone={counts.WARNING ? "warn" : "ok"}
+                active={openSev === "WARNING"}
+                onClick={() => setOpenSev((s) => (s === "WARNING" ? null : "WARNING"))}
+              />
+              <StatCard
+                label="INFOs"
+                value={counts.INFO}
+                tone="neutral"
+                active={openSev === "INFO"}
+                onClick={() => setOpenSev((s) => (s === "INFO" ? null : "INFO"))}
+              />
+            </div>
+          </StatusGroup>
         </div>
 
         {openSev && (
@@ -890,59 +898,6 @@ function FreshnessBar({ fresh }: { fresh: Freshness | null }) {
         </div>
       )}
     </div>
-  );
-}
-
-function StatCard({
-  label,
-  value,
-  tone,
-  onClick,
-  active,
-}: {
-  label: string;
-  value: number;
-  tone: "ok" | "warn" | "err" | "neutral";
-  onClick?: () => void;
-  active?: boolean;
-}) {
-  const ring =
-    tone === "ok"
-      ? "border-ok/30 bg-ok/[0.05]"
-      : tone === "warn"
-      ? "border-warn/30 bg-warn/[0.05]"
-      : tone === "err"
-      ? "border-err/30 bg-err/[0.05]"
-      : "border-edge bg-rail";
-  const num =
-    tone === "ok"
-      ? "text-ok"
-      : tone === "warn"
-      ? "text-warn"
-      : tone === "err"
-      ? "text-err"
-      : "text-ink-900";
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={
-        "text-left rounded-md border px-3 py-2 transition-shadow " +
-        ring +
-        (onClick ? " cursor-pointer hover:shadow-sm" : "") +
-        (active ? " ring-2 ring-ink-300" : "")
-      }
-    >
-      <div className="text-[11px] uppercase tracking-wide text-ink-500 flex items-center justify-between">
-        <span>{label}</span>
-        <I.Caret
-          size={12}
-          className={"transition-transform " + (active ? "rotate-180" : "opacity-40")}
-        />
-      </div>
-      <div className={"text-2xl font-semibold mt-0.5 " + num}>{value}</div>
-    </button>
   );
 }
 

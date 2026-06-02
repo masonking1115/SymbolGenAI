@@ -2,9 +2,11 @@
 can see whether our pipeline PREDICTS Altium's compile result -- and surface the
 Altium error CLASSES our lint does not yet catch (candidate new rules).
 
-Inputs (both already produced by the existing flow; no fragile scripting API):
-  - Altium's Messages export: out/MessageListReport.html  (File > right-click
-    Messages panel > Export, or the OutJob "Report Outputs"). Has the full text.
+Inputs:
+  - out/MessageListReport.html — now written automatically by altium_compile.py
+    (one <tr> per IViolation, message = DM_DetailString, which carries the net/pin).
+    No manual Messages-panel export needed. (A real GUI export with the same table
+    shape is still accepted if present.)
   - Our lint: out/lint.json  (written by build_project every build).
 
 What it does:

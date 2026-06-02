@@ -1,19 +1,11 @@
 {
-  "generated_at": 1780365761.0783813,
-  "source_hash": "9efb81b4889ce45c",
+  "generated_at": 1780386916.2531617,
+  "source_hash": "fa940b62bf5660e0",
   "status": "pass",
   "counts": {
     "ERROR": 0,
     "WARNING": 0,
-    "INFO": 1
+    "INFO": 0
   },
-  "issues": [
-    {
-      "sheet": "power",
-      "severity": "INFO",
-      "rule": "decap_coverage",
-      "message": "rail '+VDDIO' powers IC(s) ['U11'] but has no bypass cap on the net - confirm decoupling is on an adjacent rail/node",
-      "refs": []
-    }
-  ]
+  "issues": []
 }

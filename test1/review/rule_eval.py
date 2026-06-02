@@ -36,10 +36,52 @@ from .rule_schema import (
 PROJECT_DIR = Path(__file__).resolve().parent.parent
 RULES_YAML = PROJECT_DIR / "review" / "rules.yaml"
 
-# claude CLI used for semantic-rule verdicts (matches gui/backend/agent.py).
+# claude CLI used for semantic-rule + sim verdicts (matches gui/backend/agent.py).
 _CLAUDE = "claude"
-_SEMANTIC_MODEL = os.environ.get("TEST1_AGENT_MODEL", "sonnet")
+# Default the JUDGE model to opus: the finder agents (≈28 semantic + 11 sim judges)
+# decide whether the design has a problem, so they get the strongest model — same
+# tier as the apply agent that fixes what they find. (Was hardcoded "sonnet".)
+_JUDGE_MODEL_DEFAULT = "claude-opus-4-8"
 _SEMANTIC_TIMEOUT_S = 120
+
+
+def _judge_model() -> str:
+    """Resolve the judge model, in priority order:
+      1. TEST1_AGENT_MODEL env (explicit override, e.g. CI/cost control),
+      2. the per-agent GUI setting for the 'review_judge' kind (agent_models.json),
+      3. the opus default.
+    Resolved per-call (not frozen at import) so a GUI model change takes effect on
+    the next review without a backend restart. Works standalone too: if the backend
+    package isn't importable (run_review.py from a bare CLI), it falls back to the
+    env/opus default."""
+    env = os.environ.get("TEST1_AGENT_MODEL")
+    if env:
+        return env
+    try:
+        import sys as _sys
+        _sys.path.insert(0, str(PROJECT_DIR / "gui" / "backend"))
+        import agent as _agent  # type: ignore
+        return _agent.model_for("review_judge")
+    except Exception:
+        return _JUDGE_MODEL_DEFAULT
+
+
+def _judge_env() -> dict:
+    """Subprocess env for a judge call: inherit the parent, then set the extended-
+    thinking budget for the 'review_judge' agent from the GUI effort setting (so the
+    effort selector shown for that agent in Design Resources is REAL, not cosmetic).
+    Falls back to the parent's MAX_THINKING_TOKENS (or unset) when the backend isn't
+    importable. UTF-8 forced so EE glyphs in prompts/output never crash."""
+    env = os.environ.copy()
+    env["PYTHONUTF8"] = "1"
+    try:
+        import sys as _sys
+        _sys.path.insert(0, str(PROJECT_DIR / "gui" / "backend"))
+        import agent as _agent  # type: ignore
+        env["MAX_THINKING_TOKENS"] = str(_agent.thinking_for("review_judge"))
+    except Exception:
+        pass
+    return env
 
 
 # ---- Loader -------------------------------------------------------------
@@ -454,10 +496,18 @@ def _judge_sim_result(p: "SimReview", res: dict) -> str:
     'PASS' | 'FAIL' (fail-safe 'PASS' on any error)."""
     analysis = _humanize_units(res.get("analysis") or {})
     op = res.get("op_point") or {}
+    intent = _design_intent_text()
+    intent_block = (
+        f"\nCROSS-SHEET DESIGN INTENT (deliberate decisions behind these values — "
+        f"e.g. R40/R41 were lowered to 3.65k on purpose; don't read an intended "
+        f"value as a fault):\n{intent}\n"
+        if intent else ""
+    )
     prompt = (
         f"You are reviewing a SPICE simulation result against a design requirement.\n\n"
         f"BLOCK: {p.sim_block} / {p.sim_type}\n"
-        f"REQUIREMENT: {p.criterion}\n\n"
+        f"REQUIREMENT: {p.criterion}\n"
+        f"{intent_block}\n"
         f"SIM RESULT:\n"
         f"  ok (deck's own check): {res.get('ok')}\n"
         f"  analysis: {json.dumps(analysis, default=str)[:1800]}\n"
@@ -481,10 +531,10 @@ def _judge_sim_result(p: "SimReview", res: dict) -> str:
     )
     try:
         proc = subprocess.run(
-            [_CLAUDE, "-p", prompt, "--model", _SEMANTIC_MODEL,
+            [_CLAUDE, "-p", prompt, "--model", _judge_model(),
              "--permission-mode", "plan"],
             cwd=str(PROJECT_DIR), capture_output=True, text=True,
-            encoding="utf-8", timeout=_SEMANTIC_TIMEOUT_S,
+            encoding="utf-8", timeout=_SEMANTIC_TIMEOUT_S, env=_judge_env(),
         )
     except (subprocess.TimeoutExpired, OSError):
         return "PASS"
@@ -720,18 +770,48 @@ def _netlist_context_for(rule: SemanticRule, view: NetlistView) -> str:
     return "\n".join(lines) if lines else "(no specific netlist subject; judge against the cited source + design intent)"
 
 
+_DESIGN_INTENT_CACHE: str | None = None
+
+
+def _design_intent_text() -> str:
+    """The cross-sheet design-intent doc (design_intent.md), cached for the run.
+
+    These are deliberate architectural decisions an evaluator cannot derive from a
+    single sheet — e.g. U10's LDO_SET_* pins are an FPGA-programmed dynamic-VOUT
+    feature (not spare straps), and R40/R41 were deliberately lowered to 3.65k.
+    Without this, a judge can false-FAIL a rule whose subject LOOKS wrong in
+    isolation but is correct by design. The apply agent already reads this file;
+    handing the same context to the JUDGES keeps find- and fix-side reasoning
+    consistent. Bounded (the file is kept short + high-signal by convention)."""
+    global _DESIGN_INTENT_CACHE
+    if _DESIGN_INTENT_CACHE is None:
+        p = PROJECT_DIR / "design_intent.md"
+        try:
+            _DESIGN_INTENT_CACHE = p.read_text(encoding="utf-8").strip()
+        except OSError:
+            _DESIGN_INTENT_CACHE = ""
+    return _DESIGN_INTENT_CACHE
+
+
 def _build_semantic_prompt(rule: SemanticRule, view: NetlistView) -> str:
     quotes = "\n".join(
         f"  - [{c.doc}:{c.loc}] {c.quote}" for c in rule.source if c.quote
     ) or "  (no verbatim quote on this rule's citation)"
     ctx = _netlist_context_for(rule, view)
+    intent = _design_intent_text()
+    intent_block = (
+        f"\n\nCROSS-SHEET DESIGN INTENT (deliberate architectural decisions you "
+        f"can't see from one sheet — a subject that looks wrong in isolation may be "
+        f"correct by design; weigh these before flagging a violation):\n{intent}"
+        if intent else ""
+    )
     return (
         f"You are a hardware design-review checker. Evaluate ONE rule against the "
         f"as-built design and return a strict JSON verdict.\n\n"
         f"RULE: {rule.title}\n"
         f"QUESTION: {rule.prompt}\n\n"
         f"CITED REQUIREMENT / DATASHEET SOURCE:\n{quotes}\n\n"
-        f"RELEVANT AS-BUILT NETLIST:\n{ctx}\n\n"
+        f"RELEVANT AS-BUILT NETLIST:\n{ctx}{intent_block}\n\n"
         f"Decide whether the design SATISFIES the rule. Respond with ONLY a single "
         f"JSON object, no prose, no code fence:\n"
         f'{{"verdict": "PASS" | "FAIL", "observed": "<one concise sentence of what '
@@ -788,11 +868,11 @@ def _eval_semantic_rule(rule: SemanticRule, view: NetlistView) -> Finding | None
     prompt = _build_semantic_prompt(rule, view)
     try:
         proc = subprocess.run(
-            [_CLAUDE, "-p", prompt, "--model", _SEMANTIC_MODEL,
+            [_CLAUDE, "-p", prompt, "--model", _judge_model(),
              "--permission-mode", "plan"],   # read-only: the checker must not edit
             cwd=str(PROJECT_DIR),
             capture_output=True, text=True, encoding="utf-8",
-            timeout=_SEMANTIC_TIMEOUT_S,
+            timeout=_SEMANTIC_TIMEOUT_S, env=_judge_env(),
         )
     except (subprocess.TimeoutExpired, OSError):
         return None  # fail-safe: no verdict -> no finding

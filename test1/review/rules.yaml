@@ -2051,7 +2051,7 @@ rules:
   fix_hint: "Lower R_sense (R40/R41) so 640 \xB5A fits the 3V3-0.5V headroom (\u2248\
     3.65k); do not raise it."
   enabled: true
-  origin: generated
+  origin: user
   evaluation: structural
   predicate:
     kind: sim_review
@@ -2084,7 +2084,7 @@ rules:
   fix_hint: "Ensure R_sense + pass-FET/isolator headroom let 320 \xB5A flow with the\
     \ output at 0.5 V."
   enabled: true
-  origin: generated
+  origin: user
   evaluation: structural
   predicate:
     kind: sim_review
@@ -2151,7 +2151,7 @@ rules:
   fix_hint: If peaking > 3 dB, add a small series gate R or feedback Cff for phase
     margin.
   enabled: true
-  origin: generated
+  origin: user
   evaluation: structural
   predicate:
     kind: sim_review
@@ -2182,7 +2182,7 @@ rules:
     \ off); firmware must program a known code before enabling current. (No isolation\
     \ FET \u2014 off-by-default is the DAC POR code, matching the deck.)"
   enabled: true
-  origin: generated
+  origin: user
   evaluation: structural
   predicate:
     kind: sim_review
