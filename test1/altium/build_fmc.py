@@ -57,9 +57,12 @@ LA_ROUTING = [
     ("MOSI",          "R111", "global", PortIOType.OUTPUT),
     ("SPI_DMODE",     "R113", "global", PortIOType.OUTPUT),
     ("RESET_N",       "R114", "global", PortIOType.OUTPUT),
-    ("OSC_EN",        "R115", "global", PortIOType.OUTPUT),
-    ("WEIGHT_EN",     "R116", "global", PortIOType.OUTPUT),
-    ("SAMPLE_TRIG",   "R117", "global", PortIOType.OUTPUT),
+    # DUT-driven (Bobcat is the output source; FMC LA bank is an alternate
+    # destination via 0Ω option — see Bobcat deck p3/p5 + netlist/fmc.yaml). INPUT
+    # here, else 2 drivers on the net -> Altium 'multiple drivers'.
+    ("OSC_EN",        "R115", "global", PortIOType.INPUT),
+    ("WEIGHT_EN",     "R116", "global", PortIOType.INPUT),
+    ("SAMPLE_TRIG",   "R117", "global", PortIOType.INPUT),
     # BIAS_ISO0/1 (R120/R121) removed — bias isolation FETs dropped to match the deck.
     ("LDO_SET_25mV",  "R122", "global", PortIOType.OUTPUT),
     ("LDO_SET_50mV", "R123", "global", PortIOType.OUTPUT),

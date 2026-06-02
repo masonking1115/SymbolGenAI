@@ -72,7 +72,10 @@ _TOL = 1.0   # mil
 # it everywhere. scope: "sheet" (per-SchDoc) or "library" (per-symbol).
 RULES: list[dict] = [
     {"id": "off_grid", "severity": "ERROR", "scope": "sheet",
-     "summary": "Pin/wire endpoint off the 100-mil grid"},
+     "summary": "Pin/wire endpoint or port body off the 100-mil grid"},
+    {"id": "port_direction_conflict", "severity": "ERROR", "scope": "project",
+     "summary": "Same-named ports on different sheets have conflicting IO types "
+                "(Altium 'Output Port and <other> Port objects' / multiple drivers)"},
     {"id": "diagonal_wire", "severity": "ERROR", "scope": "sheet",
      "summary": "Non-orthogonal (diagonal) wire"},
     {"id": "out_of_bounds", "severity": "ERROR", "scope": "sheet",
@@ -229,6 +232,27 @@ def _check_off_grid(s):
             if _off_grid(x) or _off_grid(y):
                 out.append(LintIssue("ERROR", "off_grid",
                     f"wire endpoint ({x},{y}) off 100-mil grid"))
+    # Port OBJECT anchors: real Altium flags "Off grid Port ..." on compile when a
+    # port's body location is off the 100-mil grid (the connection point can be on
+    # grid while a side="left" body anchor = x-width lands off-grid if the width
+    # isn't a grid multiple). The connectivity validator can't see this — it tracks
+    # the connection point — so check the emitted port location directly. (Gap that
+    # let the LDO_SET_* ports ship off-grid; see shared.py port() width-snap.)
+    try:
+        for port in s.doc.ports:
+            loc = getattr(port, "location", None)
+            if loc is None:
+                continue
+            px = getattr(loc, "x_mils", None)
+            py = getattr(loc, "y_mils", None)
+            if px is None or py is None:
+                continue
+            if _off_grid(px) or _off_grid(py):
+                nm = getattr(port, "name", "?")
+                out.append(LintIssue("ERROR", "off_grid",
+                    f"port {nm} body at ({px},{py}) off 100-mil grid", [str(nm)]))
+    except Exception:
+        pass
     return out
 
 
@@ -1506,6 +1530,65 @@ def lint_library(lib_path):
                         f"pin names overlap (body half_x={int(half)}, need {need})",
                         [nm]))
                     break
+    return out
+
+
+def lint_port_directions(sheets: dict):
+    """CROSS-SHEET check: in a flat (ports-global) project, same-named ports on
+    different sheets merge into one net. Real Altium ERRORs when their IO types are
+    incompatible: "contains Output Port and Bidirectional Port objects", or two
+    Outputs ("Nets with multiple drivers"). A per-sheet linter can't see this, so
+    build_project calls this once with {sheet_name: AltiumSheet} after all sheets
+    build. Caught the OSC_EN/WEIGHT_EN/SAMPLE_TRIG conflict (Output on fmc, default
+    Bidirectional on connectors) — fix is io_for_net() so port IO follows the
+    netlist's declared direction.
+
+    `sheets` maps name -> AltiumSheet. Returns LintIssues (ERROR for a genuine
+    direction conflict). Bidirectional pairs cleanly with anything, so it never
+    fires on a bidir+bidir or bidir+output/input combo — only OUTPUT+OUTPUT and
+    OUTPUT+(non-bidir) mismatches that Altium itself rejects."""
+    from collections import defaultdict
+    try:
+        from altium_monkey import PortIOType
+    except Exception:
+        return []
+
+    out = []
+    # net name -> {io_type: set(sheet names)}
+    by_net: dict[str, dict] = defaultdict(lambda: defaultdict(set))
+    for sname, s in sheets.items():
+        doc = getattr(s, "doc", None)
+        if doc is None:
+            continue
+        for p in doc.ports:
+            nm = getattr(p, "name", None)
+            if not nm:
+                continue
+            io = getattr(p, "io_type", None)
+            by_net[nm][io].add(sname)
+
+    OUT = PortIOType.OUTPUT
+    BID = PortIOType.BIDIRECTIONAL
+    for nm, iomap in by_net.items():
+        ios = set(iomap.keys())
+        all_sheets = sorted({s for v in iomap.values() for s in v})
+        # OUTPUT + INPUT is the CORRECT pairing (one driver, one sink) — never flag.
+        # Altium errors only on:
+        #   (a) OUTPUT + OUTPUT  -> "Nets with multiple drivers"
+        #   (b) OUTPUT + BIDIRECTIONAL -> "contains Output Port and Bidirectional
+        #       Port objects" (a driver meeting an undirected port).
+        n_output_ports = sum(len(v) for k, v in iomap.items() if k == OUT)
+        if n_output_ports > 1:
+            where = ", ".join(sorted(iomap[OUT]))
+            out.append(LintIssue("ERROR", "port_direction_conflict",
+                f"net {nm!r}: {n_output_ports} OUTPUT ports (multiple drivers) on "
+                f"[{where}] — Altium 'Nets with multiple drivers'", [nm]))
+        if OUT in ios and BID in ios:
+            out.append(LintIssue("ERROR", "port_direction_conflict",
+                f"net {nm!r}: OUTPUT + BIDIRECTIONAL ports across [{', '.join(all_sheets)}] "
+                f"— Altium 'contains Output Port and Bidirectional Port objects' "
+                f"(set the bidir end's direction to match the netlist via io_for_net)",
+                [nm]))
     return out
 
 

@@ -20,7 +20,7 @@ from .build_all import BUILDERS
 from .build_symbols import get_library
 from .config import OUT_DIR, RENDER_DIR
 from .layout_lint import counts as lint_counts
-from .layout_lint import lint, lint_library, lint_netlist_semantics
+from .layout_lint import lint, lint_library, lint_netlist_semantics, lint_port_directions
 from .shared import build_centered
 
 PROJECT = "test1"
@@ -191,6 +191,7 @@ def main() -> int:
     print("-" * 44)
     fails = 0
     docs: list[str] = []
+    built_sheets: dict = {}   # name -> AltiumSheet, for cross-sheet (project) lint
 
     # Child sheets: builder validates connectivity; layout linter checks
     # quality (overlaps, shorts, off-grid, containment). ERROR fails the build.
@@ -230,6 +231,7 @@ def main() -> int:
                                    "rule": "save_integrity", "message": msg, "refs": []})
             s.render_svg(RENDER_DIR / f"{name}.svg")
             docs.append(f"{name}.SchDoc")
+            built_sheets[name] = s   # for the cross-sheet port-direction check
             issues = lint(s)
             # Advisory semantic intent checks over the netlist (WARNING/INFO only;
             # never ERROR → never fails the build). Surfaces decoupling/DNP-path
@@ -265,6 +267,22 @@ def main() -> int:
                            "rule": "build_failed", "message": f"{type(e).__name__}: {e}",
                            "refs": []})
             print(f"{name:12} {'-':6} {'-':14} FAIL: {type(e).__name__}: {e}")
+
+    # CROSS-SHEET lint: in a flat project, same-named ports on different sheets
+    # merge into one net; conflicting IO types (Output+Bidirectional, multi-driver)
+    # are an Altium compile ERROR no per-sheet check can see. Run once over all
+    # built sheets and fail the build on a conflict.
+    try:
+        pd_issues = lint_port_directions(built_sheets)
+    except Exception as _pd_e:  # noqa: BLE001
+        pd_issues = []
+        print(f"             ~ (port-direction check skipped: {_pd_e})")
+    for i in pd_issues:
+        if i.severity == "ERROR":
+            fails += 1
+        print(f"{'project':12} {'-':6} {'-':14} {i.severity}: {i}")
+        report.append({"sheet": "project", "severity": i.severity,
+                       "rule": i.rule, "message": str(i), "refs": getattr(i, "refs", [])})
 
     # FLAT (non-hierarchical) project: the 6 child sheets are siblings and
     # cross-sheet signals connect by matching PORT name (the design already wires

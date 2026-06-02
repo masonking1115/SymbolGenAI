@@ -111,6 +111,28 @@ def _center_axis_shift(lo: float, hi: float, page: int) -> int:
     return int(round(d / 100) * 100)
 
 
+_DIR_TO_IO = {
+    "input": PortIOType.INPUT,
+    "output": PortIOType.OUTPUT,
+    "bidirectional": PortIOType.BIDIRECTIONAL,
+    "tri_state": PortIOType.BIDIRECTIONAL,   # closest Altium port IO
+    "passive": PortIOType.UNSPECIFIED,
+}
+
+
+def io_for_net(netlist, name: str,
+               default: PortIOType = PortIOType.BIDIRECTIONAL) -> PortIOType:
+    """Port IO type from the netlist's DECLARED direction for `name`, so a sheet's
+    port direction matches the source of truth (and matching same-named ports on
+    other sheets don't conflict). Real Altium errors "contains Output Port and
+    Bidirectional Port objects" when same-net ports disagree — which happens if a
+    builder leaves the bidirectional default while the net is declared input/output.
+    Falls back to `default` if the net or its direction is unknown."""
+    net = getattr(netlist, "nets", {}).get(name)
+    d = getattr(net, "direction", "") if net is not None else ""
+    return _DIR_TO_IO.get(d, default)
+
+
 def build_centered(fn):
     """Build a sheet via `fn` (a no-arg builder), then re-build it shifted so its
     content is centered on the chosen page. Connectivity is offset-invariant, so
@@ -281,6 +303,14 @@ class AltiumSheet:
         x, y = self._t(x, y)
         if side == "auto":
             side = self._infer_port_side(x, y)
+        # Snap the body width UP to the 100-mil grid. The connection point (x,y)
+        # is already on-grid, but for side="left" the body ANCHOR is x-width_mils;
+        # if width is not a grid multiple the port OBJECT lands off-grid and real
+        # Altium flags "Off grid Port ... " on compile (the connectivity still
+        # works — only the port body position is off-grid). Rounding the width
+        # keeps the anchor on-grid without moving the connection point.
+        if width_mils % 100:
+            width_mils += 100 - (width_mils % 100)
         anchor_x = x - width_mils if side == "left" else x
         self.doc.add_object(make_sch_port(
             location_mils=SchPointMils.from_mils(anchor_x, y), name=name,

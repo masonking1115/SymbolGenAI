@@ -2,6 +2,47 @@
 
 Deferred work items (not blocking; pick up when convenient).
 
+## Altium compile-errors triage + wire compile into review/generate (requested 2026-06-01)
+
+Context: real Altium AD26 now opens + compiles test1.PrjPcb (hang fixed). The
+Validate/compile reports ~38 errors + ~100 warnings. Two work items:
+
+- [ ] **(A) Triage + fix the real compile findings** (in progress). Be careful NOT
+      to conflate the three screenshots' rows. Categories observed:
+      - ERRORS: "Net Net<ref>_N has only one pin" (single-pin nets — SMA center pins
+        J50-53/J54-56, GPIO header J57, MOSFET drains Q40/Q41-3, FMC 0Ω bank R10x-1,
+        rail outputs +VDDA1/2/+VDDD, LDO sense U10-5/6); "contains floating input pins";
+        "contains Power Pin and Input Port objects" (NetC15_1: VADJ port meets a power
+        pin); "contains Output Port and Bidirectional Port objects" (OSC_EN/WEIGHT_EN/
+        SAMPLE_TRIG declared output on connectors but bidirectional elsewhere).
+      - WARNINGS: "Footprint ... cannot be found" (ALL components — no PCB lib linked;
+        likely expected for a schematic-only flow); "unused sub-part(s)" on FMC LPC
+        J2/J3/J4 (multi-part connector, only 1 unit used); "no driving source";
+        "Off grid Port LDO_SET_* at 329mil/273mil" (ports off the 100-mil grid!);
+        "Unconnected Pin/Port".
+      - Decide per-category: real generation bug (fix builder), expected (the design
+        intentionally leaves some pins for off-sheet/no-pop), or ERC-config noise
+        (tune project Error Reporting / Connection Matrix). Off-grid ports + the
+        port-direction conflicts look like real builder bugs worth fixing.
+
+- [ ] **FMC connector modeling (accepted deviation, revisit if needed).** The
+      ASP-134606-01 is ONE physical 160-pin connector but is modeled as 4 separate
+      designators J1(rowC)/J2(D)/J3(G)/J4(H), each using 1 unit of the 4-unit symbol.
+      Altium warns "FMC LPC (D/G/H) has unused sub-part(s)". Pinout is correct +
+      verified vs VITA57.1; warning-only. A proper fix = one designator J1 with
+      sub-parts A-D, but needs ~70 netlist pin-ref edits (J2/J3/J4->J1) AND a monkey
+      API gap (add_component_from_library can't place one component's units at
+      separate locations) whose workaround touches the just-stabilized multi-unit
+      serialization path (the ghost-component hang). Deferred as poor risk/reward.
+
+- [ ] **(B) Make Altium compile part of review/generate + feed common errors into rules.**
+      When a design review runs or a schematic is regenerated, drive Altium's compile
+      (reuse the X2 RunScript + altium_open_check.py harness pattern) and cross-reference
+      its violations against our own validator/lint output. Add the common compile-error
+      classes (single-pin net, off-grid port, floating input, port-direction mismatch,
+      power-pin-meets-port) as review rules / lint checks so we catch them BEFORE Altium
+      does. Goal: our pipeline's green state should predict Altium's clean compile.
+
 ## Investigate multiple datasheets per component (requested 2026-06-01) — DONE
 
 - [x] **Investigated + cleaned up (commit a857b97).** Audited every datasheet

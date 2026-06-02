@@ -22,11 +22,13 @@ Coordinate notes (all mils, 100-mil grid, Y grows UP):
 
 from __future__ import annotations
 
+from altium_monkey import PortIOType
+
 from ..gen.netlist import load_netlist
 from ..gen.validator import validate
 from .build_symbols import get_library
 from .config import OUT_DIR, RENDER_DIR
-from .shared import AltiumSheet, build_centered
+from .shared import AltiumSheet, build_centered, io_for_net
 
 GRID = 100  # mil
 
@@ -96,7 +98,7 @@ def build_connectors() -> tuple[AltiumSheet, object]:
         # Because the SMA body pin exits to the RIGHT (x+500), we draw the wire
         # leftward from that hot-spot to the port column.
         s.wire(pin1[0], pin1[1], A_PORT_X, y)
-        s.port(net, A_PORT_X, y)
+        s.port(net, A_PORT_X, y, io=io_for_net(nl, net))
 
     # -----------------------------------------------------------------------
     # Cluster B: OSC_EN / WEIGHT_EN / SAMPLE_TRIG
@@ -126,7 +128,7 @@ def build_connectors() -> tuple[AltiumSheet, object]:
 
         # Wire: R.pin2 (left, labeled side) ←→ port
         s.wire(r_pin2[0], r_pin2[1], B_PORT_X, y)
-        s.port(net, B_PORT_X, y)
+        s.port(net, B_PORT_X, y, io=io_for_net(nl, net))
 
         # Wire: SMA.pin1 → R.pin1 (internal stub, no label needed)
         s.wire(j_pin1[0], j_pin1[1], r_pin1[0], r_pin1[1])
@@ -149,7 +151,7 @@ def build_connectors() -> tuple[AltiumSheet, object]:
     for i, net in enumerate(("GPIO0", "GPIO1", "GPIO2", "GPIO3")):
         px, py = J57[str(i + 1)]
         s.wire(px, py, C_PORT_X, py)
-        s.port(net, C_PORT_X, py)
+        s.port(net, C_PORT_X, py, io=io_for_net(nl, net))
 
     # -----------------------------------------------------------------------
     # Cluster D: GND test clips (TP50–TP52)

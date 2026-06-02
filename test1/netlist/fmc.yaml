@@ -176,9 +176,14 @@ nets:
   MOSI:        { type: global, direction: output, members: [R111.1] }
   SPI_DMODE:   { type: global, direction: output, members: [R113.1] }
   RESET_N:     { type: global, direction: output, members: [R114.1] }
-  OSC_EN:      { type: global, direction: output, members: [R115.1] }
-  WEIGHT_EN:   { type: global, direction: output, members: [R116.1] }
-  SAMPLE_TRIG: { type: global, direction: output, members: [R117.1] }
+  # DUT-driven (Bobcat U20.23-25 are the OUTPUT drivers; see Bobcat Board Design
+  # deck p3 block diagram + p5 "OSC_EN, WEIGHT_EN, SAMPLE_TRIG with 0Ω resistor
+  # options to SMA connectors"). The FMC LA bank is an alternate DESTINATION, not a
+  # second driver — so input here (was output, which made 2 drivers on the net and
+  # tripped Altium's 'multiple drivers' + our port_direction_conflict lint).
+  OSC_EN:      { type: global, direction: input, members: [R115.1] }
+  WEIGHT_EN:   { type: global, direction: input, members: [R116.1] }
+  SAMPLE_TRIG: { type: global, direction: input, members: [R117.1] }
   LDO_SET_25mV:  { type: global, direction: output, members: [R122.1] }
   LDO_SET_50mV: { type: global, direction: output, members: [R123.1] }
   LDO_SET_100mV: { type: global, direction: output, members: [R124.1] }
